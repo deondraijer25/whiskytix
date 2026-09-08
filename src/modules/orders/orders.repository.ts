@@ -57,7 +57,10 @@ export interface StoredOrder {
   tickets: StoredIssuedTicket[];
 }
 
-const DATA_DIR = path.join(process.cwd(), '.data');
+import os from 'os';
+
+const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+const DATA_DIR = isVercel ? path.join(os.tmpdir(), '.data') : path.join(process.cwd(), '.data');
 const STORE_FILE = path.join(DATA_DIR, 'orders-store.json');
 
 // Memory cache
