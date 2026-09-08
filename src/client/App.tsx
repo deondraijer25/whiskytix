@@ -7,6 +7,7 @@ import { InventoryPage } from './pages/InventoryPage';
 import { CouponsPage } from './pages/CouponsPage';
 import { DoorMonitorPage } from './pages/DoorMonitorPage';
 import { ScannerPwaPage } from './pages/ScannerPwaPage';
+import { ScanHistoryPage } from './pages/ScanHistoryPage';
 import { TicketViewPage } from './pages/TicketViewPage';
 import { FestivalOverviewPage } from './pages/FestivalOverviewPage';
 import { AdminLayout } from './components/AdminLayout';
@@ -86,8 +87,9 @@ export const App: React.FC = () => {
       <Route path="/admin/door" element={<Navigate to="/admin/festival/denhaag/door" replace />} />
       <Route path="/admin/coupons" element={<Navigate to="/admin/festival/denhaag/coupons" replace />} />
 
-      {/* 4. Mobiele Deurscanner PWA */}
+      {/* 4. Mobiele Deurscanner PWA & Audit Log */}
       <Route path="/scan" element={<ScannerPwaPage />} />
+      <Route path="/scan/history" element={<ScanHistoryPage />} />
 
       {/* 5. Officiële E-Ticket Viewer (Responsive & Print-klaar) */}
       <Route path="/ticket" element={<TicketViewPage />} />

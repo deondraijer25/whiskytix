@@ -1,35 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
-  Wifi,
-  WifiOff,
-  Volume2,
-  VolumeX,
   ArrowLeft,
   CheckCircle2,
   AlertOctagon,
   AlertTriangle,
   RotateCcw,
   Camera,
-  ChevronDown,
-  ChevronUp,
   X,
   UserCheck,
-  Sparkles
+  Sparkles,
+  Settings2,
+  Volume2,
+  VolumeX,
+  Wifi,
+  WifiOff,
+  ChevronRight
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { INITIAL_FESTIVALS } from '../data/mockData';
-
-interface ScanRecord {
-  id: string;
-  ticketCode: string;
-  attendeeName: string;
-  sessionTitle: string;
-  scannedAt: string;
-  status: 'valid' | 'duplicate' | 'wrong_session';
-  detail: string;
-}
+import { getStoredScans, addStoredScan, ScanRecord } from '../data/scannerStore';
 
 export const ScannerPwaPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -44,51 +35,44 @@ export const ScannerPwaPage: React.FC = () => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
 
-  // Scanner Counters & Audit History
-  const [scanCount, setScanCount] = useState(342);
-  const [recentScans, setRecentScans] = useState<ScanRecord[]>([
-    {
-      id: 'init-1',
-      ticketCode: '#WF-2026-84388-2',
-      attendeeName: 'Karel van Dongen',
-      sessionTitle: 'VIP Jubileum Vrijdag',
-      scannedAt: '13:41',
-      status: 'valid',
-      detail: 'Entree Verleend • Welkomstglas inbegrepen',
-    },
-    {
-      id: 'init-2',
-      ticketCode: '#WF-2026-84380-1',
-      attendeeName: 'Sophie van Dam',
-      sessionTitle: 'VIP Jubileum Vrijdag',
-      scannedAt: '13:38',
-      status: 'valid',
-      detail: 'Entree Verleend',
-    },
-  ]);
+  // Scanner Audit History & Counters
+  const [scans, setScans] = useState<ScanRecord[]>([]);
+  const [scanCount, setScanCount] = useState(343);
 
-  // Current Active Scan Result Overlay
+  // Active Scan Result Popup
   const [activeResult, setActiveResult] = useState<ScanRecord | null>(null);
   const resultTimerRef = useRef<any>(null);
 
-  // Scan cooldown lock so rapid video frames don't double fire
+  // Scan cooldown lock
   const isLockedRef = useRef(false);
 
-  // In-memory set of already scanned ticket codes to detect real duplicates
-  const checkedInCodesRef = useRef<Set<string>>(new Set(['#WF-2026-84388-2', '#WF-2026-84380-1', '#WF-2026-84391-1']));
+  // Set of checked-in codes for duplicate detection
+  const checkedInCodesRef = useRef<Set<string>>(new Set());
 
-  // Manual Search modal & query
+  // Modals: Search & Settings
   const [manualSearchOpen, setManualSearchOpen] = useState(false);
   const [manualQuery, setManualQuery] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Collapsible Simulation Tools (for testing / demo)
-  const [showSimPanel, setShowSimPanel] = useState(false);
-
-  // Html5Qrcode scanner instance ref
+  // Html5Qrcode scanner instance
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-  const containerId = 'whiskytix-camera-viewport';
+  const containerId = 'whiskytix-clean-camera-viewport';
 
-  // Audio tone generator using Web Audio API
+  // Load persistent scan history on mount
+  useEffect(() => {
+    const stored = getStoredScans();
+    setScans(stored);
+    setScanCount(Math.max(343, stored.length));
+
+    // Populate checked-in codes
+    stored.forEach((s) => {
+      if (s.status === 'valid') {
+        checkedInCodesRef.current.add(s.ticketCode);
+      }
+    });
+  }, []);
+
+  // Audio Tone Synthesis (Web Audio API)
   const playSound = (type: 'valid' | 'duplicate' | 'wrong_session') => {
     if (!soundEnabled) return;
     try {
@@ -97,10 +81,10 @@ export const ScannerPwaPage: React.FC = () => {
       const gain = audioCtx.createGain();
 
       if (type === 'valid') {
-        // High crisp pleasant dual-tone chime
+        // High pleasant dual chime
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
-        osc.frequency.setValueAtTime(1174.66, audioCtx.currentTime + 0.08); // D6 note
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(1174.66, audioCtx.currentTime + 0.08);
         gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.005, audioCtx.currentTime + 0.3);
         osc.connect(gain);
@@ -110,7 +94,7 @@ export const ScannerPwaPage: React.FC = () => {
 
         if (navigator.vibrate) navigator.vibrate(80);
       } else if (type === 'duplicate') {
-        // Low ominous double buzzer
+        // Low double buzzer
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(140, audioCtx.currentTime);
         osc.frequency.setValueAtTime(110, audioCtx.currentTime + 0.15);
@@ -141,15 +125,12 @@ export const ScannerPwaPage: React.FC = () => {
     }
   };
 
-  // Process a scanned or looked-up ticket code
+  // Process a Scanned Ticket
   const handleTicketScanned = (decodedRaw: string) => {
     if (isLockedRef.current) return;
     isLockedRef.current = true;
 
-    // Parse payload format: WT1:<ticketCode>:<city>:<session>:<attendeeName>:<sig>
-    // Or URL format: ...?code=WF-2026-84387-1
-    // Or plain ticket code: #WF-2026-84387-1
-    let ticketCode = '#WF-2026-84391-1';
+    let ticketCode = '#WF-2026-76464-1';
     let attendeeName = 'Bezoeker';
     let sessionTitle = 'VIP Jubileum Vrijdag';
 
@@ -157,7 +138,7 @@ export const ScannerPwaPage: React.FC = () => {
       const parts = decodedRaw.split(':');
       if (parts.length >= 5) {
         ticketCode = `#${parts[1]}`;
-        sessionTitle = parts[3] || 'Vrijdagmiddag Sessie';
+        sessionTitle = parts[3] || 'VIP Jubileum Vrijdag';
         attendeeName = parts[4] || 'Bezoeker';
       }
     } else if (decodedRaw.includes('code=')) {
@@ -188,12 +169,13 @@ export const ScannerPwaPage: React.FC = () => {
         scannedAt: timeStr,
         status: 'duplicate',
         detail: 'Dit ticket is al eerder ingecheckt bij Deur 1 (Scanner #3).',
+        gate: 'Hoofdingang • Deur 1',
       };
       displayScanResult(record);
       return;
     }
 
-    // Wrong Session Check simulation (if ticket mentions Saturday or Sunday)
+    // Wrong Session Check
     if (decodedRaw.toLowerCase().includes('zaterdag') || decodedRaw.toLowerCase().includes('sat')) {
       const record: ScanRecord = {
         id: `scan-${Date.now()}`,
@@ -202,7 +184,8 @@ export const ScannerPwaPage: React.FC = () => {
         sessionTitle: 'Zaterdagmiddag Sessie',
         scannedAt: timeStr,
         status: 'wrong_session',
-        detail: 'Geldig voor ZATERDAG, niet voor de huidige Vrijdagsessie.',
+        detail: 'Geldig voor ZATERDAG, niet voor huidige Vrijdagsessie.',
+        gate: 'Hoofdingang • Deur 1',
       };
       displayScanResult(record);
       return;
@@ -220,6 +203,7 @@ export const ScannerPwaPage: React.FC = () => {
       scannedAt: timeStr,
       status: 'valid',
       detail: 'Entree Verleend • Welkomstglas inbegrepen',
+      gate: 'Hoofdingang • Deur 1',
     };
     displayScanResult(record);
   };
@@ -228,16 +212,16 @@ export const ScannerPwaPage: React.FC = () => {
     playSound(record.status);
     setActiveResult(record);
 
-    // Add to recent scans
-    setRecentScans((prev) => [record, ...prev.slice(0, 3)]);
+    // Save to persistent storage and update recent scans state
+    const updated = addStoredScan(record);
+    setScans(updated);
 
     if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
 
-    // Auto clear alert after 3.8 seconds so staff can rapidly scan next ticket
     resultTimerRef.current = setTimeout(() => {
       setActiveResult(null);
       isLockedRef.current = false;
-    }, 3800);
+    }, 3500);
   };
 
   const dismissResult = () => {
@@ -246,11 +230,10 @@ export const ScannerPwaPage: React.FC = () => {
     isLockedRef.current = false;
   };
 
-  // Start real Camera Scanner with html5-qrcode
+  // Real Camera Controls
   const startCamera = async (facing: 'environment' | 'user') => {
     setCameraError(null);
     try {
-      // Clean up previous instance if any
       if (html5QrCodeRef.current) {
         if (html5QrCodeRef.current.isScanning) {
           await html5QrCodeRef.current.stop();
@@ -273,7 +256,7 @@ export const ScannerPwaPage: React.FC = () => {
           fps: 15,
           qrbox: (viewfinderWidth, viewfinderHeight) => {
             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            const qrEdge = Math.floor(minEdge * 0.72);
+            const qrEdge = Math.floor(minEdge * 0.74);
             return { width: qrEdge, height: qrEdge };
           },
           aspectRatio: 1.0,
@@ -281,9 +264,7 @@ export const ScannerPwaPage: React.FC = () => {
         (decodedText) => {
           handleTicketScanned(decodedText);
         },
-        () => {
-          // Frame decode error; expected while searching
-        }
+        () => {}
       );
 
       setCameraActive(true);
@@ -293,8 +274,8 @@ export const ScannerPwaPage: React.FC = () => {
       setCameraActive(false);
       setCameraError(
         err?.message?.includes('Permission') || err?.name === 'NotAllowedError'
-          ? 'Cameratoegang geweigerd in browser. Geef toestemming om te scannen.'
-          : 'Geen camera gevonden of camera is al in gebruik door een andere app.'
+          ? 'Cameratoegang geweigerd. Geef toestemming in je mobiele browser.'
+          : 'Geen camera beschikbaar of camera is in gebruik door een andere app.'
       );
     }
   };
@@ -318,7 +299,6 @@ export const ScannerPwaPage: React.FC = () => {
     await startCamera(nextFacing);
   };
 
-  // Mount effect: Start camera automatically
   useEffect(() => {
     startCamera('environment');
 
@@ -328,169 +308,132 @@ export const ScannerPwaPage: React.FC = () => {
     };
   }, []);
 
+  const latestScan = scans.length > 0 ? scans[0] : null;
+
   return (
-    <div className="min-h-screen bg-[#0F0E0D] text-[#FAF7F2] flex flex-col font-sans max-w-md mx-auto relative select-none shadow-2xl overflow-x-hidden">
-      {/* 1. Sleek Top Navigation & Door Status Bar */}
-      <header className="bg-[#171614] border-b border-[#2C2A26] px-4 py-3 sticky top-0 z-40">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link
-              to={festivalParam ? `/admin/festival/${festivalParam}/door` : '/admin'}
-              className="w-8 h-8 rounded-lg bg-[#24221F] hover:bg-[#2F2C28] flex items-center justify-center text-stone-300 hover:text-white transition-colors border border-[#38342F]"
-              title="Terug naar Deurmonitor"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
+    <div className="min-h-screen bg-[#0D0C0B] text-[#FAF7F2] flex flex-col font-sans max-w-md mx-auto relative select-none shadow-2xl overflow-x-hidden">
+      {/* 1. Minimalist, Spacious Header (No Cramped Buttons!) */}
+      <header className="px-4 py-3.5 flex items-center justify-between border-b border-white/5 bg-[#141311]/90 backdrop-blur-md sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          <Link
+            to={festivalParam ? `/admin/festival/${festivalParam}/door` : '/admin'}
+            className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-stone-300 hover:text-white transition-colors border border-white/10 active:scale-95"
+            title="Terug naar Deurmonitor"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
 
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black uppercase tracking-widest text-[#caac8e]">
-                  {currentFestival.location}
-                </span>
-                <span className="text-stone-500 text-xs">•</span>
-                <span className="text-[11px] font-semibold text-stone-300">Hoofdingang</span>
-              </div>
-              <h1 className="text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">
-                Whiskytix Scanner
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-sm font-extrabold text-white tracking-tight leading-none">
+                Scanner
               </h1>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             </div>
+            <p className="text-[11px] text-[#caac8e] font-medium leading-none mt-1">
+              {currentFestival.location} • Ingang
+            </p>
           </div>
+        </div>
 
-          {/* Quick Header Controls */}
-          <div className="flex items-center gap-1.5">
-            {/* Camera switch button if active */}
-            {cameraActive && (
-              <button
-                onClick={toggleCameraFacing}
-                className="w-8 h-8 rounded-lg bg-[#24221F] border border-[#38342F] text-stone-300 hover:text-white flex items-center justify-center transition-colors"
-                title="Wissel camera (Voor / Achter)"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
+        {/* Spacious Top Right Action Icons */}
+        <div className="flex items-center gap-2">
+          {/* 🔍 Primary Manual Search Trigger in Header */}
+          <button
+            onClick={() => setManualSearchOpen(true)}
+            className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-stone-300 hover:text-white transition-colors active:scale-95"
+            title="Zoeken op naam of code"
+          >
+            <Search className="w-4 h-4" />
+          </button>
+
+          {/* ⚙️ Clean Settings & Options Drawer Trigger */}
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-stone-300 hover:text-white transition-colors active:scale-95 relative"
+            title="Instellingen & Testmodus"
+          >
+            <Settings2 className="w-4 h-4" />
+            {!isOnline && (
+              <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-[#0D0C0B]"></span>
             )}
-
-            {/* Sound Toggle */}
-            <button
-              onClick={() => setSoundEnabled(!soundEnabled)}
-              className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors ${
-                soundEnabled
-                  ? 'bg-[#006448]/20 border-[#006448]/60 text-emerald-400'
-                  : 'bg-[#24221F] border-[#38342F] text-stone-500'
-              }`}
-              title={soundEnabled ? 'Geluid AAN' : 'Geluid GEDEMPT'}
-            >
-              {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
-
-            {/* Online / Offline Pill */}
-            <button
-              onClick={() => setIsOnline(!isOnline)}
-              className={`px-2 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5 border transition-all ${
-                isOnline
-                  ? 'bg-emerald-950/70 text-emerald-400 border-emerald-700/60'
-                  : 'bg-amber-950/70 text-amber-400 border-amber-700/60'
-              }`}
-              title="Klik om te testen tussen Online en Offline modus"
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-              <span>{isOnline ? 'Online' : 'Offline'}</span>
-            </button>
-          </div>
+          </button>
         </div>
       </header>
 
-      {/* 2. Active Session Context Pill */}
-      <div className="bg-[#1D1B18] px-4 py-2 border-b border-[#2C2A26] flex items-center justify-between text-xs">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-[#caac8e]"></span>
-          <span className="text-stone-400 font-medium">Huidige sessie:</span>
-          <span className="font-bold text-[#FAF7F2]">Vrijdagmiddag (13:00 - 17:00)</span>
-        </div>
-        <span className="text-[10px] font-mono text-[#caac8e] font-bold bg-[#caac8e]/10 px-2 py-0.5 rounded">
+      {/* 2. Subdued Session & Door Context Strip */}
+      <div className="px-4 py-2 bg-[#12110F] border-b border-white/5 flex items-center justify-between text-xs">
+        <span className="text-stone-400 font-medium flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#caac8e]"></span>
+          Vrijdagmiddag (13:00 - 17:00)
+        </span>
+        <span className="text-[10px] font-mono font-bold text-[#caac8e] bg-white/5 px-2 py-0.5 rounded">
           Deur 1
         </span>
       </div>
 
-      {/* 3. Main Scanner Container */}
-      <main className="flex-1 p-4 flex flex-col space-y-4">
-        {/* Live Camera Viewfinder Card */}
-        <div className="relative w-full aspect-square max-h-[340px] bg-black rounded-2xl overflow-hidden border border-[#2F2C28] shadow-2xl flex items-center justify-center">
-          {/* HTML5 QR Code DOM Mount Point */}
+      {/* 3. Main Body */}
+      <main className="flex-1 p-4 flex flex-col space-y-3.5">
+        {/* Sleek, Immersive Camera Viewfinder */}
+        <div className="relative w-full aspect-square max-h-[350px] bg-black rounded-3xl overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center">
           <div
             id={containerId}
             className="w-full h-full object-cover [&>video]:w-full [&>video]:h-full [&>video]:object-cover"
           ></div>
 
-          {/* Clean Scanner Focus Reticle Overlay (Subtle gold brackets) */}
+          {/* Minimalist Modern Focus Frame (Clean, fine gold brackets) */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
             <div className="relative w-56 h-56">
               {/* Corner 1: Top-Left */}
-              <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-[#caac8e] rounded-tl-lg"></div>
+              <div className="absolute top-0 left-0 w-7 h-7 border-t-2 border-l-2 border-[#caac8e] rounded-tl-xl"></div>
               {/* Corner 2: Top-Right */}
-              <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-[#caac8e] rounded-tr-lg"></div>
+              <div className="absolute top-0 right-0 w-7 h-7 border-t-2 border-r-2 border-[#caac8e] rounded-tr-xl"></div>
               {/* Corner 3: Bottom-Left */}
-              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-[#caac8e] rounded-bl-lg"></div>
+              <div className="absolute bottom-0 left-0 w-7 h-7 border-b-2 border-l-2 border-[#caac8e] rounded-bl-xl"></div>
               {/* Corner 4: Bottom-Right */}
-              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-[#caac8e] rounded-br-lg"></div>
+              <div className="absolute bottom-0 right-0 w-7 h-7 border-b-2 border-r-2 border-[#caac8e] rounded-br-xl"></div>
 
-              {/* Gentle Scanning Pulse Sweep (Non-jarring, subtle) */}
+              {/* Gentle subtle scan glow */}
               {cameraActive && (
-                <div className="absolute inset-x-2 top-0 h-0.5 bg-gradient-to-r from-transparent via-[#caac8e] to-transparent shadow-[0_0_12px_#caac8e] animate-[pulse_2s_ease-in-out_infinite]"></div>
+                <div className="absolute inset-x-2 top-0 h-0.5 bg-gradient-to-r from-transparent via-[#caac8e] to-transparent shadow-[0_0_10px_#caac8e] animate-[pulse_2.2s_ease-in-out_infinite]"></div>
               )}
             </div>
           </div>
 
-          {/* Camera Loading or Error State Fallback */}
+          {/* Camera Error / Starting Fallback */}
           {!cameraActive && (
-            <div className="absolute inset-0 bg-[#121110] p-6 flex flex-col items-center justify-center text-center space-y-3 z-20">
-              <div className="w-12 h-12 rounded-full bg-[#1F1D1A] border border-[#38342F] flex items-center justify-center text-[#caac8e]">
+            <div className="absolute inset-0 bg-[#12110F] p-6 flex flex-col items-center justify-center text-center space-y-3 z-20">
+              <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[#caac8e]">
                 <Camera className="w-6 h-6" />
               </div>
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-stone-200">
-                  {cameraError || 'Camera inschakelen...'}
-                </p>
-                <p className="text-[11px] text-stone-400 max-w-xs">
-                  {cameraError
-                    ? 'Scan via handmatig zoeken of herstart de camera.'
-                    : 'Geef toestemming in je mobiele browser om tickets direct te scannen.'}
-                </p>
-              </div>
-
+              <p className="text-xs font-bold text-stone-200">
+                {cameraError || 'Camera initialiseren...'}
+              </p>
               <button
                 onClick={() => startCamera(cameraFacing)}
-                className="px-4 py-2 rounded-lg bg-[#006448] text-white text-xs font-extrabold hover:bg-[#007a58] transition-colors"
+                className="px-4 py-2 rounded-xl bg-[#006448] text-white text-xs font-bold hover:bg-[#007a58] transition-all active:scale-95"
               >
-                Start Camera Opnieuw
+                Opnieuw Proberen
               </button>
-            </div>
-          )}
-
-          {/* Subdued Bottom Guide Prompt inside Viewport */}
-          {cameraActive && (
-            <div className="absolute bottom-3 inset-x-0 flex justify-center pointer-events-none">
-              <span className="text-[10px] font-bold tracking-wider uppercase text-stone-300 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
-                Houd QR-code in het kader
-              </span>
             </div>
           )}
         </div>
 
-        {/* 4. Instant Scan Feedback Hero Card */}
-        {activeResult ? (
+        {/* 4. Instant Scan Result Floating Card */}
+        {activeResult && (
           <div
-            className={`p-4 rounded-xl border shadow-2xl animate-in zoom-in-95 duration-150 relative overflow-hidden ${
+            className={`p-4 rounded-2xl border shadow-2xl animate-in zoom-in-95 duration-150 relative overflow-hidden ${
               activeResult.status === 'valid'
-                ? 'bg-[#003828] border-emerald-500/80 text-white'
+                ? 'bg-[#032e22] border-emerald-500/70 text-white'
                 : activeResult.status === 'duplicate'
-                ? 'bg-[#4a0e0e] border-red-500/80 text-white'
-                : 'bg-[#4a2e0a] border-amber-500/80 text-white'
+                ? 'bg-[#400c0c] border-red-500/70 text-white'
+                : 'bg-[#3b2308] border-amber-500/70 text-white'
             }`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
                 <div
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
                     activeResult.status === 'valid'
                       ? 'bg-emerald-500 text-black'
                       : activeResult.status === 'duplicate'
@@ -498,14 +441,14 @@ export const ScannerPwaPage: React.FC = () => {
                       : 'bg-amber-500 text-black'
                   }`}
                 >
-                  {activeResult.status === 'valid' && <CheckCircle2 className="w-6 h-6" />}
-                  {activeResult.status === 'duplicate' && <AlertOctagon className="w-6 h-6" />}
-                  {activeResult.status === 'wrong_session' && <AlertTriangle className="w-6 h-6" />}
+                  {activeResult.status === 'valid' && <CheckCircle2 className="w-5 h-5" />}
+                  {activeResult.status === 'duplicate' && <AlertOctagon className="w-5 h-5" />}
+                  {activeResult.status === 'wrong_session' && <AlertTriangle className="w-5 h-5" />}
                 </div>
 
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest opacity-80">
+                    <span className="text-[10px] font-black uppercase tracking-wider opacity-85">
                       {activeResult.status === 'valid'
                         ? 'Toegang Verleend'
                         : activeResult.status === 'duplicate'
@@ -517,20 +460,20 @@ export const ScannerPwaPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <h3 className="text-base font-black tracking-tight leading-tight mt-0.5">
+                  <h3 className="text-base font-extrabold tracking-tight leading-snug mt-0.5">
                     {activeResult.attendeeName}
                   </h3>
 
-                  <p className="text-xs opacity-90 mt-1 font-medium leading-relaxed">
+                  <p className="text-xs opacity-90 mt-0.5 font-medium">
                     {activeResult.detail}
                   </p>
 
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-black/30 border border-white/10">
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-black/30 border border-white/10">
                       {activeResult.sessionTitle}
                     </span>
                     <span className="text-[10px] opacity-70">
-                      Geregistreerd om {activeResult.scannedAt}
+                      Om {activeResult.scannedAt}
                     </span>
                   </div>
                 </div>
@@ -541,158 +484,194 @@ export const ScannerPwaPage: React.FC = () => {
                 className="p-1 rounded-full text-white/70 hover:text-white hover:bg-black/30 transition-colors"
                 title="Sluit melding"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
-        ) : (
-          /* Subtle Ready Indicator when idle */
-          <div className="bg-[#171614] border border-[#282622] rounded-xl p-3 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2.5">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-              </span>
-              <span className="text-stone-300 font-medium">Scanner gereed voor volgende bezoeker</span>
-            </div>
-            <span className="text-stone-500 text-[11px] font-semibold">Realtime Sync</span>
-          </div>
         )}
 
-        {/* 5. Recente Scans Audit Trail (Mini-geschiedenis) */}
-        <div className="bg-[#171614] border border-[#282622] rounded-xl p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-[11px] font-extrabold uppercase tracking-widest text-[#caac8e] flex items-center gap-1.5">
-              <UserCheck className="w-3.5 h-3.5" />
-              Recente Scans aan deze Deur
-            </h4>
-            <span className="text-[11px] font-bold text-stone-400">
-              Totaal: <strong className="text-white">{scanCount}</strong>
+        {/* 5. Compact Recent Scan Summary & "Toon meer" Link */}
+        <div className="p-3.5 rounded-2xl bg-[#141311] border border-white/5 shadow-md">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <UserCheck className="w-3.5 h-3.5 text-[#caac8e]" />
+              <span className="text-xs font-bold text-stone-300">Laatste Scan</span>
+            </div>
+            <span className="text-xs font-mono font-bold text-[#caac8e] bg-white/5 px-2 py-0.5 rounded-md">
+              {scanCount} gescand
             </span>
           </div>
 
-          <div className="space-y-1.5">
-            {recentScans.slice(0, 3).map((scan) => (
-              <div
-                key={scan.id}
-                className="p-2 rounded-lg bg-[#201E1A] border border-[#2E2B26] flex items-center justify-between text-xs"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      scan.status === 'valid'
-                        ? 'bg-emerald-500'
-                        : scan.status === 'duplicate'
-                        ? 'bg-red-500'
-                        : 'bg-amber-500'
-                    }`}
-                  ></div>
-                  <div>
-                    <span className="font-bold text-white block leading-tight">
-                      {scan.attendeeName}
-                    </span>
-                    <span className="text-[10px] text-stone-400 font-mono">
-                      {scan.ticketCode} • {scan.sessionTitle}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <span className="text-[11px] font-mono font-bold text-stone-300 block">
-                    {scan.scannedAt}
+          {latestScan ? (
+            <div className="flex items-center justify-between py-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    latestScan.status === 'valid'
+                      ? 'bg-emerald-500'
+                      : latestScan.status === 'duplicate'
+                      ? 'bg-red-500'
+                      : 'bg-amber-500'
+                  }`}
+                ></span>
+                <div>
+                  <span className="font-bold text-white block leading-tight">
+                    {latestScan.attendeeName}
                   </span>
-                  <span
-                    className={`text-[9px] font-bold uppercase ${
-                      scan.status === 'valid'
-                        ? 'text-emerald-400'
-                        : scan.status === 'duplicate'
-                        ? 'text-red-400'
-                        : 'text-amber-400'
-                    }`}
-                  >
-                    {scan.status === 'valid' ? 'Entree' : scan.status === 'duplicate' ? 'Duplicaat' : 'Sessie'}
+                  <span className="text-[11px] text-stone-400 font-mono">
+                    {latestScan.ticketCode} • {latestScan.sessionTitle}
                   </span>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
 
-        {/* 6. Primary Action: Manual Search Button */}
-        <button
-          onClick={() => setManualSearchOpen(true)}
-          className="w-full bg-[#FAF7F2] hover:bg-white text-[#141210] p-3.5 rounded-xl font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-transform active:scale-[0.98] shadow-lg"
-        >
-          <Search className="w-4 h-4 text-[#006448]" />
-          <span>Handmatig Zoeken op Naam of Code</span>
-        </button>
-
-        {/* 7. Collapsible Test & Demo Bar (Neatly tucked away) */}
-        <div className="pt-1">
-          <button
-            onClick={() => setShowSimPanel(!showSimPanel)}
-            className="w-full py-2 px-3 rounded-lg bg-[#171614] border border-[#282622] text-stone-400 hover:text-stone-200 text-[11px] font-bold flex items-center justify-between transition-colors"
-          >
-            <span className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#caac8e]" />
-              <span>Demo & Geluidstesten (Simulatiemodus)</span>
-            </span>
-            {showSimPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-
-          {showSimPanel && (
-            <div className="mt-2 p-3 bg-[#171614] border border-[#282622] rounded-xl space-y-2 animate-in fade-in-50 duration-150">
-              <p className="text-[10px] text-stone-400 leading-normal">
-                Test direct het visuele gedrag, audio-signalen en haptische feedback zonder fysiek kaartje:
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() =>
-                    handleTicketScanned('WT1:WF-2026-84391-1:denhaag:VIP Jubileum Vrijdag:Deon Draijer:test')
-                  }
-                  className="bg-[#006448] hover:bg-[#007a58] text-white py-2 px-1.5 rounded-lg text-[10px] font-black flex flex-col items-center justify-center text-center shadow transition-transform active:scale-95"
+              <div className="text-right">
+                <span className="font-mono text-stone-400 text-[11px] block">
+                  {latestScan.scannedAt}
+                </span>
+                <span
+                  className={`text-[9px] font-extrabold uppercase ${
+                    latestScan.status === 'valid'
+                      ? 'text-emerald-400'
+                      : latestScan.status === 'duplicate'
+                      ? 'text-red-400'
+                      : 'text-amber-400'
+                  }`}
                 >
-                  <span>🟢 Geldig</span>
-                  <span className="text-[9px] opacity-75 font-normal">Hoge Chime</span>
-                </button>
-                <button
-                  onClick={() =>
-                    handleTicketScanned('#WF-2026-84388-2')
-                  }
-                  className="bg-red-900 hover:bg-red-800 text-white py-2 px-1.5 rounded-lg text-[10px] font-black flex flex-col items-center justify-center text-center shadow transition-transform active:scale-95"
-                >
-                  <span>🔴 Duplicaat</span>
-                  <span className="text-[9px] opacity-75 font-normal">Lage Zoemer</span>
-                </button>
-                <button
-                  onClick={() =>
-                    handleTicketScanned('WT1:WF-2026-99999-1:denhaag:Zaterdagmiddag Sessie:Pieter Bakker:test')
-                  }
-                  className="bg-amber-800 hover:bg-amber-700 text-white py-2 px-1.5 rounded-lg text-[10px] font-black flex flex-col items-center justify-center text-center shadow transition-transform active:scale-95"
-                >
-                  <span>🟠 Foutieve Sessie</span>
-                  <span className="text-[9px] opacity-75 font-normal">Alert Toon</span>
-                </button>
+                  {latestScan.status === 'valid' ? 'Entree' : latestScan.status === 'duplicate' ? 'Duplicaat' : 'Sessie'}
+                </span>
               </div>
             </div>
+          ) : (
+            <p className="text-xs text-stone-500 py-1">Klaar voor de eerste bezoeker...</p>
           )}
+
+          {/* 🔗 Dedicated "Toon meer" Link to Separate History Page */}
+          <Link
+            to={`/scan/history?festival=${festivalParam}`}
+            className="w-full mt-2.5 pt-2.5 border-t border-white/5 flex items-center justify-between text-xs font-bold text-[#caac8e] hover:text-white transition-colors"
+          >
+            <span>Bekijk alle scans & audit log</span>
+            <span className="flex items-center gap-1">
+              Toon meer <ChevronRight className="w-3.5 h-3.5" />
+            </span>
+          </Link>
         </div>
       </main>
 
-      {/* 8. Modern Full-Screen Slide-Over for Manual Search */}
+      {/* 6. Settings & Options Slide-Up Sheet */}
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center">
+          <div className="w-full max-w-md bg-[#171614] border-t border-white/10 rounded-t-3xl p-5 space-y-4 animate-in slide-in-from-bottom duration-200">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-[#caac8e]" />
+                Instellingen & Testmodus
+              </h3>
+              <button
+                onClick={() => setSettingsOpen(false)}
+                className="w-7 h-7 rounded-full bg-white/5 text-stone-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Controls Grid */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {/* Sound Toggle */}
+              <button
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                className={`p-3 rounded-xl border flex items-center gap-2.5 font-bold transition-colors ${
+                  soundEnabled
+                    ? 'bg-emerald-950/40 border-emerald-700/50 text-emerald-300'
+                    : 'bg-white/5 border-white/10 text-stone-400'
+                }`}
+              >
+                {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                <span>{soundEnabled ? 'Geluid AAN' : 'Geluid UIT'}</span>
+              </button>
+
+              {/* Camera Switch */}
+              <button
+                onClick={toggleCameraFacing}
+                className="p-3 rounded-xl bg-white/5 border border-white/10 text-stone-300 hover:text-white flex items-center gap-2.5 font-bold transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Wissel Lens</span>
+              </button>
+
+              {/* Online/Offline Toggle */}
+              <button
+                onClick={() => setIsOnline(!isOnline)}
+                className={`col-span-2 p-3 rounded-xl border flex items-center justify-between font-bold transition-colors ${
+                  isOnline
+                    ? 'bg-white/5 border-white/10 text-stone-300'
+                    : 'bg-amber-950/40 border-amber-700/50 text-amber-300'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  {isOnline ? <Wifi className="w-4 h-4 text-emerald-400" /> : <WifiOff className="w-4 h-4 text-amber-400" />}
+                  <span>{isOnline ? 'Online Modus (Live sync)' : 'Offline Modus (Blackout test)'}</span>
+                </span>
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-white/5">
+                  {isOnline ? 'Live' : 'Offline'}
+                </span>
+              </button>
+            </div>
+
+            {/* Simulation Feedback Test Panel */}
+            <div className="pt-2 border-t border-white/10 space-y-2">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#caac8e] flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                Simuleer Feedback (Zonder Fysieke QR)
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => {
+                    handleTicketScanned('WT1:WF-2026-76464-1:denhaag:VIP Jubileum Vrijdag:Deon Draijer:sig');
+                    setSettingsOpen(false);
+                  }}
+                  className="p-2 rounded-xl bg-[#006448] text-white text-[10px] font-extrabold text-center hover:bg-[#007a58] transition-all"
+                >
+                  🟢 Geldig
+                </button>
+                <button
+                  onClick={() => {
+                    handleTicketScanned('#WF-2026-84388-2');
+                    setSettingsOpen(false);
+                  }}
+                  className="p-2 rounded-xl bg-red-800 text-white text-[10px] font-extrabold text-center hover:bg-red-700 transition-all"
+                >
+                  🔴 Duplicaat
+                </button>
+                <button
+                  onClick={() => {
+                    handleTicketScanned('WT1:WF-2026-99999-1:denhaag:Zaterdagmiddag Sessie:Martijn Vos:sig');
+                    setSettingsOpen(false);
+                  }}
+                  className="p-2 rounded-xl bg-amber-700 text-white text-[10px] font-extrabold text-center hover:bg-amber-600 transition-all"
+                >
+                  🟠 Foutieve Sessie
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Manual Search Modal */}
       {manualSearchOpen && (
-        <div className="fixed inset-0 z-50 bg-[#121110] p-5 flex flex-col justify-between max-w-md mx-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-[#12110F] p-5 flex flex-col justify-between max-w-md mx-auto shadow-2xl">
           <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-[#2C2A26] pb-3">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div>
                 <h3 className="font-extrabold text-sm uppercase tracking-wider text-[#caac8e]">
-                  Gastenlijst & Ticket Zoeken
+                  Handmatig Ticket Opzoeken
                 </h3>
                 <p className="text-[11px] text-stone-400">Zoek op achternaam of ticketcode</p>
               </div>
               <button
                 onClick={() => setManualSearchOpen(false)}
-                className="w-8 h-8 rounded-lg bg-[#24221F] text-stone-300 hover:text-white flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-white/5 text-stone-300 hover:text-white flex items-center justify-center"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -704,7 +683,7 @@ export const ScannerPwaPage: React.FC = () => {
                 value={manualQuery}
                 onChange={(e) => setManualQuery(e.target.value)}
                 placeholder="Typ naam of #WF code..."
-                className="w-full p-3.5 pl-10 bg-[#1C1B18] border border-[#38342F] rounded-xl text-white text-base focus:outline-none focus:border-[#006448]"
+                className="w-full p-3.5 pl-10 bg-[#1C1B18] border border-white/10 rounded-2xl text-white text-base focus:outline-none focus:border-[#caac8e]"
                 autoFocus
               />
               <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -715,11 +694,11 @@ export const ScannerPwaPage: React.FC = () => {
                 Direct Inchecken:
               </span>
               {[
-                { name: 'Robert-Jan Bakker', code: '#WF-2026-84391-1', type: 'VIP Vrijdag', alreadyScanned: true },
-                { name: 'Deon Draijer', code: '#WF-2026-84387-1', type: 'VIP Vrijdag', alreadyScanned: false },
-                { name: 'Karel van Dongen', code: '#WF-2026-84388-2', type: 'VIP Vrijdag', alreadyScanned: true },
+                { name: 'Deon Draijer', code: '#WF-2026-76464-1', type: 'VIP Vrijdag', alreadyScanned: true },
+                { name: 'Robert-Jan Bakker', code: '#WF-2026-84391-1', type: 'VIP Vrijdag', alreadyScanned: false },
+                { name: 'Karel van Dongen', code: '#WF-2026-84388-2', type: 'VIP Vrijdag', alreadyScanned: false },
                 { name: 'Pieter van Mechelen', code: '#WF-2027-84392-1', type: 'Regulier Zondag', alreadyScanned: false },
-                { name: 'Anouk de Vries', code: '#WF-2026-84400-1', type: 'VIP Vrijdag', alreadyScanned: false },
+                { name: 'Sophie van Dam', code: '#WF-2026-84380-1', type: 'VIP Vrijdag', alreadyScanned: false },
               ]
                 .filter(
                   (m) =>
@@ -740,7 +719,7 @@ export const ScannerPwaPage: React.FC = () => {
                         handleTicketScanned(`WT1:${m.code.replace('#', '')}:denhaag:VIP Vrijdag:${m.name}:sig`);
                       }
                     }}
-                    className="p-3 bg-[#1C1B18] border border-[#2E2B26] rounded-xl hover:border-[#caac8e] cursor-pointer flex items-center justify-between transition-colors"
+                    className="p-3 bg-[#1C1B18] border border-white/5 rounded-2xl hover:border-[#caac8e] cursor-pointer flex items-center justify-between transition-colors"
                   >
                     <div>
                       <span className="font-bold text-white block text-sm">{m.name}</span>
@@ -764,7 +743,7 @@ export const ScannerPwaPage: React.FC = () => {
 
           <button
             onClick={() => setManualSearchOpen(false)}
-            className="w-full py-3 rounded-xl bg-[#24221F] text-stone-300 font-bold text-xs uppercase tracking-wider"
+            className="w-full py-3 rounded-2xl bg-white/5 text-stone-300 font-bold text-xs uppercase tracking-wider hover:bg-white/10 transition-colors"
           >
             Sluiten
           </button>
@@ -773,4 +752,7 @@ export const ScannerPwaPage: React.FC = () => {
     </div>
   );
 };
+
+export default ScannerPwaPage;
+
 
