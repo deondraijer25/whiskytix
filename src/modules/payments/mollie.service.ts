@@ -43,11 +43,11 @@ export const sandboxPayments: Map<
 
 export class MollieService {
   private static getApiKey(): string | null {
-    const key = process.env.MOLLIE_API_KEY_TEST || process.env.MOLLIE_API_KEY_LIVE;
+    const key = process.env.MOLLIE_API_KEY_TEST || process.env.MOLLIE_API_KEY_LIVE || 'test_fcvDJF4xKDTvHAefdv5TBbf2PPzMHG';
     if (key && key.startsWith('test_') && key !== 'test_placeholder') {
       return key;
     }
-    return null;
+    return 'test_fcvDJF4xKDTvHAefdv5TBbf2PPzMHG';
   }
 
   /**
