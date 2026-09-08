@@ -187,8 +187,14 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerCheckoutRoutes(server);
 
   // 6. Statische bestanden serveren indien client build aanwezig is
-  const distPath = path.join(__dirname, '..', 'dist');
-  if (fs.existsSync(distPath)) {
+  const possibleDistPaths = [
+    path.join(process.cwd(), 'dist'),
+    path.join(__dirname, '..', 'dist'),
+    path.join(__dirname, 'dist'),
+  ];
+  const distPath = possibleDistPaths.find((p) => fs.existsSync(p) && fs.existsSync(path.join(p, 'index.html')));
+
+  if (distPath) {
     await server.register(fastifyStatic, {
       root: distPath,
       prefix: '/',
