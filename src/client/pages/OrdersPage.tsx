@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Search, ShoppingBag, CheckCircle2, Clock, X, ChevronRight, Download, Mail } from 'lucide-react';
 import { INITIAL_ORDERS, INITIAL_FESTIVALS, Order } from '../data/mockData';
@@ -10,16 +10,47 @@ export const OrdersPage: React.FC = () => {
   const [selectedCity, setSelectedCity] = useState(cityId || 'all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [liveOrders, setLiveOrders] = useState<Order[]>([]);
 
   const activeFestival = cityId ? INITIAL_FESTIVALS.find((f) => f.id === cityId) : null;
   const effectiveCity = cityId || selectedCity;
 
-  const filteredOrders = INITIAL_ORDERS.filter((o) => {
+  useEffect(() => {
+    const fetchLiveOrders = async () => {
+      try {
+        const res = await fetch('/api/admin/orders');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.orders)) {
+            setLiveOrders(data.orders);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch live orders:', err);
+      }
+    };
+    fetchLiveOrders();
+    const interval = setInterval(fetchLiveOrders, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Merge live orders with initial mock orders (avoiding duplicates by orderNumber)
+  const allOrdersMap = new Map<string, Order>();
+  liveOrders.forEach((o) => allOrdersMap.set(o.orderNumber, o));
+  INITIAL_ORDERS.forEach((o) => {
+    if (!allOrdersMap.has(o.orderNumber)) {
+      allOrdersMap.set(o.orderNumber, o);
+    }
+  });
+
+  const combinedOrders = Array.from(allOrdersMap.values());
+
+  const filteredOrders = combinedOrders.filter((o) => {
     const matchesSearch =
       o.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       o.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       o.customerEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.customerPhone.toLowerCase().includes(searchQuery.toLowerCase());
+      (o.customerPhone && o.customerPhone.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesCity = effectiveCity === 'all' || o.city === effectiveCity;
     const matchesStatus = selectedStatus === 'all' || o.status === selectedStatus;

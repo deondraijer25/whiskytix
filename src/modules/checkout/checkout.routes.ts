@@ -374,6 +374,53 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   });
 
   /**
+   * 4c. LIST ALL ORDERS (ADMIN API)
+   * GET /api/admin/orders
+   */
+  server.get('/api/admin/orders', async (request, reply) => {
+    const query = (request.query || {}) as { city?: string; festivalId?: string };
+    const allOrders = OrdersRepository.listOrders();
+    
+    const formattedOrders = allOrders.map((o) => {
+      const city = o.festivalId || 'gent';
+      const cityName = city === 'gent' ? 'Gent' : city === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
+      const summary = o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ');
+
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        customerName: o.customerName,
+        customerEmail: o.customerEmail,
+        customerPhone: o.customerPhone || '',
+        city: city as 'denhaag' | 'amsterdam' | 'gent',
+        cityName,
+        itemsSummary: summary || 'Tickets & Masterclasses',
+        totalCents: o.totalCents,
+        status: o.status,
+        createdAt: o.createdAt,
+        tickets: o.tickets.map((t) => ({
+          code: t.ticketCode,
+          type: t.sessionTitle || 'Toegangsbewijs',
+          session: t.sessionTitle,
+          attendeeName: t.attendeeName,
+          status: t.status,
+        })),
+      };
+    });
+
+    const filterCity = query.city || query.festivalId;
+    const results = filterCity && filterCity !== 'all' 
+      ? formattedOrders.filter((o) => o.city === filterCity)
+      : formattedOrders;
+
+    return reply.send({
+      success: true,
+      orders: results,
+      count: results.length,
+    });
+  });
+
+  /**
    * 5. ORDER CONFIRMATION & DOWNLOAD UI
    * GET /order/confirmation?orderNumber=...
    */
