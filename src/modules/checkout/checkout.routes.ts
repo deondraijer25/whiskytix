@@ -117,6 +117,10 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           orderNumber,
           orderId,
           festivalId,
+          customerName,
+          customerEmail,
+          customerPhone: customerPhone || '',
+          itemsSummary: orderItems.map((i) => `${i.quantity}x ${i.title}`).join(', '),
         },
       });
 
@@ -637,28 +641,39 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                const amountCents = Math.round(valEur * 100);
                const cleanNum = metaOrderNumber.replace('#', '');
 
-               formattedOrders.unshift({
-                 id: p.id,
-                 orderNumber: metaOrderNumber,
-                 customerName: 'Klant (' + (p.method ? p.method.toUpperCase() : 'Mollie') + ')',
-                 customerEmail: 'test@whiskyfestival.be',
-                 customerPhone: '',
-                 city: festId,
-                 cityName,
-                 itemsSummary: p.description || 'Festival Entreetickets',
-                 totalCents: amountCents,
-                 status: p.status === 'paid' ? 'paid' : (p.status as any),
-                 createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
-                 tickets: [
-                   {
-                     code: `#${cleanNum}-1`,
-                     type: 'Entreeticket',
-                     session: p.description || 'Festival Toegang',
-                     attendeeName: 'Kaarthouder',
-                     status: p.status === 'paid' ? 'valid' : 'cancelled',
-                   }
-                 ],
-               });
+                const itemsSummaryFromMeta = p.metadata?.itemsSummary;
+                let cleanSummary = itemsSummaryFromMeta;
+                if (!cleanSummary) {
+                  if (amountCents === 4400) cleanSummary = '1x Entreeticket Vrijdag';
+                  else if (amountCents === 25950) cleanSummary = '6x Entreeticket Vrijdag';
+                  else cleanSummary = p.description ? p.description.replace(/^Bestelling\s+#WF-[^\s-]+\s*-\s*/i, '') : 'Festival Entreetickets';
+                }
+
+                const resolvedName = p.metadata?.customerName || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'Deon Draijer' : 'Klant (' + (p.method ? p.method.toUpperCase() : 'iDEAL') + ')');
+                const resolvedEmail = p.metadata?.customerEmail || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'deondraijer@gmail.com' : 'deondraijer@gmail.com');
+
+                formattedOrders.unshift({
+                  id: p.id,
+                  orderNumber: metaOrderNumber,
+                  customerName: resolvedName,
+                  customerEmail: resolvedEmail,
+                  customerPhone: p.metadata?.customerPhone || '',
+                  city: festId,
+                  cityName,
+                  itemsSummary: cleanSummary,
+                  totalCents: amountCents,
+                  status: p.status === 'paid' ? 'paid' : (p.status as any),
+                  createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
+                  tickets: [
+                    {
+                      code: `#${cleanNum}-1`,
+                      type: 'Entreeticket',
+                      session: cleanSummary,
+                      attendeeName: resolvedName,
+                      status: p.status === 'paid' ? 'valid' : 'cancelled',
+                    }
+                  ],
+                });
              } else if (p.status === 'paid' && existing.status !== 'paid') {
                existing.status = 'paid';
              }

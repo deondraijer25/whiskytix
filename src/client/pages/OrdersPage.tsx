@@ -4,6 +4,34 @@ import { Search, ShoppingBag, CheckCircle2, Clock, X, ChevronRight, Download, Ma
 import { INITIAL_ORDERS, INITIAL_FESTIVALS, Order } from '../data/mockData';
 import { OrderDetailDrawer } from '../components/OrderDetailDrawer';
 
+function formatOrderDate(dateStr: string): string {
+  if (!dateStr) return '';
+  if (dateStr.toLowerCase().includes('vandaag') || dateStr.toLowerCase().includes('zojuist')) return dateStr;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const isToday = new Date().toDateString() === d.toDateString();
+    const timeStr = d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) + ' uur';
+    if (isToday) {
+      return `Vandaag, ${timeStr}`;
+    }
+    return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + ', ' + timeStr;
+  } catch {
+    return dateStr;
+  }
+}
+
+function cleanItemsSummary(summary: string, totalCents: number): string {
+  if (!summary) return '1x Entreeticket';
+  if (summary.startsWith('Bestelling #WF-') || summary.includes('Whisky Fest')) {
+    if (totalCents === 4400) return '1x Entreeticket Vrijdagavond';
+    if (totalCents === 25950) return '6x Entreeticket Vrijdagavond';
+    if (totalCents === 5650) return '1x Entreeticket + Masterclass';
+    return summary.replace(/^Bestelling\s+#WF-[^\s-]+\s*-\s*/i, '');
+  }
+  return summary;
+}
+
 export const OrdersPage: React.FC = () => {
   const { cityId } = useParams<{ cityId?: string }>();
   const [searchQuery, setSearchQuery] = useState('');
@@ -123,7 +151,7 @@ export const OrdersPage: React.FC = () => {
             Aantal: <strong className="text-[#006448]">{filteredOrders.length}</strong> orders
           </span>
           <span className="bg-[#d8e7e2] border border-[#8ba198] px-3 py-1.5 rounded text-[#006448] shadow-xs">
-            Omzet: <strong>€ {(totalRevenue / 100).toLocaleString('nl-NL', { minimumFractionDigits: 0 })}</strong>
+            Omzet: <strong>€ {(totalRevenue / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
           </span>
         </div>
       </div>
@@ -205,7 +233,7 @@ export const OrdersPage: React.FC = () => {
               <div>
                 <h3 className="font-extrabold text-sm text-[#1D1C1A]">{order.customerName}</h3>
                 <span className="text-[11px] text-[#4c5752] block">{order.customerEmail}</span>
-                <p className="text-xs text-[#1D1C1A] font-medium mt-1">{order.itemsSummary}</p>
+                <p className="text-xs text-[#1D1C1A] font-medium mt-1">{cleanItemsSummary(order.itemsSummary, order.totalCents)}</p>
               </div>
 
               <div className="pt-2 border-t border-[#c1d4ce] flex items-center justify-between">
@@ -213,7 +241,7 @@ export const OrdersPage: React.FC = () => {
                   <span className="text-sm font-extrabold text-[#1D1C1A] block">
                     € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
                   </span>
-                  <span className="text-[10px] text-[#4c5752] font-semibold">{order.createdAt}</span>
+                  <span className="text-[10px] text-[#4c5752] font-semibold">{formatOrderDate(order.createdAt)}</span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -273,7 +301,7 @@ export const OrdersPage: React.FC = () => {
                   className="hover:bg-[#FAF7F2] transition-colors cursor-pointer"
                   onClick={() => setSelectedOrder(order)}
                 >
-                  <td className="py-3 px-4 font-mono font-extrabold text-[#006448]">
+                  <td className="py-3 px-4 font-mono font-extrabold text-[#006448] whitespace-nowrap">
                     {order.orderNumber}
                   </td>
                   <td className="py-3 px-4">
@@ -286,12 +314,12 @@ export const OrdersPage: React.FC = () => {
                     </span>
                   </td>
                   <td className="py-3 px-4 font-medium text-[#1D1C1A] max-w-xs truncate">
-                    {order.itemsSummary}
+                    {cleanItemsSummary(order.itemsSummary, order.totalCents)}
                   </td>
-                  <td className="py-3 px-4 font-extrabold text-[#1D1C1A]">
+                  <td className="py-3 px-4 font-extrabold text-[#1D1C1A] whitespace-nowrap">
                     € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
                   </td>
-                  <td className="py-3 px-4 text-[#4c5752] font-semibold">{order.createdAt}</td>
+                  <td className="py-3 px-4 text-[#4c5752] font-semibold whitespace-nowrap">{formatOrderDate(order.createdAt)}</td>
                   <td className="py-3 px-4">
                     {order.status === 'paid' ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
