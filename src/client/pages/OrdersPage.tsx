@@ -34,9 +34,47 @@ export const OrdersPage: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Merge live orders with initial mock orders (avoiding duplicates by orderNumber)
+  // Merge live orders with initial mock orders & local browser test orders
   const allOrdersMap = new Map<string, Order>();
   liveOrders.forEach((o) => allOrdersMap.set(o.orderNumber, o));
+
+  // Check if there is a local browser order from test checkout
+  try {
+    const rawLocalOrder = localStorage.getItem('wf_last_order');
+    if (rawLocalOrder) {
+      const localOrder = JSON.parse(rawLocalOrder);
+      if (localOrder && localOrder.resNumber && !allOrdersMap.has(localOrder.resNumber)) {
+        const itemsSummary = Array.isArray(localOrder.items) && localOrder.items.length > 0
+          ? localOrder.items.map((i: any) => `${i.qty || i.quantity || 1}x ${i.title}`).join(', ')
+          : '1x Entreeticket';
+        const priceTotalCents = Math.round((localOrder.totalPrice || 44) * 100);
+
+        allOrdersMap.set(localOrder.resNumber, {
+          id: localOrder.resNumber,
+          orderNumber: localOrder.resNumber,
+          customerName: localOrder.name || 'Test Klant',
+          customerEmail: localOrder.email || 'test@whiskyfestival.be',
+          customerPhone: localOrder.phone || '',
+          city: 'gent',
+          cityName: 'Gent',
+          itemsSummary,
+          totalCents: priceTotalCents,
+          status: 'paid',
+          createdAt: 'Zojuist (Test)',
+          tickets: [
+            {
+              code: `${localOrder.resNumber}-1`,
+              type: 'Entreeticket',
+              session: 'Sessie Gent',
+              attendeeName: localOrder.name || 'Test Klant',
+              status: 'valid',
+            }
+          ]
+        });
+      }
+    }
+  } catch (e) {}
+
   INITIAL_ORDERS.forEach((o) => {
     if (!allOrdersMap.has(o.orderNumber)) {
       allOrdersMap.set(o.orderNumber, o);

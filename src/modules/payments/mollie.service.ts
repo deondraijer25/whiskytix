@@ -165,4 +165,31 @@ export class MollieService {
       orderNumber: sandbox.orderNumber,
     };
   }
+
+  /**
+   * List recent payments from Mollie API to ensure live sync with Mollie Dashboard
+   */
+  static async listRecentPayments(limit = 25): Promise<any[]> {
+    const apiKey = this.getApiKey();
+    if (!apiKey) return [];
+
+    try {
+      const client = createMollieClient({ apiKey });
+      const paymentsPage = await client.payments.page({ limit });
+      return Array.from(paymentsPage || []).map((p: any) => ({
+        id: p.id,
+        status: p.status,
+        amountValue: p.amount?.value,
+        currency: p.amount?.currency || 'EUR',
+        description: p.description,
+        method: p.method,
+        metadata: p.metadata || {},
+        createdAt: p.createdAt,
+        paidAt: p.paidAt,
+      }));
+    } catch (err: any) {
+      console.warn('Could not fetch payments from Mollie API:', err.message);
+      return [];
+    }
+  }
 }

@@ -577,59 +577,104 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   });
 
   /**
-   * 8. GET ALL ORDERS LIST (FOR ADMIN COCKPIT)
-   * GET /api/orders and GET /api/admin/orders
-   */
-  const handleGetOrders = async (request: any, reply: any) => {
-    try {
-      const query = (request.query || {}) as { city?: string; festivalId?: string };
-      const allOrders = OrdersRepository.listOrders() || [];
-      
-      const formattedOrders = allOrders.map((o) => {
-        const city = o.festivalId || 'gent';
-        const cityName = city === 'gent' ? 'Gent' : city === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
-        const summary = Array.isArray(o.items) && o.items.length > 0 
-          ? o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ')
-          : 'Tickets & Toegang';
+    * 8. GET ALL ORDERS LIST (FOR ADMIN COCKPIT)
+    * GET /api/orders and GET /api/admin/orders
+    */
+   const handleGetOrders = async (request: any, reply: any) => {
+     try {
+       const query = (request.query || {}) as { city?: string; festivalId?: string };
+       const allOrders = OrdersRepository.listOrders() || [];
+       
+       const formattedOrders = allOrders.map((o) => {
+         const city = o.festivalId || 'gent';
+         const cityName = city === 'gent' ? 'Gent' : city === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
+         const summary = Array.isArray(o.items) && o.items.length > 0 
+           ? o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ')
+           : 'Tickets & Toegang';
 
-        return {
-          id: o.id || o.orderNumber,
-          orderNumber: o.orderNumber,
-          customerName: o.customerName || 'Klant',
-          customerEmail: o.customerEmail || '',
-          customerPhone: o.customerPhone || '',
-          city: city as 'denhaag' | 'amsterdam' | 'gent',
-          cityName,
-          itemsSummary: summary,
-          totalCents: o.totalCents || 0,
-          status: o.status || 'pending',
-          createdAt: o.createdAt || new Date().toISOString(),
-          tickets: Array.isArray(o.tickets) ? o.tickets.map((t) => ({
-            code: t.ticketCode,
-            type: t.sessionTitle || 'Toegangsbewijs',
-            session: t.sessionTitle,
-            attendeeName: t.attendeeName,
-            status: t.status,
-          })) : [],
-        };
-      });
+         return {
+           id: o.id || o.orderNumber,
+           orderNumber: o.orderNumber,
+           customerName: o.customerName || 'Klant',
+           customerEmail: o.customerEmail || '',
+           customerPhone: o.customerPhone || '',
+           city: city as 'denhaag' | 'amsterdam' | 'gent',
+           cityName,
+           itemsSummary: summary,
+           totalCents: o.totalCents || 0,
+           status: o.status || 'pending',
+           createdAt: o.createdAt || new Date().toISOString(),
+           tickets: Array.isArray(o.tickets) ? o.tickets.map((t) => ({
+             code: t.ticketCode,
+             type: t.sessionTitle || 'Toegangsbewijs',
+             session: t.sessionTitle,
+             attendeeName: t.attendeeName,
+             status: t.status,
+           })) : [],
+         };
+       });
 
-      const filterCity = query.city || query.festivalId;
-      const results = filterCity && filterCity !== 'all' 
-        ? formattedOrders.filter((o) => o.city === filterCity)
-        : formattedOrders;
+       // Live Sync with Mollie API: If orders are missing from serverless in-memory store, sync paid Mollie transactions
+       try {
+         const molliePayments = await MollieService.listRecentPayments(25);
+         for (const p of molliePayments) {
+           const metaOrderNumber = p.metadata?.orderNumber;
+           if (metaOrderNumber) {
+             const existing = formattedOrders.find((o) => o.orderNumber === metaOrderNumber);
+             if (!existing) {
+               const festId = (p.metadata?.festivalId || 'gent') as 'denhaag' | 'amsterdam' | 'gent';
+               const cityName = festId === 'gent' ? 'Gent' : festId === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
+               const valEur = parseFloat(p.amountValue || '0');
+               const amountCents = Math.round(valEur * 100);
+               const cleanNum = metaOrderNumber.replace('#', '');
 
-      return reply.send({
-        success: true,
-        orders: results,
-        count: results.length,
-      });
-    } catch (err: any) {
-      server.log.error(err);
-      return reply.status(500).send({ success: false, error: err.message, stack: err.stack });
-    }
-  };
+               formattedOrders.unshift({
+                 id: p.id,
+                 orderNumber: metaOrderNumber,
+                 customerName: 'Klant (' + (p.method ? p.method.toUpperCase() : 'Mollie') + ')',
+                 customerEmail: 'test@whiskyfestival.be',
+                 customerPhone: '',
+                 city: festId,
+                 cityName,
+                 itemsSummary: p.description || 'Festival Entreetickets',
+                 totalCents: amountCents,
+                 status: p.status === 'paid' ? 'paid' : (p.status as any),
+                 createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
+                 tickets: [
+                   {
+                     code: `#${cleanNum}-1`,
+                     type: 'Entreeticket',
+                     session: p.description || 'Festival Toegang',
+                     attendeeName: 'Kaarthouder',
+                     status: p.status === 'paid' ? 'valid' : 'cancelled',
+                   }
+                 ],
+               });
+             } else if (p.status === 'paid' && existing.status !== 'paid') {
+               existing.status = 'paid';
+             }
+           }
+         }
+       } catch (syncErr: any) {
+         server.log.warn('Could not sync live orders from Mollie API: ' + syncErr.message);
+       }
 
-  server.get('/api/orders', handleGetOrders);
-  server.get('/api/admin/orders', handleGetOrders);
-}
+       const filterCity = query.city || query.festivalId;
+       const results = filterCity && filterCity !== 'all' 
+         ? formattedOrders.filter((o) => o.city === filterCity)
+         : formattedOrders;
+
+       return reply.send({
+         success: true,
+         orders: results,
+         count: results.length,
+       });
+     } catch (err: any) {
+       server.log.error(err);
+       return reply.status(500).send({ success: false, error: err.message, stack: err.stack });
+     }
+   };
+
+   server.get('/api/orders', handleGetOrders);
+   server.get('/api/admin/orders', handleGetOrders);
+ }
