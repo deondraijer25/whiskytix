@@ -624,10 +624,53 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
   /**
    * 8. GET ALL ORDERS LIST (FOR ADMIN COCKPIT)
-   * GET /api/orders
+   * GET /api/orders and GET /api/admin/orders
    */
-  server.get('/api/orders', async (request, reply) => {
-    const orders = OrdersRepository.listOrders();
-    return reply.send({ orders });
-  });
+  const handleGetOrders = async (request: any, reply: any) => {
+    const query = (request.query || {}) as { city?: string; festivalId?: string };
+    const allOrders = OrdersRepository.listOrders();
+    
+    const formattedOrders = allOrders.map((o) => {
+      const city = o.festivalId || 'gent';
+      const cityName = city === 'gent' ? 'Gent' : city === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
+      const summary = o.items && o.items.length > 0 
+        ? o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ')
+        : 'Tickets & Toegang';
+
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        customerName: o.customerName,
+        customerEmail: o.customerEmail,
+        customerPhone: o.customerPhone || '',
+        city: city as 'denhaag' | 'amsterdam' | 'gent',
+        cityName,
+        itemsSummary: summary,
+        totalCents: o.totalCents,
+        status: o.status,
+        createdAt: o.createdAt,
+        tickets: (o.tickets || []).map((t) => ({
+          code: t.ticketCode,
+          type: t.sessionTitle || 'Toegangsbewijs',
+          session: t.sessionTitle,
+          attendeeName: t.attendeeName,
+          status: t.status,
+        })),
+      };
+    });
+
+    const filterCity = query.city || query.festivalId;
+    const results = filterCity && filterCity !== 'all' 
+      ? formattedOrders.filter((o) => o.city === filterCity)
+      : formattedOrders;
+
+    return reply.send({
+      success: true,
+      orders: results,
+      count: results.length,
+    });
+  };
+
+  server.get('/api/orders', handleGetOrders);
+  server.get('/api/admin/orders', handleGetOrders);
 }
