@@ -127,27 +127,34 @@ export async function buildServer(): Promise<FastifyInstance> {
     const cleanCode = params.ticketCode ? decodeURIComponent(params.ticketCode) : 'WF-2026-84387-1';
     const formattedCode = cleanCode.startsWith('#') ? cleanCode : `#${cleanCode}`;
 
+    const sessionTitle = query.title ||
+      (query.session === 'masterclass'
+        ? 'ZONDAGMIDDAG + MASTERCLASS'
+        : query.session === 'zaterdag_middag'
+        ? 'ZATERDAGMIDDAG SESSIE'
+        : 'VIP SESSIE — VRIJDAG');
+
+    const titleLower = sessionTitle.toLowerCase();
+    const cleanSessionTitle = sessionTitle.replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*-\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '').trim();
+
+    const timeStr = query.time ||
+      (titleLower.includes('avond') || (query.session && query.session.includes('avond'))
+        ? '19:00 - 23:00 UUR'
+        : (query.session === 'vip_vrijdag'
+        ? '13:00 - 17:00 UUR'
+        : '13:00 - 17:00 UUR'));
+
     const pdfBytes = await generateTicketPdf({
       ticketCode: formattedCode,
       orderNumber: query.orderNumber || 'WF1861',
       attendeeName: query.name || 'Deon Draijer',
       cityName: query.city || 'denhaag',
-      sessionTitle:
-        query.title ||
-        (query.session === 'masterclass'
-          ? 'ZONDAGMIDDAG + MASTERCLASS'
-          : query.session === 'zaterdag_middag'
-          ? 'ZATERDAGMIDDAG SESSIE'
-          : 'VIP SESSIE — VRIJDAG'),
+      sessionTitle: cleanSessionTitle,
       dateStr:
         query.session === 'zaterdag_middag'
           ? 'Zaterdag 14 november 2026'
           : 'Vrijdag 13 november 2026',
-      timeStr:
-        query.time ||
-        (query.session === 'vip_vrijdag'
-          ? '13:00 - 17:00 UUR'
-          : '13:30 - 17:30 UUR'),
+      timeStr,
       itemNumber: query.itemNumber || '1/1',
     });
 
