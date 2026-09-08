@@ -110,6 +110,17 @@ export const OrdersPage: React.FC = () => {
   });
 
   const combinedOrders = Array.from(allOrdersMap.values());
+  combinedOrders.sort((a, b) => {
+    const parseTime = (dateStr?: string) => {
+      if (!dateStr) return 0;
+      if (dateStr.toLowerCase().includes('zojuist') || dateStr.toLowerCase().includes('vandaag')) {
+        return Date.now() + 100000;
+      }
+      const parsed = new Date(dateStr).getTime();
+      return isNaN(parsed) ? 0 : parsed;
+    };
+    return parseTime(b.createdAt) - parseTime(a.createdAt);
+  });
 
   const filteredOrders = combinedOrders.filter((o) => {
     const matchesSearch =

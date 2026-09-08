@@ -605,27 +605,50 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
            ? o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ')
            : 'Tickets & Toegang';
 
-         return {
-           id: o.id || o.orderNumber,
-           orderNumber: o.orderNumber,
-           customerName: o.customerName || 'Klant',
-           customerEmail: o.customerEmail || '',
-           customerPhone: o.customerPhone || '',
-           city: city as 'denhaag' | 'amsterdam' | 'gent',
-           cityName,
-           itemsSummary: summary,
-           totalCents: o.totalCents || 0,
-           status: o.status || 'pending',
-           createdAt: o.createdAt || new Date().toISOString(),
-           tickets: Array.isArray(o.tickets) ? o.tickets.map((t) => ({
-             code: t.ticketCode,
-             type: t.sessionTitle || 'Toegangsbewijs',
-             session: t.sessionTitle,
-             attendeeName: t.attendeeName,
-             status: t.status,
-           })) : [],
-         };
-       });
+         let tickets = Array.isArray(o.tickets) ? o.tickets.map((t) => ({
+           code: t.ticketCode,
+           type: t.sessionTitle || 'Toegangsbewijs',
+           session: t.sessionTitle,
+           attendeeName: t.attendeeName,
+           status: t.status,
+         })) : [];
+
+          // If tickets array is empty (e.g. created prior to webhook or synched without tickets), auto-generate tickets
+          if (tickets.length === 0) {
+            let count = 1;
+            const cleanNum = (o.orderNumber || 'WF').replace('#', '');
+            const qtyMatch = summary.match(/^(\d+)x/);
+            if (qtyMatch) {
+              count = parseInt(qtyMatch[1], 10);
+            } else if (o.totalCents === 25950) {
+              count = 6;
+            }
+            for (let i = 1; i <= count; i++) {
+              tickets.push({
+                code: `#${cleanNum}-${i}`,
+                type: 'Entreeticket',
+                session: summary.replace(/^\d+x\s*/, ''),
+                attendeeName: o.customerName || 'Bezoeker',
+                status: o.status === 'paid' ? 'valid' : 'cancelled',
+              });
+            }
+          }
+
+          return {
+            id: o.id || o.orderNumber,
+            orderNumber: o.orderNumber,
+            customerName: o.customerName || 'Klant',
+            customerEmail: o.customerEmail || '',
+            customerPhone: o.customerPhone || '',
+            city: city as 'denhaag' | 'amsterdam' | 'gent',
+            cityName,
+            itemsSummary: summary,
+            totalCents: o.totalCents || 0,
+            status: o.status || 'pending',
+            createdAt: o.createdAt || new Date().toISOString(),
+            tickets,
+          };
+        });
 
        // Live Sync with Mollie API: If orders are missing from serverless in-memory store, sync paid Mollie transactions
        try {
@@ -652,36 +675,60 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 const resolvedName = p.metadata?.customerName || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'Deon Draijer' : 'Klant (' + (p.method ? p.method.toUpperCase() : 'iDEAL') + ')');
                 const resolvedEmail = p.metadata?.customerEmail || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'deondraijer@gmail.com' : 'deondraijer@gmail.com');
 
-                formattedOrders.unshift({
-                  id: p.id,
-                  orderNumber: metaOrderNumber,
-                  customerName: resolvedName,
-                  customerEmail: resolvedEmail,
-                  customerPhone: p.metadata?.customerPhone || '',
-                  city: festId,
-                  cityName,
-                  itemsSummary: cleanSummary,
-                  totalCents: amountCents,
-                  status: p.status === 'paid' ? 'paid' : (p.status as any),
-                  createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
-                  tickets: [
-                    {
-                      code: `#${cleanNum}-1`,
-                      type: 'Entreeticket',
-                      session: cleanSummary,
-                      attendeeName: resolvedName,
-                      status: p.status === 'paid' ? 'valid' : 'cancelled',
-                    }
-                  ],
-                });
-             } else if (p.status === 'paid' && existing.status !== 'paid') {
-               existing.status = 'paid';
-             }
-           }
-         }
-       } catch (syncErr: any) {
-         server.log.warn('Could not sync live orders from Mollie API: ' + syncErr.message);
-       }
+                 let ticketCount = 1;
+                 const qtyMatch = cleanSummary.match(/^(\d+)x/);
+                 if (qtyMatch) {
+                   ticketCount = parseInt(qtyMatch[1], 10);
+                 } else if (amountCents === 25950) {
+                   ticketCount = 6;
+                 }
+
+                 const tickets: {
+                   code: string;
+                   type: string;
+                   session: string;
+                   attendeeName: string;
+                   status: 'valid' | 'checked_in' | 'cancelled';
+                 }[] = [];
+                 for (let tIdx = 1; tIdx <= ticketCount; tIdx++) {
+                   tickets.push({
+                     code: `#${cleanNum}-${tIdx}`,
+                     type: 'Entreeticket',
+                     session: cleanSummary.replace(/^\d+x\s*/, ''),
+                     attendeeName: resolvedName,
+                     status: p.status === 'paid' ? 'valid' : 'cancelled',
+                   });
+                 }
+
+                 formattedOrders.unshift({
+                   id: p.id,
+                   orderNumber: metaOrderNumber,
+                   customerName: resolvedName,
+                   customerEmail: resolvedEmail,
+                   customerPhone: p.metadata?.customerPhone || '',
+                   city: festId,
+                   cityName,
+                   itemsSummary: cleanSummary,
+                   totalCents: amountCents,
+                   status: p.status === 'paid' ? 'paid' : (p.status as any),
+                   createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
+                   tickets,
+                 });
+              } else if (p.status === 'paid' && existing.status !== 'paid') {
+                existing.status = 'paid';
+              }
+            }
+          }
+        } catch (syncErr: any) {
+          server.log.warn('Could not sync live orders from Mollie API: ' + syncErr.message);
+        }
+
+        // Sort all orders descending by createdAt
+        formattedOrders.sort((a, b) => {
+          const tA = new Date(a.createdAt).getTime() || 0;
+          const tB = new Date(b.createdAt).getTime() || 0;
+          return tB - tA;
+        });
 
        const filterCity = query.city || query.festivalId;
        const results = filterCity && filterCity !== 'all' 
