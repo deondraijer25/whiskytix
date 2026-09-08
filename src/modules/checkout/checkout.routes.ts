@@ -63,7 +63,16 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         };
       });
 
-      const feeCents = totalQty > 0 ? 150 : 0; // €1,50 service fee
+      // Tiered service fee calculation: 1 item -> €1.75, 2-5 items -> €3.50, 5+ items -> €4.50
+      let feeCents = 0;
+      if (totalQty === 1) {
+        feeCents = 175;
+      } else if (totalQty >= 2 && totalQty <= 5) {
+        feeCents = 350;
+      } else if (totalQty > 5) {
+        feeCents = 450;
+      }
+
       const shippingCents = hasShipping ? 1250 : 0; // €12,50 shipping fee
       const finalDiscountCents = Number(discountCents) || 0;
       const totalCents = Math.max(0, subtotalCents + feeCents + shippingCents - finalDiscountCents);
