@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  --color-whisky-green: #006448;
+  --color-whisky-green-light: #d8e7e2;
+  --color-whisky-parchment: #FAF7F2;
+  --color-whisky-card: #FCFAF7;
+  --color-whisky-charcoal: #1D1C1A;
+  --color-whisky-muted: #4c5752;
+  --color-whisky-gold: #caac8e;
+  --color-whisky-gold-light: #e4d5c4;
+  --color-whisky-border: #c1d4ce;
+  --color-whisky-border-dark: #8ba198;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Rye', Georgia, serif;
+}
+
+/* Den Haag Letterpress Tactile Button */
+.btn-letterpress {
+  background-color: #006448;
+  color: #FAF7F2;
+  border: 2px solid #1D1C1A;
+  box-shadow: 4px 4px 0px rgba(29, 28, 26, 0.9);
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+.btn-letterpress:hover:not(:disabled) {
+  background-color: #1D1C1A;
+  color: #e4d5c4;
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px rgba(29, 28, 26, 0.9);
+}
+.btn-letterpress:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px rgba(29, 28, 26, 0.9);
+}
+.btn-letterpress:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-letterpress-gold {
+  background-color: #caac8e;
+  color: #1D1C1A;
+  border: 2px solid #1D1C1A;
+  box-shadow: 3px 3px 0px rgba(29, 28, 26, 0.9);
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+.btn-letterpress-gold:hover:not(:disabled) {
+  background-color: #e4d5c4;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px rgba(29, 28, 26, 0.9);
+}
+.btn-letterpress-gold:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 0px 0px 0px rgba(29, 28, 26, 0.9);
+}
+
+.btn-letterpress-outline {
+  background-color: #FCFAF7;
+  color: #1D1C1A;
+  border: 2px solid #1D1C1A;
+  box-shadow: 3px 3px 0px rgba(29, 28, 26, 0.9);
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+.btn-letterpress-outline:hover:not(:disabled) {
+  background-color: #d8e7e2;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px rgba(29, 28, 26, 0.9);
+}
+
+/* Card tactile style */
+.card-tactile {
+  background-color: #FCFAF7;
+  border: 1.5px solid #c1d4ce;
+  box-shadow: 0 4px 20px rgba(29, 28, 26, 0.04), 0 1px 3px rgba(29, 28, 26, 0.02);
+}
+
+/* Vintage dot pattern background from Den Haag body */
+.bg-parchment-pattern {
+  background-color: #FAF7F2;
+  background-image: 
+    radial-gradient(#c1d4ce 0.8px, transparent 0.8px), 
+    radial-gradient(#c1d4ce 0.8px, #FAF7F2 0.8px);
+  background-size: 32px 32px;
+  background-position: 0 0, 16px 16px;
+}
+
+/* Vintage wood / dark theme for login card or headers */
+.bg-charcoal-wood {
+  background-color: #171513;
+  background-image: radial-gradient(rgba(0, 100, 72, 0.15) 1px, transparent 1px);
+  background-size: 24px 24px;
+}

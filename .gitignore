@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+.data
+*.pdf
+.DS_Store
+*.log
