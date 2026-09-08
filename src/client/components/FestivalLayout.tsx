@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
+  LayoutDashboard,
   ShoppingBag,
   Layers,
   Activity,
@@ -33,17 +34,23 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
 
   const festivalNavItems = [
     {
+      label: 'Overzicht',
+      path: `/admin/festival/${cityId}`,
+      exact: true,
+      icon: LayoutDashboard,
+    },
+    {
       label: 'Bestellingen',
       path: `/admin/festival/${cityId}/orders`,
       icon: ShoppingBag,
     },
     {
-      label: 'Zaalcapaciteit & Sessies',
+      label: 'Zaalcapaciteit',
       path: `/admin/festival/${cityId}/inventory`,
       icon: Layers,
     },
     {
-      label: 'Live Deurmonitor',
+      label: 'Deurmonitor',
       path: `/admin/festival/${cityId}/door`,
       icon: Activity,
     },
@@ -53,7 +60,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
       icon: Ticket,
     },
     {
-      label: 'Deurscanner PWA',
+      label: 'Deurscanner',
       path: `/scan?festival=${cityId}`,
       icon: QrCode,
       highlight: true,
@@ -208,13 +215,13 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
         </div>
 
         {/* Desktop Navigation Tabs for this Festival */}
-        <div className="border-t border-[#c1d4ce] bg-[#FCFAF7] hidden lg:block">
+        <div className="border-t border-[#c1d4ce] bg-[#FCFAF7] hidden lg:block overflow-x-auto">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav className="flex items-center space-x-2 py-1.5">
+            <nav className="flex items-center space-x-1.5 py-1.5">
               {/* Underlined link: Terug naar Alle (Cockpit) */}
               <Link
                 to="/admin"
-                className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-[#006448] hover:text-[#1D1C1A] underline underline-offset-4 decoration-2 mr-3 pr-3 border-r-2 border-[#c1d4ce] transition-colors group shrink-0"
+                className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-[#006448] hover:text-[#1D1C1A] underline underline-offset-4 decoration-2 mr-2.5 pr-2.5 border-r-2 border-[#c1d4ce] transition-colors group shrink-0 whitespace-nowrap"
                 title="Terug naar het 3-Steden Cockpit Overzicht"
               >
                 <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
@@ -222,13 +229,15 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
               </Link>
 
               {festivalNavItems.map((item) => {
-                const isActive = location.pathname.startsWith(item.path);
+                const isActive = item.exact
+                  ? location.pathname === item.path || location.pathname === `${item.path}/overview`
+                  : location.pathname.startsWith(item.path);
                 const Icon = item.icon;
                 return (
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-2 px-4 py-2.5 text-xs font-extrabold uppercase tracking-wider rounded transition-all ${
+                    className={`flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold uppercase tracking-wider rounded transition-all whitespace-nowrap shrink-0 ${
                       isActive
                         ? 'bg-[#006448] text-white shadow-[2px_2px_0px_rgba(29,28,26,0.9)] border-2 border-[#1D1C1A]'
                         : item.highlight
@@ -236,8 +245,8 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                         : 'text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2]'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-[#e4d5c4]' : 'text-[#006448]'}`} />
-                    {item.label}
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#e4d5c4]' : 'text-[#006448]'}`} />
+                    <span>{item.label}</span>
                   </Link>
                 );
               })}
@@ -252,7 +261,9 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
               Navigatie {currentFestival.edition}:
             </div>
             {festivalNavItems.map((item) => {
-              const isActive = location.pathname.startsWith(item.path);
+              const isActive = item.exact
+                ? location.pathname === item.path || location.pathname === `${item.path}/overview`
+                : location.pathname.startsWith(item.path);
               const Icon = item.icon;
               return (
                 <Link
@@ -291,6 +302,17 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
 
       {/* Mobile Bottom Dock Bar */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#FCFAF7] border-t-2 border-[#1D1C1A] px-2 py-1.5 shadow-[0px_-4px_10px_rgba(0,0,0,0.08)] flex items-center justify-around">
+        <Link
+          to={`/admin/festival/${cityId}`}
+          className={`flex flex-col items-center py-1 px-2 rounded font-extrabold text-[10px] ${
+            location.pathname === `/admin/festival/${cityId}` || location.pathname === `/admin/festival/${cityId}/overview`
+              ? 'text-[#006448]'
+              : 'text-[#4c5752]'
+          }`}
+        >
+          <LayoutDashboard className="w-4 h-4 mb-0.5" />
+          <span>Overzicht</span>
+        </Link>
         <Link
           to={`/admin/festival/${cityId}/orders`}
           className={`flex flex-col items-center py-1 px-2 rounded font-extrabold text-[10px] ${

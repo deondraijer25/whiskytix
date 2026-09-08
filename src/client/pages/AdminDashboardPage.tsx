@@ -261,7 +261,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 {/* City Manage Button - Navigates directly into Festival Hub Layer 2 */}
                 <button
                   onClick={() => {
-                    navigate(`/admin/festival/${fest.id}/orders`);
+                    navigate(`/admin/festival/${fest.id}`);
                   }}
                   className="btn-letterpress-outline w-full py-2.5 px-3 rounded text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-[#006448] hover:text-white transition-all shadow-[2px_2px_0px_rgba(29,28,26,0.9)]"
                 >

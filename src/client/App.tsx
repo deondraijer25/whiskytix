@@ -8,6 +8,7 @@ import { CouponsPage } from './pages/CouponsPage';
 import { DoorMonitorPage } from './pages/DoorMonitorPage';
 import { ScannerPwaPage } from './pages/ScannerPwaPage';
 import { TicketViewPage } from './pages/TicketViewPage';
+import { FestivalOverviewPage } from './pages/FestivalOverviewPage';
 import { AdminLayout } from './components/AdminLayout';
 import { FestivalLayout } from './components/FestivalLayout';
 
@@ -32,7 +33,19 @@ export const App: React.FC = () => {
       {/* 3. LAYER 2: Festival Hub (Editie-specifieke omgeving) */}
       <Route
         path="/admin/festival/:cityId"
-        element={<Navigate to="orders" replace />}
+        element={
+          <FestivalLayout>
+            <FestivalOverviewPage />
+          </FestivalLayout>
+        }
+      />
+      <Route
+        path="/admin/festival/:cityId/overview"
+        element={
+          <FestivalLayout>
+            <FestivalOverviewPage />
+          </FestivalLayout>
+        }
       />
       <Route
         path="/admin/festival/:cityId/orders"
