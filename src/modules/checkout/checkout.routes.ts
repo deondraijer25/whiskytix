@@ -90,7 +90,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         totalCents,
         status: 'pending',
         createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 min TTL
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min stock hold TTL
         items: orderItems,
       });
 
@@ -748,4 +748,108 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
    server.get('/api/orders', handleGetOrders);
    server.get('/api/admin/orders', handleGetOrders);
+
+   /**
+    * 9. TICKET & QR CODE MONITORING LIST
+    * GET /api/admin/tickets
+    */
+   server.get('/api/admin/tickets', async (request, reply) => {
+     try {
+       const query = (request.query || {}) as { city?: string; festivalId?: string };
+       const filterCity = query.city || query.festivalId;
+       let allTickets = OrdersRepository.listAllTickets();
+
+       if (filterCity && filterCity !== 'all') {
+         allTickets = allTickets.filter((t) => t.cityName === filterCity || t.festivalId === filterCity);
+       }
+
+       return reply.send({
+         success: true,
+         tickets: allTickets,
+         count: allTickets.length,
+       });
+     } catch (err: any) {
+       return reply.status(500).send({ success: false, error: err.message });
+     }
+   });
+
+   /**
+    * 10. TICKET INRUILEN / OMBOEKEN (SWAP & EXCHANGE)
+    * POST /api/admin/tickets/:ticketCode/swap
+    */
+   server.post('/api/admin/tickets/:ticketCode/swap', async (request, reply) => {
+     try {
+       const params = request.params as { ticketCode: string };
+       const body = (request.body || {}) as {
+         newSessionTitle: string;
+         newDateStr?: string;
+         newTimeStr?: string;
+         reason?: string;
+         priceDiffCents?: number;
+         adminEmail?: string;
+       };
+
+       if (!body.newSessionTitle) {
+         return reply.status(400).send({ success: false, error: 'Nieuwe sessietitel is verplicht.' });
+       }
+
+       const host = request.headers.host || 'localhost:4000';
+       const protocol = request.protocol || 'http';
+       const publicBaseUrl = `${protocol}://${host}`;
+
+       const result = await OrdersRepository.swapTicket({
+         ticketCode: decodeURIComponent(params.ticketCode),
+         newSessionTitle: body.newSessionTitle,
+         newDateStr: body.newDateStr,
+         newTimeStr: body.newTimeStr,
+         reason: body.reason || 'Klantverzoek via admin',
+         priceDiffCents: body.priceDiffCents || 0,
+         adminEmail: body.adminEmail || 'beheer@whiskyfestival.nl',
+         publicBaseUrl,
+       });
+
+       if (!result.success) {
+         return reply.status(400).send({ success: false, error: result.error });
+       }
+
+       return reply.send({
+         success: true,
+         message: `Ticket succesvol omgeruild naar ${body.newSessionTitle}!`,
+         oldTicket: result.oldTicket,
+         newTicket: result.newTicket,
+         order: result.order,
+       });
+     } catch (err: any) {
+       server.log.error(err);
+       return reply.status(500).send({ success: false, error: err.message });
+     }
+   });
+
+   /**
+    * 11. TICKET ANNULEREN
+    * POST /api/admin/tickets/:ticketCode/cancel
+    */
+   server.post('/api/admin/tickets/:ticketCode/cancel', async (request, reply) => {
+     try {
+       const params = request.params as { ticketCode: string };
+       const body = (request.body || {}) as { reason?: string };
+
+       const result = await OrdersRepository.cancelTicket(
+         decodeURIComponent(params.ticketCode),
+         body.reason || 'Geannuleerd door beheerder'
+       );
+
+       if (!result.success) {
+         return reply.status(400).send({ success: false, error: result.error });
+       }
+
+       return reply.send({
+         success: true,
+         message: 'Ticket succesvol geannuleerd.',
+         ticket: result.ticket,
+       });
+     } catch (err: any) {
+       return reply.status(500).send({ success: false, error: err.message });
+     }
+   });
  }

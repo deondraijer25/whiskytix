@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import { checkDbConnection } from './db/index.js';
 import { generateTicketPdf } from './modules/tickets/pdf.service.js';
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
+import { startStockCleanupWorker } from './modules/orders/stock-cleanup.worker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -185,6 +186,9 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   // 5. Checkout & Payment Routes
   await registerCheckoutRoutes(server);
+
+  // Start background 15-minute stock hold cleanup
+  startStockCleanupWorker();
 
   // 6. Statische bestanden serveren indien client build aanwezig is
   const possibleDistPaths = [

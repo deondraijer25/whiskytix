@@ -60,6 +60,11 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
       icon: Ticket,
     },
     {
+      label: 'Ticket & QR Monitor',
+      path: `/admin/festival/${cityId}/tickets`,
+      icon: QrCode,
+    },
+    {
       label: 'Deurscanner',
       path: `/scan?festival=${cityId}`,
       icon: QrCode,

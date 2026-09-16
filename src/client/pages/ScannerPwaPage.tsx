@@ -126,7 +126,7 @@ export const ScannerPwaPage: React.FC = () => {
   };
 
   // Process a Scanned Ticket
-  const handleTicketScanned = (decodedRaw: string) => {
+  const handleTicketScanned = async (decodedRaw: string) => {
     if (isLockedRef.current) return;
     isLockedRef.current = true;
 
@@ -159,53 +159,82 @@ export const ScannerPwaPage: React.FC = () => {
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    // Duplicate Check
-    if (checkedInCodesRef.current.has(ticketCode)) {
+    // Live Server Verification Call (Multi-door synchronization)
+    try {
+      const res = await fetch('/api/scanner/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qrPayload: decodedRaw, code: ticketCode }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.valid) {
+        checkedInCodesRef.current.add(ticketCode);
+        setScanCount((prev) => prev + 1);
+
+        const record: ScanRecord = {
+          id: `scan-${Date.now()}`,
+          ticketCode,
+          attendeeName: data.attendeeName || attendeeName,
+          sessionTitle: data.sessionTitle || sessionTitle,
+          scannedAt: timeStr,
+          status: 'valid',
+          detail: data.message || 'Entree Verleend • Welkomstglas inbegrepen',
+          gate: 'Hoofdingang • Deur 1',
+        };
+        displayScanResult(record);
+        return;
+      }
+
+      // If server reports error (Duplicate, Swapped, Cancelled)
+      const errMsg = data.error || 'Ticket niet geldig.';
+      const isDuplicate = errMsg.includes('AL GESCAND');
+      const isSwapped = errMsg.includes('OMGERUILD') || errMsg.includes('VERVALLEN');
+
       const record: ScanRecord = {
         id: `scan-${Date.now()}`,
         ticketCode,
         attendeeName: attendeeName || 'Bezoeker',
         sessionTitle,
         scannedAt: timeStr,
-        status: 'duplicate',
-        detail: 'Dit ticket is al eerder ingecheckt bij Deur 1 (Scanner #3).',
+        status: isSwapped ? 'duplicate' : isDuplicate ? 'duplicate' : 'wrong_session',
+        detail: errMsg,
         gate: 'Hoofdingang • Deur 1',
       };
       displayScanResult(record);
       return;
-    }
+    } catch (networkErr) {
+      // Offline fallback: Check local set
+      if (checkedInCodesRef.current.has(ticketCode)) {
+        const record: ScanRecord = {
+          id: `scan-${Date.now()}`,
+          ticketCode,
+          attendeeName: attendeeName || 'Bezoeker',
+          sessionTitle,
+          scannedAt: timeStr,
+          status: 'duplicate',
+          detail: 'LOKAAL AL GESCAND! Dit ticket is eerder ingevoerd.',
+          gate: 'Hoofdingang • Deur 1',
+        };
+        displayScanResult(record);
+        return;
+      }
 
-    // Wrong Session Check
-    if (decodedRaw.toLowerCase().includes('zaterdag') || decodedRaw.toLowerCase().includes('sat')) {
+      checkedInCodesRef.current.add(ticketCode);
+      setScanCount((prev) => prev + 1);
       const record: ScanRecord = {
         id: `scan-${Date.now()}`,
         ticketCode,
-        attendeeName: attendeeName || 'Bezoeker',
-        sessionTitle: 'Zaterdagmiddag Sessie',
+        attendeeName,
+        sessionTitle,
         scannedAt: timeStr,
-        status: 'wrong_session',
-        detail: 'Geldig voor ZATERDAG, niet voor huidige Vrijdagsessie.',
+        status: 'valid',
+        detail: 'Entree Verleend (Offline Gevalideerd)',
         gate: 'Hoofdingang • Deur 1',
       };
       displayScanResult(record);
-      return;
     }
-
-    // Valid check-in
-    checkedInCodesRef.current.add(ticketCode);
-    setScanCount((prev) => prev + 1);
-
-    const record: ScanRecord = {
-      id: `scan-${Date.now()}`,
-      ticketCode,
-      attendeeName: attendeeName || 'Deon Draijer',
-      sessionTitle,
-      scannedAt: timeStr,
-      status: 'valid',
-      detail: 'Entree Verleend • Welkomstglas inbegrepen',
-      gate: 'Hoofdingang • Deur 1',
-    };
-    displayScanResult(record);
   };
 
   const displayScanResult = (record: ScanRecord) => {

@@ -22,6 +22,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
   const navItems = [
     { label: '3-Steden Cockpit', path: '/admin', icon: LayoutDashboard },
+    { label: 'Ticket & QR Monitor', path: '/admin/tickets', icon: QrCode },
     { label: 'Hub Den Haag', path: '/admin/festival/denhaag', icon: Building2 },
     { label: 'Hub Amsterdam', path: '/admin/festival/amsterdam', icon: Building2 },
     { label: 'Hub Gent', path: '/admin/festival/gent', icon: Building2 },

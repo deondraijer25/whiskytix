@@ -5,6 +5,7 @@ import { db, checkDbConnection } from '../../db/index.js';
 import * as schema from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { buildQrPayload, generateTicketSignature } from '../tickets/qr.service.js';
+import { GhlSyncService } from '../ghl/ghl.sync.service.js';
 
 export interface StoredOrderItem {
   id: string;
@@ -27,13 +28,16 @@ export interface StoredIssuedTicket {
   qrPayload: string;
   qrPayloadHash: string;
   attendeeName: string;
-  status: 'valid' | 'checked_in' | 'cancelled';
+  status: 'valid' | 'checked_in' | 'cancelled' | 'swapped';
   sessionTitle: string;
   cityName: string;
   dateStr: string;
   timeStr: string;
   pdfUrl: string;
   checkedInAt?: string | null;
+  swappedToTicketId?: string;
+  swapReason?: string;
+  swappedAt?: string;
   createdAt: string;
 }
 
@@ -78,7 +82,8 @@ function ensureDataFile() {
 function loadLocalStore() {
   try {
     ensureDataFile();
-    const raw = fs.readFileSync(STORE_FILE, 'utf8');
+    let raw = fs.readFileSync(STORE_FILE, 'utf8');
+    raw = raw.replace(/^\uFEFF/, '').trim();
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed.orders)) {
       parsed.orders.forEach((o: StoredOrder) => {
@@ -341,6 +346,11 @@ export class OrdersRepository {
     memoryOrders.set(order.id, order);
     saveLocalStore();
 
+    // Trigger realtime sync to GoHighLevel in background
+    GhlSyncService.syncPaidOrder(order).catch((err) => {
+      console.warn('[GHL Sync] Fout bij achtergrond sync van order:', err.message);
+    });
+
     return order;
   }
 
@@ -356,6 +366,193 @@ export class OrdersRepository {
       }
     }
     return null;
+  }
+
+  /**
+   * Inruilen / Wijzigen van een ticket (Ticket Swap Engine)
+   * 1. Merkt oud ticket als 'swapped' met reden
+   * 2. Genereert nieuw ticket met frisse cryptografische HMAC QR-code
+   * 3. Schiet update door naar GoHighLevel
+   */
+  static async swapTicket(params: {
+    ticketCode: string;
+    newSessionTitle: string;
+    newDateStr?: string;
+    newTimeStr?: string;
+    adminEmail: string;
+    reason: string;
+    priceDiffCents?: number;
+    publicBaseUrl?: string;
+  }): Promise<{
+    success: boolean;
+    error?: string;
+    oldTicket?: StoredIssuedTicket;
+    newTicket?: StoredIssuedTicket;
+    order?: StoredOrder;
+  }> {
+    const match = await this.findTicket(params.ticketCode);
+    if (!match) {
+      return { success: false, error: 'Oorspronkelijk ticket niet gevonden.' };
+    }
+
+    const { order, ticket: oldTicket } = match;
+
+    if (oldTicket.status === 'checked_in') {
+      return { success: false, error: 'Dit ticket is al ingecheckt bij de deur en kan niet meer omgeruild worden.' };
+    }
+
+    if (oldTicket.status === 'swapped') {
+      return { success: false, error: 'Dit ticket is al eerder omgeruild naar een andere sessie.' };
+    }
+
+    if (oldTicket.status === 'cancelled') {
+      return { success: false, error: 'Dit ticket is geannuleerd en kan niet worden omgeruild.' };
+    }
+
+    // 1. Mark old ticket swapped
+    const nowIso = new Date().toISOString();
+    const oldSession = oldTicket.sessionTitle;
+    oldTicket.status = 'swapped';
+    oldTicket.swapReason = `Omgeruild naar "${params.newSessionTitle}" door ${params.adminEmail}: ${params.reason}`;
+    oldTicket.swappedAt = nowIso;
+
+    // 2. Generate new ticket code (e.g. #WF-2026-84387-1-R1)
+    const baseCode = oldTicket.ticketCode.split('-R')[0];
+    const swapVersion = (order.tickets.filter((t) => t.ticketCode.startsWith(baseCode)).length);
+    const newTicketCode = `${baseCode}-R${swapVersion}`;
+
+    const newTicketId = crypto.randomUUID();
+    oldTicket.swappedToTicketId = newTicketId;
+
+    const qrPayload = buildQrPayload({
+      ticketCode: newTicketCode,
+      cityName: oldTicket.cityName,
+      sessionTitle: params.newSessionTitle,
+      attendeeName: oldTicket.attendeeName,
+    });
+
+    const signature = generateTicketSignature(newTicketCode, oldTicket.cityName, params.newSessionTitle, oldTicket.attendeeName);
+    const cleanCode = newTicketCode.replace('#', '');
+    const cleanOrderNumber = order.orderNumber.replace('#', '');
+    const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${oldTicket.cityName}&orderNumber=${cleanOrderNumber}&name=${encodeURIComponent(oldTicket.attendeeName)}&title=${encodeURIComponent(params.newSessionTitle)}`;
+
+    const newTicket: StoredIssuedTicket = {
+      id: newTicketId,
+      orderId: order.id,
+      ticketCode: newTicketCode,
+      qrPayload,
+      qrPayloadHash: signature,
+      attendeeName: oldTicket.attendeeName,
+      status: 'valid',
+      sessionTitle: params.newSessionTitle,
+      cityName: oldTicket.cityName,
+      dateStr: params.newDateStr || oldTicket.dateStr,
+      timeStr: params.newTimeStr || oldTicket.timeStr,
+      pdfUrl,
+      createdAt: nowIso,
+    };
+
+    order.tickets.push(newTicket);
+
+    // Save state
+    memoryOrders.set(order.orderNumber, order);
+    memoryOrders.set(order.id, order);
+    saveLocalStore();
+
+    // 3. Save swap audit trail in DB if available
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        await db.update(schema.issuedTickets)
+          .set({
+            status: 'swapped',
+            swappedToTicketId: newTicketId,
+            swapReason: oldTicket.swapReason,
+            swappedAt: new Date(nowIso),
+          })
+          .where(eq(schema.issuedTickets.ticketCode, oldTicket.ticketCode));
+
+        await db.insert(schema.issuedTickets).values({
+          id: newTicket.id,
+          orderItemId: order.items[0]?.id || oldTicket.id,
+          orderId: order.id,
+          ticketCode: newTicket.ticketCode,
+          qrPayloadHash: newTicket.qrPayloadHash,
+          attendeeName: newTicket.attendeeName,
+          status: newTicket.status,
+          pdfUrl: newTicket.pdfUrl,
+          createdAt: new Date(nowIso),
+        });
+
+        await db.insert(schema.ticketSwaps).values({
+          id: crypto.randomUUID(),
+          orderId: order.id,
+          originalTicketCode: oldTicket.ticketCode,
+          newTicketCode: newTicket.ticketCode,
+          oldSessionTitle: oldSession,
+          newSessionTitle: params.newSessionTitle,
+          adminEmail: params.adminEmail,
+          reason: params.reason,
+          priceDiffCents: params.priceDiffCents || 0,
+        });
+      }
+    } catch (e: any) {
+      console.warn('Could not save swap audit to DB:', e.message);
+    }
+
+    // 4. Sync tag update to GoHighLevel in background
+    const baseUrl = params.publicBaseUrl || 'https://tickets.whiskyfestival.nl';
+    GhlSyncService.syncTicketSwap({
+      customerEmail: order.customerEmail,
+      orderNumber: order.orderNumber,
+      oldSessionTitle: oldSession,
+      newSessionTitle: params.newSessionTitle,
+      newDownloadUrl: `${baseUrl}${pdfUrl}`,
+    }).catch((err) => {
+      console.warn('GHL ticket swap sync error:', err.message);
+    });
+
+    return {
+      success: true,
+      oldTicket,
+      newTicket,
+      order,
+    };
+  }
+
+  /**
+   * Annuleren van een individueel ticket
+   */
+  static async cancelTicket(ticketCode: string, reason = 'Geannuleerd door beheerder'): Promise<{
+    success: boolean;
+    error?: string;
+    ticket?: StoredIssuedTicket;
+  }> {
+    const match = await this.findTicket(ticketCode);
+    if (!match) {
+      return { success: false, error: 'Ticket niet gevonden.' };
+    }
+
+    const { order, ticket } = match;
+    ticket.status = 'cancelled';
+    ticket.swapReason = reason;
+
+    memoryOrders.set(order.orderNumber, order);
+    memoryOrders.set(order.id, order);
+    saveLocalStore();
+
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        await db.update(schema.issuedTickets)
+          .set({ status: 'cancelled', swapReason: reason })
+          .where(eq(schema.issuedTickets.ticketCode, ticket.ticketCode));
+      }
+    } catch (e: any) {
+      console.warn('Could not update cancelled ticket in DB:', e.message);
+    }
+
+    return { success: true, ticket };
   }
 
   /**
@@ -381,8 +578,16 @@ export class OrdersRepository {
       };
     }
 
+    if (ticket.status === 'swapped') {
+      return {
+        success: false,
+        ticket,
+        error: `TICKET VERVALLEN! Dit ticket is omgeruild (${ticket.swapReason || 'Niet meer geldig'}).`,
+      };
+    }
+
     if (ticket.status === 'cancelled') {
-      return { success: false, ticket, error: 'TICKET GEANNULEERD!' };
+      return { success: false, ticket, error: 'TICKET GEANNULEERD! Dit ticket is ongeldig gemaakt.' };
     }
 
     ticket.status = 'checked_in';
@@ -397,5 +602,41 @@ export class OrdersRepository {
    */
   static listOrders(): StoredOrder[] {
     return Array.from(new Map(Array.from(memoryOrders.values()).map((o) => [o.orderNumber, o])).values());
+  }
+
+  /**
+   * List all issued tickets flattened across all orders (for Ticket & QR Monitor page)
+   */
+  static listAllTickets(): Array<StoredIssuedTicket & {
+    orderNumber: string;
+    customerName: string;
+    customerEmail: string;
+    customerPhone?: string;
+    festivalId: string;
+  }> {
+    const allOrders = this.listOrders();
+    const result: Array<StoredIssuedTicket & {
+      orderNumber: string;
+      customerName: string;
+      customerEmail: string;
+      customerPhone?: string;
+      festivalId: string;
+    }> = [];
+
+    for (const o of allOrders) {
+      for (const t of o.tickets) {
+        result.push({
+          ...t,
+          orderNumber: o.orderNumber,
+          customerName: o.customerName,
+          customerEmail: o.customerEmail,
+          customerPhone: o.customerPhone,
+          festivalId: o.festivalId,
+        });
+      }
+    }
+
+    // Sort newest first
+    return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 }

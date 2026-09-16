@@ -1,8 +1,8 @@
-﻿import { pgTable, text, timestamp, integer, boolean, uuid, index, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, integer, boolean, uuid, index, pgEnum } from 'drizzle-orm/pg-core';
 
 export const festivalIdEnum = pgEnum('festival_id', ['denhaag', 'gent', 'amsterdam']);
 export const orderStatusEnum = pgEnum('order_status', ['pending', 'paid', 'expired', 'failed', 'refunded']);
-export const ticketStatusEnum = pgEnum('ticket_status', ['valid', 'checked_in', 'cancelled']);
+export const ticketStatusEnum = pgEnum('ticket_status', ['valid', 'checked_in', 'cancelled', 'swapped']);
 export const discountTypeEnum = pgEnum('discount_type', ['percentage', 'fixed_amount']);
 export const userRoleEnum = pgEnum('user_role', ['admin', 'organizer', 'scanner']);
 
@@ -112,13 +112,32 @@ export const issuedTickets = pgTable('issued_tickets', {
   status: ticketStatusEnum('status').default('valid').notNull(),
   checkedInAt: timestamp('checked_in_at'),
   pdfUrl: text('pdf_url'),
+  swappedToTicketId: text('swapped_to_ticket_id'),
+  swapReason: text('swap_reason'),
+  swappedAt: timestamp('swapped_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({
   qrHashIdx: index('ticket_qr_hash_idx').on(table.qrPayloadHash),
   orderIdx: index('ticket_order_idx').on(table.orderId),
 }));
 
-// 8. Scan Logs & Audit Trail
+// 8. Ticket Inruil & Wijzigings Audit Log (Swaps & Exchanges)
+export const ticketSwaps = pgTable('ticket_swaps', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  orderId: uuid('order_id').references(() => orders.id).notNull(),
+  originalTicketCode: text('original_ticket_code').notNull(),
+  newTicketCode: text('new_ticket_code').notNull(),
+  oldSessionTitle: text('old_session_title').notNull(),
+  newSessionTitle: text('new_session_title').notNull(),
+  oldTicketTypeId: text('old_ticket_type_id'),
+  newTicketTypeId: text('new_ticket_type_id'),
+  adminEmail: text('admin_email').notNull(),
+  reason: text('reason'),
+  priceDiffCents: integer('price_diff_cents').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// 9. Scan Logs & Audit Trail
 export const scanLogs = pgTable('scan_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
   ticketId: uuid('ticket_id').references(() => issuedTickets.id).notNull(),
@@ -130,7 +149,7 @@ export const scanLogs = pgTable('scan_logs', {
   syncedAt: timestamp('synced_at').defaultNow().notNull(),
 });
 
-// 9. Systeemgebruikers (Admins & Scanners)
+// 10. Systeemgebruikers (Admins & Scanners)
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').unique().notNull(),

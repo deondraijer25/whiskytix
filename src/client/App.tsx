@@ -6,6 +6,7 @@ import { OrdersPage } from './pages/OrdersPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { CouponsPage } from './pages/CouponsPage';
 import { DoorMonitorPage } from './pages/DoorMonitorPage';
+import { TicketsMonitorPage } from './pages/TicketsMonitorPage';
 import { ScannerPwaPage } from './pages/ScannerPwaPage';
 import { ScanHistoryPage } from './pages/ScanHistoryPage';
 import { TicketViewPage } from './pages/TicketViewPage';
@@ -27,6 +28,14 @@ export const App: React.FC = () => {
         element={
           <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
             <AdminDashboardPage selectedCity={selectedCity} onCityChange={setSelectedCity} />
+          </AdminLayout>
+        }
+      />
+      <Route
+        path="/admin/tickets"
+        element={
+          <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
+            <TicketsMonitorPage />
           </AdminLayout>
         }
       />
@@ -77,6 +86,14 @@ export const App: React.FC = () => {
         element={
           <FestivalLayout>
             <CouponsPage />
+          </FestivalLayout>
+        }
+      />
+      <Route
+        path="/admin/festival/:cityId/tickets"
+        element={
+          <FestivalLayout>
+            <TicketsMonitorPage />
           </FestivalLayout>
         }
       />
