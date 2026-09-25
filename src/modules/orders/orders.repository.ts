@@ -327,6 +327,25 @@ export class OrdersRepository {
           const cleanCode = ticketCode.replace('#', '');
           const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${cityName}&orderNumber=${cleanOrderNumber}&name=${encodeURIComponent(attendeeName)}&title=${encodeURIComponent(sessionTitle)}`;
 
+          // Infer exact festival date and time if generic or unspecified
+          let inferredDate = item.date;
+          let inferredTime = item.timeslot || item.time;
+          const sLower = sessionTitle.toLowerCase();
+
+          if (!inferredDate || inferredDate === 'Festivaldag') {
+            if (cityName === 'gent') {
+              inferredDate = sLower.includes('zaterdag') ? 'Zaterdag 3 oktober 2026' : sLower.includes('zondag') ? 'Zondag 4 oktober 2026' : 'Vrijdag 2 oktober 2026';
+            } else if (cityName === 'amsterdam') {
+              inferredDate = 'Zaterdag 16 januari 2027';
+            } else {
+              inferredDate = sLower.includes('zaterdag') ? 'Zaterdag 14 november 2026' : sLower.includes('zondag') ? 'Zondag 15 november 2026' : 'Vrijdag 13 november 2026';
+            }
+          }
+
+          if (!inferredTime || inferredTime === 'Regulier') {
+            inferredTime = sLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
+          }
+
           const ticket: StoredIssuedTicket = {
             id: crypto.randomUUID(),
             orderId: order.id,
@@ -337,8 +356,8 @@ export class OrdersRepository {
             status: 'valid',
             sessionTitle,
             cityName,
-            dateStr: item.date || 'Festivaldag',
-            timeStr: item.timeslot || item.time || 'Regulier',
+            dateStr: inferredDate,
+            timeStr: inferredTime,
             pdfUrl,
             createdAt: new Date().toISOString(),
           };
@@ -385,12 +404,67 @@ export class OrdersRepository {
    */
   static async findTicket(ticketCode: string): Promise<{ order: StoredOrder; ticket: StoredIssuedTicket } | null> {
     const normalized = ticketCode.startsWith('#') ? ticketCode : `#${ticketCode}`;
+    const clean = ticketCode.replace(/^#/, '');
+
+    // 1. Search in memory cache
     for (const order of memoryOrders.values()) {
-      const ticket = order.tickets.find((t) => t.ticketCode === normalized || t.ticketCode === ticketCode);
+      const ticket = order.tickets.find((t) => t.ticketCode === normalized || t.ticketCode === clean || t.ticketCode.replace(/^#/, '') === clean);
       if (ticket) {
         return { order, ticket };
       }
     }
+
+    // 2. Try parsing order number from ticket code (e.g. WF-2026-84387-1 -> #WF-2026-84387)
+    const orderNumberPart = clean.replace(/-\d+$/, '');
+    const matchedOrder = await this.findOrder(orderNumberPart);
+    if (matchedOrder) {
+      if (matchedOrder.tickets.length === 0 && matchedOrder.status === 'paid') {
+        await this.markOrderPaid(matchedOrder.orderNumber);
+      }
+      let ticket = matchedOrder.tickets.find((t) => t.ticketCode === normalized || t.ticketCode === clean || t.ticketCode.replace(/^#/, '') === clean);
+      if (!ticket && matchedOrder.tickets.length > 0) {
+        ticket = matchedOrder.tickets[0];
+      }
+      if (ticket) {
+        return { order: matchedOrder, ticket };
+      }
+    }
+
+    // 3. Fallback to database check
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        const rows = await db
+          .select()
+          .from(schema.issuedTickets)
+          .where(eq(schema.issuedTickets.ticketCode, normalized));
+        if (rows.length > 0) {
+          const tRow = rows[0];
+          const dbOrder = await this.findOrder(tRow.orderId);
+          if (dbOrder) {
+            const ticket: StoredIssuedTicket = {
+              id: tRow.id,
+              orderId: tRow.orderId,
+              ticketCode: tRow.ticketCode,
+              qrPayload: '',
+              qrPayloadHash: tRow.qrPayloadHash,
+              attendeeName: tRow.attendeeName,
+              status: tRow.status as any,
+              sessionTitle: '',
+              cityName: dbOrder.festivalId,
+              dateStr: '',
+              timeStr: '',
+              pdfUrl: tRow.pdfUrl || `/api/tickets/${tRow.ticketCode.replace('#', '')}/pdf?city=${dbOrder.festivalId}`,
+              createdAt: tRow.createdAt.toISOString(),
+            };
+            return { order: dbOrder, ticket };
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
     return null;
   }
 

@@ -12,6 +12,7 @@ import { generateTicketPdf } from './modules/tickets/pdf.service.js';
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
 import { startStockCleanupWorker } from './modules/orders/stock-cleanup.worker.js';
 import { UsersRepository } from './modules/auth/users.repository.js';
+import { OrdersRepository } from './modules/orders/orders.repository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -203,38 +204,61 @@ export async function buildServer(): Promise<FastifyInstance> {
     const cleanCode = params.ticketCode ? decodeURIComponent(params.ticketCode) : 'WF-2026-84387-1';
     const formattedCode = cleanCode.startsWith('#') ? cleanCode : `#${cleanCode}`;
 
-    const sessionTitle = query.title ||
+    // Lookup existing ticket / order in repository if available
+    const matched = await OrdersRepository.findTicket(cleanCode);
+    const order = matched?.order;
+    const ticket = matched?.ticket;
+
+    const resolvedCity = (query.city || ticket?.cityName || order?.festivalId || 'denhaag').toLowerCase();
+    const resolvedOrderNumber = (query.orderNumber || order?.orderNumber || 'WF1861').replace(/^#+/, '');
+    const resolvedAttendeeName = query.name || ticket?.attendeeName || order?.customerName || 'Deon Draijer';
+
+    const rawSessionTitle = query.title || ticket?.sessionTitle || (order?.items && order.items[0]?.title) ||
       (query.session === 'masterclass'
         ? 'ZONDAGMIDDAG + MASTERCLASS'
         : query.session === 'zaterdag_middag'
         ? 'ZATERDAGMIDDAG SESSIE'
         : 'VIP SESSIE — VRIJDAG');
 
-    const titleLower = sessionTitle.toLowerCase();
-    const cleanSessionTitle = sessionTitle.replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*-\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '').trim();
+    const titleLower = rawSessionTitle.toLowerCase();
+    const cleanSessionTitle = rawSessionTitle.replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*-\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '').trim();
 
-    const timeStr = query.time ||
+    const timeStr = query.time || ticket?.timeStr || (order?.items && (order.items[0]?.timeslot || order.items[0]?.time)) ||
       (titleLower.includes('avond') || (query.session && query.session.includes('avond'))
         ? '19:00 - 23:00 UUR'
         : (query.session === 'vip_vrijdag'
         ? '13:00 - 17:00 UUR'
         : '13:00 - 17:00 UUR'));
 
+    const dateStr = query.date || ticket?.dateStr || (order?.items && order.items[0]?.date) || (
+      resolvedCity.includes('gent')
+        ? (titleLower.includes('zaterdag') ? 'Zaterdag 3 oktober 2026' : titleLower.includes('zondag') ? 'Zondag 4 oktober 2026' : 'Vrijdag 2 oktober 2026')
+        : resolvedCity.includes('amsterdam')
+        ? 'Zaterdag 16 januari 2027'
+        : (query.session === 'zaterdag_middag' || titleLower.includes('zaterdag') ? 'Zaterdag 14 november 2026' : titleLower.includes('zondag') ? 'Zondag 15 november 2026' : 'Vrijdag 13 november 2026')
+    );
+
+    // Calculate itemNumber if multiple tickets in order
+    let itemNumber = query.itemNumber;
+    if (!itemNumber && order && order.tickets.length > 0) {
+      const idx = order.tickets.findIndex((t) => t.ticketCode === formattedCode || t.ticketCode.replace(/^#/, '') === cleanCode.replace(/^#/, ''));
+      if (idx !== -1) {
+        itemNumber = `${idx + 1}/${order.tickets.length}`;
+      } else {
+        itemNumber = `1/${order.tickets.length}`;
+      }
+    }
+    if (!itemNumber) itemNumber = '1/1';
+
     const pdfBytes = await generateTicketPdf({
       ticketCode: formattedCode,
-      orderNumber: query.orderNumber || 'WF1861',
-      attendeeName: query.name || 'Deon Draijer',
-      cityName: query.city || 'denhaag',
+      orderNumber: resolvedOrderNumber,
+      attendeeName: resolvedAttendeeName,
+      cityName: resolvedCity,
       sessionTitle: cleanSessionTitle,
-      dateStr: query.date || (
-        (query.city || '').toLowerCase().includes('gent')
-          ? (titleLower.includes('zaterdag') ? 'Zaterdag 3 oktober 2026' : titleLower.includes('zondag') ? 'Zondag 4 oktober 2026' : 'Vrijdag 2 oktober 2026')
-          : (query.city || '').toLowerCase().includes('amsterdam')
-          ? 'Zaterdag 16 januari 2027'
-          : (query.session === 'zaterdag_middag' || titleLower.includes('zaterdag') ? 'Zaterdag 14 november 2026' : titleLower.includes('zondag') ? 'Zondag 15 november 2026' : 'Vrijdag 13 november 2026')
-      ),
+      dateStr,
       timeStr,
-      itemNumber: query.itemNumber || '1/1',
+      itemNumber,
     });
 
     reply.header('Content-Type', 'application/pdf');

@@ -442,7 +442,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     }
 
     const totalEur = (order.totalCents / 100).toFixed(2).replace('.', ',');
-    const cityLabel = order.festivalId === 'gent' ? 'Gents Whisky Festival' : order.festivalId === 'amsterdam' ? 'Amsterdam Whisky Festival' : 'International Whisky Festival Den Haag';
+    const isGent = order.festivalId === 'gent';
+    const isAmsterdam = order.festivalId === 'amsterdam';
+    const cityLabel = isGent ? 'Gents Whisky Festival' : isAmsterdam ? 'Amsterdam Whisky Festival' : 'International Whisky Festival Den Haag';
+    const cityBadgeBg = isGent ? '#DCE7F6' : isAmsterdam ? '#FEE2E2' : '#E6F4EA';
+    const cityBadgeText = isGent ? '#1E3A8A' : isAmsterdam ? '#8C0223' : '#006448';
+    const cityBadgeBorder = isGent ? '#93C5FD' : isAmsterdam ? '#FCA5A5' : '#A8DAB5';
 
     const ticketsHtml = order.tickets.map((t, idx) => {
       const cleanCode = t.ticketCode.replace('#', '');
@@ -453,7 +458,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           <div class="ticket-left">
             <div class="ticket-code">${t.ticketCode}</div>
             <div class="ticket-name">${t.sessionTitle}</div>
-            <div class="ticket-meta">Kaarthouder: <strong>${t.attendeeName}</strong> &bull; Status: <span class="status-pill">${t.status.toUpperCase()}</span></div>
+            <div class="ticket-meta">Kaarthouder: <strong>${t.attendeeName}</strong> &bull; Datum: <strong>${t.dateStr || 'Festivaldag'}</strong> &bull; <span class="status-pill">${t.status.toUpperCase()}</span></div>
           </div>
           <div class="ticket-right">
             <a href="${downloadPdfUrl}" target="_blank" class="btn-download-pdf">
@@ -475,25 +480,27 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
-    body { background: #FAF7F2; color: #1D1C1A; padding: 2rem 1rem; min-height: 100vh; }
+    body { background: #FAF7F2; color: #1D1C1A; padding: 2.5rem 1rem; min-height: 100vh; background-image: radial-gradient(#d5cdc2 1px, transparent 1px); background-size: 20px 20px; }
     .container { max-width: 680px; margin: 0 auto; }
-    .card { background: #FFFFFF; border: 2px solid #1D1C1A; border-radius: 12px; box-shadow: 6px 6px 0px #1D1C1A; padding: 2.25rem; margin-bottom: 2rem; }
-    .success-badge { display: inline-flex; align-items: center; gap: 0.4rem; background: #E6F4EA; color: #006448; border: 1.5px solid #A8DAB5; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; padding: 0.35rem 0.75rem; border-radius: 20px; letter-spacing: 0.05em; margin-bottom: 1rem; }
+    .card { background: #FCFAF7; border: 2px solid #1D1C1A; border-radius: 12px; box-shadow: 6px 6px 0px #1D1C1A; padding: 2.25rem; margin-bottom: 2rem; }
+    .badge-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .success-badge { display: inline-flex; align-items: center; gap: 0.4rem; background: #E6F4EA; color: #006448; border: 1.5px solid #A8DAB5; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; padding: 0.35rem 0.75rem; border-radius: 20px; letter-spacing: 0.05em; }
+    .city-badge { display: inline-flex; align-items: center; gap: 0.4rem; background: ${cityBadgeBg}; color: ${cityBadgeText}; border: 1.5px solid ${cityBadgeBorder}; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; padding: 0.35rem 0.75rem; border-radius: 20px; letter-spacing: 0.05em; }
     h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.5rem; color: #1D1C1A; }
     .subtitle { font-size: 0.95rem; color: #4C5752; line-height: 1.5; margin-bottom: 1.75rem; }
-    .order-meta-box { background: #FAF7F2; border: 1.5px solid #E2D9CC; border-radius: 8px; padding: 1.25rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem; }
+    .order-meta-box { background: #FAF7F2; border: 2px solid #1D1C1A; border-radius: 8px; box-shadow: 2px 2px 0px rgba(29,28,26,0.15); padding: 1.25rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem; }
     .meta-item-label { font-size: 0.72rem; font-weight: 700; color: #7A7268; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.2rem; }
     .meta-item-val { font-size: 1rem; font-weight: 800; color: #1D1C1A; }
     .section-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; }
     .ticket-row { background: #FFFFFF; border: 2px solid #1D1C1A; border-radius: 8px; box-shadow: 3px 3px 0px #1D1C1A; padding: 1.15rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
     .ticket-left { flex: 1; min-width: 220px; }
-    .ticket-code { font-family: monospace; font-size: 0.85rem; font-weight: 800; color: #1E3A8A; margin-bottom: 0.2rem; }
+    .ticket-code { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.85rem; font-weight: 800; color: ${cityBadgeText}; margin-bottom: 0.2rem; letter-spacing: 0.02em; }
     .ticket-name { font-size: 1.05rem; font-weight: 800; color: #1D1C1A; margin-bottom: 0.25rem; }
     .ticket-meta { font-size: 0.8rem; color: #4C5752; }
-    .status-pill { background: #EBF3FB; color: #1E3A8A; font-weight: 800; padding: 0.15rem 0.45rem; border-radius: 4px; font-size: 0.72rem; }
-    .btn-download-pdf { background: #CAAC8E; color: #1D1C1A; border: 2px solid #1D1C1A; padding: 0.75rem 1.15rem; border-radius: 6px; font-size: 0.85rem; font-weight: 800; text-decoration: none; box-shadow: 2px 2px 0px #1D1C1A; transition: all 0.1s; display: inline-flex; align-items: center; gap: 0.35rem; }
-    .btn-download-pdf:hover { background: #B99979; }
-    .btn-download-pdf:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0px #1D1C1A; }
+    .status-pill { background: ${cityBadgeBg}; color: ${cityBadgeText}; font-weight: 800; padding: 0.15rem 0.45rem; border-radius: 4px; font-size: 0.72rem; border: 1px solid ${cityBadgeBorder}; }
+    .btn-download-pdf { background: #CAAC8E; color: #1D1C1A; border: 2px solid #1D1C1A; padding: 0.75rem 1.15rem; border-radius: 6px; font-size: 0.85rem; font-weight: 800; text-decoration: none; box-shadow: 3px 3px 0px #1D1C1A; transition: all 0.1s; display: inline-flex; align-items: center; gap: 0.35rem; }
+    .btn-download-pdf:hover { background: #BF9F7E; transform: translate(-1px, -1px); box-shadow: 4px 4px 0px #1D1C1A; }
+    .btn-download-pdf:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0px #1D1C1A; }
     .actions-bar { display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
     .btn-scanner { background: #1D1C1A; color: #FFFFFF; border: 2px solid #1D1C1A; padding: 0.85rem 1.5rem; border-radius: 8px; font-size: 0.88rem; font-weight: 800; text-decoration: none; box-shadow: 3px 3px 0px rgba(0,0,0,0.3); }
     .btn-scanner:hover { background: #333; }
@@ -502,7 +509,10 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 <body>
   <div class="container">
     <div class="card">
-      <div class="success-badge">&check; Betaling Geslaagd &bull; Officieel Uitgegeven</div>
+      <div class="badge-bar">
+        <div class="success-badge">&check; Betaling Geslaagd</div>
+        <div class="city-badge">${cityLabel}</div>
+      </div>
       <h1>Bedankt voor je bestelling, ${order.customerName}!</h1>
       <p class="subtitle">
         Je tickets voor het <strong>${cityLabel}</strong> zijn direct aangemaakt en beveiligd met een cryptografische HMAC-SHA256 QR-code.
@@ -537,7 +547,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       </div>
 
       <div class="actions-bar">
-        <a href="/scanner" class="btn-scanner">
+        <a href="/scan" class="btn-scanner">
           📱 Test Ticket in Whiskytix Scanner &rarr;
         </a>
       </div>
@@ -548,6 +558,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
     reply.type('text/html');
     return reply.send(html);
+  });
+
+  // Direct order lookup alias: /order/:orderNumber -> /order/confirmation?orderNumber=:orderNumber
+  server.get('/order/:orderNumber', async (request, reply) => {
+    const params = request.params as { orderNumber: string };
+    return reply.redirect(`/order/confirmation?orderNumber=${encodeURIComponent(params.orderNumber)}`);
   });
 
   /**
