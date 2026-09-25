@@ -32,7 +32,7 @@ export class GhlSyncService {
    * 3. Custom Fields vullen met downloadlinks en ordernummer
    * 4. GHL Custom Objects ticket-telling bijwerken
    */
-  static async syncPaidOrder(order: StoredOrder, publicBaseUrl = 'https://tickets.whiskyfestival.nl'): Promise<GhlSyncResult> {
+  static async syncPaidOrder(order: StoredOrder, publicBaseUrl = process.env.PUBLIC_API_URL || 'https://whiskytix-r1qq.vercel.app'): Promise<GhlSyncResult> {
     if (!GHL_API_KEY) {
       console.info('[GHL Sync] GHL_API_KEY niet ingesteld. Sync overgeslagen (mock mode).');
       return { success: true, contactId: 'mock-ghl-contact' };
@@ -57,22 +57,31 @@ export class GhlSyncService {
           tags.push('Product: Masterclass');
         } else if (item.category === 'botteling') {
           tags.push('Product: Botteling');
+          tags.push('Product: Festivalfles');
         } else if (item.category === 'tram') {
-          tags.push('Product: Whiskytram');
+          if (order.festivalId === 'gent') {
+            tags.push('Product: Gentse Bootjes');
+          } else {
+            tags.push('Product: Whiskytram');
+          }
         }
 
         if (item.title) {
-          if (item.title.toLowerCase().includes('vip')) {
+          const tLower = item.title.toLowerCase();
+          if (tLower.includes('vip')) {
             tags.push('Product: VIP Ticket');
             tags.push('Sessie: Vrijdag VIP');
-          } else if (item.title.toLowerCase().includes('vrijdag')) {
+          } else if (tLower.includes('vrijdag')) {
             tags.push('Sessie: Vrijdag Avond');
-          } else if (item.title.toLowerCase().includes('zaterdag') && item.title.toLowerCase().includes('middag')) {
+          } else if (tLower.includes('zaterdag') && tLower.includes('middag')) {
             tags.push('Sessie: Zaterdag Middag');
-          } else if (item.title.toLowerCase().includes('zaterdag') && item.title.toLowerCase().includes('avond')) {
+          } else if (tLower.includes('zaterdag') && tLower.includes('avond')) {
             tags.push('Sessie: Zaterdag Avond');
-          } else if (item.title.toLowerCase().includes('zondag')) {
+          } else if (tLower.includes('zondag')) {
             tags.push('Sessie: Zondag Middag');
+          }
+          if (tLower.includes('boot') || tLower.includes('bootjes')) {
+            tags.push('Product: Gentse Bootjes');
           }
         }
       }
@@ -82,7 +91,7 @@ export class GhlSyncService {
       const firstName = nameParts[0] || 'Bezoeker';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // 3. Upsert Contact in GHL
+      // 3. Upsert Contact in GHL (Met exacte Custom Field IDs en Dossier Samenvatting)
       const contactPayload = {
         locationId: GHL_LOCATION_ID,
         email: order.customerEmail,
@@ -92,11 +101,15 @@ export class GhlSyncService {
         name: order.customerName,
         tags: Array.from(new Set(tags)),
         customFields: [
-          { key: 'ticket_order_number', field_value: order.orderNumber },
-          { key: 'ticket_download_url', field_value: downloadUrl },
-          { key: 'ticket_count', field_value: String(order.tickets.length || order.items.reduce((s, i) => s + i.quantity, 0)) },
-          { key: 'ticket_festival_city', field_value: cityName },
-          { key: 'ticket_total_amount_eur', field_value: (order.totalCents / 100).toFixed(2) },
+          { id: 'rWdxHMB2McLAZWo1Fxwl', key: 'contact.ticket_order_number', field_value: order.orderNumber },
+          { id: '8juF9GsuPlMFPajvm9Kk', key: 'contact.ticket_download_url', field_value: downloadUrl },
+          { id: 'wemZ8ghoJw3YPBkFoSyi', key: 'contact.ticket_festival_stad', field_value: cityName },
+          { key: 'contact.totaal_aantal_tickets', field_value: order.tickets.length || order.items.reduce((s, i) => s + i.quantity, 0) },
+          { key: 'contact.totale_omzet_eur', field_value: (order.totalCents / 100).toFixed(2) },
+          { key: 'contact.meest_recente_editie', field_value: `${cityName} 2026` },
+          { key: 'contact.laatste_besteldatum', field_value: new Date().toISOString().split('T')[0] },
+          { key: 'contact.klantstatus', field_value: 'Betaald' },
+          { key: 'contact.aankoop_dossier_samenvatting', field_value: order.items.map(i => `${i.quantity}x ${i.title}`).join(', ') },
         ],
       };
 

@@ -5,7 +5,7 @@
 
 ## 1. Executive Overview & Doelstelling
 
-**Whiskytix** is het centrale, op maat gemaakte ticketing-, betaal- en toegangscontroleplatform voor de drie Weeske Whisky Festivals:
+**Whiskytix** is het centrale, op maat gemaakte ticketing-, betaal- en toegangscontroleplatform voor de drie International Whisky Festivals:
 1. **Den Haag** (Grote Kerk — Est. 2000)
 2. **Gent** (De Oude Vismijn — Est. 2004)
 3. **Amsterdam** (Zuiderkerk — Est. 2025)

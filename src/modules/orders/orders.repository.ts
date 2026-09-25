@@ -85,6 +85,7 @@ function loadLocalStore() {
     let raw = fs.readFileSync(STORE_FILE, 'utf8');
     raw = raw.replace(/^\uFEFF/, '').trim();
     const parsed = JSON.parse(raw);
+    memoryOrders.clear();
     if (Array.isArray(parsed.orders)) {
       parsed.orders.forEach((o: StoredOrder) => {
         memoryOrders.set(o.orderNumber, o);
@@ -112,6 +113,20 @@ function saveLocalStore() {
 loadLocalStore();
 
 export class OrdersRepository {
+  /**
+   * Reload from disk into memory
+   */
+  static reloadStore() {
+    loadLocalStore();
+  }
+
+  /**
+   * Clears all stored orders
+   */
+  static clearOrders() {
+    memoryOrders.clear();
+    saveLocalStore();
+  }
   /**
    * Generates next clean Order Number like #WF-2026-84387
    */
@@ -156,6 +171,17 @@ export class OrdersRepository {
         });
 
         for (const item of fullOrder.items) {
+          // Auto-provision ticket type if dynamically generated or passed from GHL
+          await db.insert(schema.ticketTypes).values({
+            id: item.ticketTypeId,
+            festivalId: fullOrder.festivalId,
+            category: item.category || 'entree',
+            title: item.title || 'Festival Entreeticket',
+            priceCents: item.unitPriceCents,
+            totalAvailable: 5000,
+            totalSold: 0,
+          }).onConflictDoNothing();
+
           await db.insert(schema.orderItems).values({
             id: item.id,
             orderId: fullOrder.id,

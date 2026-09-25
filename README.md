@@ -1,6 +1,6 @@
-﻿# 🥃 Whiskytix — Ticketing & Door Scanning Platform
+# 🥃 Whiskytix — Ticketing & Door Scanning Platform
 
-Proprietary multi-city ticketing, payment & access control engine voor de **Weeske Whisky Festivals**:
+Proprietary multi-city ticketing, payment & access control engine voor de **International Whisky Festivals**:
 - **Den Haag** (Grote Kerk, Est. 2000)
 - **Gent** (De Oude Vismijn, Est. 2004)
 - **Amsterdam** (Zuiderkerk, Est. 2025)

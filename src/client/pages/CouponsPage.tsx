@@ -39,6 +39,15 @@ export const CouponsPage: React.FC = () => {
     setNewCode('');
   };
 
+  const filteredCoupons = coupons.filter((c) => {
+    if (!activeFestival) return true;
+    return (
+      c.city === 'Alle Festivals' ||
+      c.city.toLowerCase().includes(activeFestival.name.toLowerCase()) ||
+      c.city.toLowerCase().includes(activeFestival.id.toLowerCase())
+    );
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -46,7 +55,7 @@ export const CouponsPage: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-extrabold uppercase tracking-widest text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
-              Marketing & Society
+              {activeFestival ? `${activeFestival.name} • Marketing` : 'Centraal Voucher Beheer'}
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
@@ -66,84 +75,99 @@ export const CouponsPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Mobile Coupon Cards Stream (< md) */}
-      <div className="block md:hidden space-y-3">
-        {coupons.map((c) => (
-          <div
-            key={c.id}
-            className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 shadow-[3px_3px_0px_rgba(29,28,26,0.9)] space-y-3"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <span className="font-mono font-extrabold text-sm text-[#006448] bg-[#d8e7e2] px-2.5 py-1 rounded border border-[#8ba198]">
-                {c.code}
-              </span>
-              {c.isActive ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
-                  <CheckCircle className="w-3 h-3" /> Actief
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-300">
-                  Verlopen / Vol
-                </span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-              <div>
-                <span className="text-[#4c5752] block font-semibold text-[11px]">Korting:</span>
-                <span className="font-extrabold text-sm text-[#006448] inline-flex items-center gap-0.5">
-                  {c.type === 'percentage' ? (
-                    <>
-                      <Percent className="w-3.5 h-3.5" /> {c.value}%
-                    </>
-                  ) : (
-                    <>
-                      € {(c.value / 100).toFixed(2).replace('.', ',')}
-                    </>
-                  )}
-                </span>
-              </div>
-              <div>
-                <span className="text-[#4c5752] block font-semibold text-[11px]">Geldig voor:</span>
-                <span className="font-bold text-[#1D1C1A]">{c.city}</span>
-              </div>
-              <div>
-                <span className="text-[#4c5752] block font-semibold text-[11px]">Gebruikt:</span>
-                <span className="font-bold text-[#1D1C1A]">{c.usedCount} / {c.maxUses} keer</span>
-              </div>
-              <div>
-                <span className="text-[#4c5752] block font-semibold text-[11px]">Totale Korting:</span>
-                <span className="font-extrabold text-[#006448]">
-                  € {(c.totalDiscountGrantedCents / 100).toFixed(2).replace('.', ',')}
-                </span>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-[#c1d4ce] flex items-center justify-between text-[11px] text-[#4c5752] font-semibold">
-              <span>Geldig tot: <strong>{c.validUntil}</strong></span>
-              <span className="text-[#006448] font-extrabold">Geconfigureerd</span>
-            </div>
+      {/* Lege staat indien geen kortingscodes */}
+      {filteredCoupons.length === 0 ? (
+        <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-8 sm:p-12 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] text-center">
+          <div className="max-w-md mx-auto space-y-2.5">
+            <Ticket className="w-10 h-10 text-[#caac8e] mx-auto opacity-70" />
+            <h3 className="font-extrabold text-[#1D1C1A] text-base">
+              Nog geen actieve kortingscodes {activeFestival ? `voor ${activeFestival.name}` : ''}
+            </h3>
+            <p className="text-xs text-[#4c5752] leading-relaxed">
+              Er zijn momenteel geen actieve actiecodes of vouchers ingesteld. Gebruik de knop &quot;Nieuwe Kortingscode Aanmaken&quot; om een percentage- of bedragskorting toe te voegen.
+            </p>
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <>
+          {/* Mobile Coupon Cards Stream (< md) */}
+          <div className="block md:hidden space-y-3">
+            {filteredCoupons.map((c) => (
+              <div
+                key={c.id}
+                className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 shadow-[3px_3px_0px_rgba(29,28,26,0.9)] space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-mono font-extrabold text-sm text-[#006448] bg-[#d8e7e2] px-2.5 py-1 rounded border border-[#8ba198]">
+                    {c.code}
+                  </span>
+                  {c.isActive ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                      <CheckCircle className="w-3 h-3" /> Actief
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-300">
+                      Verlopen / Vol
+                    </span>
+                  )}
+                </div>
 
-      {/* Desktop Coupons Table (>= md) */}
-      <div className="hidden md:block bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-[4px_4px_0px_rgba(29,28,26,0.9)] overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr className="bg-[#FAF7F2] border-b-2 border-[#1D1C1A] text-[#4c5752] font-extrabold uppercase tracking-wider">
-              <th className="py-3 px-4">Code</th>
-              <th className="py-3 px-4">Toepassen op</th>
-              <th className="py-3 px-4">Korting</th>
-              <th className="py-3 px-4">Gebruikt</th>
-              <th className="py-3 px-4">Totale Korting Vergeefs</th>
-              <th className="py-3 px-4">Geldig Tot</th>
-              <th className="py-3 px-4">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#c1d4ce]">
-            {coupons.map((c) => (
-              <tr key={c.id} className="hover:bg-[#FAF7F2]">
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                  <div>
+                    <span className="text-[#4c5752] block font-semibold text-[11px]">Korting:</span>
+                    <span className="font-extrabold text-sm text-[#006448] inline-flex items-center gap-0.5">
+                      {c.type === 'percentage' ? (
+                        <>
+                          <Percent className="w-3.5 h-3.5" /> {c.value}%
+                        </>
+                      ) : (
+                        <>
+                          € {(c.value / 100).toFixed(2).replace('.', ',')}
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#4c5752] block font-semibold text-[11px]">Geldig voor:</span>
+                    <span className="font-bold text-[#1D1C1A]">{c.city}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#4c5752] block font-semibold text-[11px]">Gebruikt:</span>
+                    <span className="font-bold text-[#1D1C1A]">{c.usedCount} / {c.maxUses} keer</span>
+                  </div>
+                  <div>
+                    <span className="text-[#4c5752] block font-semibold text-[11px]">Totale Korting:</span>
+                    <span className="font-extrabold text-[#006448]">
+                      € {(c.totalDiscountGrantedCents / 100).toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#c1d4ce] flex items-center justify-between text-[11px] text-[#4c5752] font-semibold">
+                  <span>Geldig tot: <strong>{c.validUntil}</strong></span>
+                  <span className="text-[#006448] font-extrabold">Geconfigureerd</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Coupons Table (>= md) */}
+          <div className="hidden md:block bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-[4px_4px_0px_rgba(29,28,26,0.9)] overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-[#FAF7F2] border-b-2 border-[#1D1C1A] text-[#4c5752] font-extrabold uppercase tracking-wider">
+                  <th className="py-3 px-4">Code</th>
+                  <th className="py-3 px-4">Toepassen op</th>
+                  <th className="py-3 px-4">Korting</th>
+                  <th className="py-3 px-4">Gebruikt</th>
+                  <th className="py-3 px-4">Totale Korting</th>
+                  <th className="py-3 px-4">Geldig Tot</th>
+                  <th className="py-3 px-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#c1d4ce]">
+                {filteredCoupons.map((c) => (
+                  <tr key={c.id} className="hover:bg-[#FAF7F2]">
                 <td className="py-3 px-4">
                   <span className="font-mono font-extrabold text-sm text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
                     {c.code}
@@ -184,6 +208,8 @@ export const CouponsPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+    </>
+  )}
 
       {/* Modal: Nieuwe Kortingscode */}
       {isModalOpen && (

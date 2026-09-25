@@ -11,78 +11,7 @@ export interface ScanRecord {
 
 const STORAGE_KEY = 'whiskytix_scanner_history';
 
-const INITIAL_SCANS: ScanRecord[] = [
-  {
-    id: 'scan-1',
-    ticketCode: '#WF-2026-76464-1',
-    attendeeName: 'Deon Draijer',
-    sessionTitle: 'VIP Jubileum Vrijdag',
-    scannedAt: '16:53',
-    status: 'duplicate',
-    detail: 'Dit ticket is al eerder ingecheckt bij Deur 1 (Scanner #3).',
-    gate: 'Hoofdingang • Deur 1',
-  },
-  {
-    id: 'scan-2',
-    ticketCode: '#WF-2026-76464-1',
-    attendeeName: 'Deon Draijer',
-    sessionTitle: 'VIP Jubileum Vrijdag',
-    scannedAt: '16:52',
-    status: 'valid',
-    detail: 'Entree Verleend • Welkomstglas inbegrepen',
-    gate: 'Hoofdingang • Deur 1',
-  },
-  {
-    id: 'scan-3',
-    ticketCode: '#WF-2026-84388-2',
-    attendeeName: 'Karel van Dongen',
-    sessionTitle: 'VIP Jubileum Vrijdag',
-    scannedAt: '16:48',
-    status: 'valid',
-    detail: 'Entree Verleend • Welkomstglas inbegrepen',
-    gate: 'Hoofdingang • Deur 1',
-  },
-  {
-    id: 'scan-4',
-    ticketCode: '#WF-2026-84380-1',
-    attendeeName: 'Sophie van Dam',
-    sessionTitle: 'VIP Jubileum Vrijdag',
-    scannedAt: '16:41',
-    status: 'valid',
-    detail: 'Entree Verleend',
-    gate: 'Hoofdingang • Deur 1',
-  },
-  {
-    id: 'scan-5',
-    ticketCode: '#WF-2026-99120-1',
-    attendeeName: 'Martijn Vos',
-    sessionTitle: 'Zaterdagmiddag Sessie',
-    scannedAt: '16:34',
-    status: 'wrong_session',
-    detail: 'Geldig voor ZATERDAG, niet voor huidige Vrijdagsessie.',
-    gate: 'Hoofdingang • Deur 1',
-  },
-  {
-    id: 'scan-6',
-    ticketCode: '#WF-2026-84391-1',
-    attendeeName: 'Robert-Jan Bakker',
-    sessionTitle: 'VIP Jubileum Vrijdag',
-    scannedAt: '16:29',
-    status: 'valid',
-    detail: 'Entree Verleend • Masterclass Voucher',
-    gate: 'Hoofdingang • Deur 1',
-  },
-  {
-    id: 'scan-7',
-    ticketCode: '#WF-2027-84392-1',
-    attendeeName: 'Pieter van Mechelen',
-    sessionTitle: 'Regulier Vrijdag',
-    scannedAt: '16:15',
-    status: 'valid',
-    detail: 'Entree Verleend',
-    gate: 'Hoofdingang • Deur 1',
-  },
-];
+const INITIAL_SCANS: ScanRecord[] = [];
 
 export function getStoredScans(): ScanRecord[] {
   try {

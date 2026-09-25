@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Building2,
   QrCode,
+  Users,
   LogOut,
   Menu,
   X,
+  ChevronDown,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -19,6 +21,46 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const authData = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('whiskytix_auth');
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // fallback
+    }
+    return { user: 'Deon Draijer', email: 'beheer@whiskyfestival.nl', role: 'admin' };
+  }, []);
+
+  const initials = useMemo(() => {
+    if (!authData?.user) return 'DD';
+    const parts = authData.user.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return authData.user.slice(0, 2).toUpperCase();
+  }, [authData]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
 
   const navItems = [
     { label: '3-Steden Cockpit', path: '/admin', icon: LayoutDashboard },
@@ -30,6 +72,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   ];
 
   const handleLogout = () => {
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     localStorage.removeItem('whiskytix_auth');
     navigate('/admin/login');
   };
@@ -92,28 +135,93 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
             {/* Header Right Actions */}
             <div className="flex items-center gap-2 sm:gap-3">
-              {/* Desktop User Badge */}
-              <div className="hidden sm:flex items-center gap-2.5 bg-[#FAF7F2] border border-[#c1d4ce] px-3 py-1.5 rounded">
-                <div className="w-7 h-7 rounded bg-[#caac8e] border border-[#1D1C1A] flex items-center justify-center font-bold text-xs text-[#1D1C1A]">
-                  DD
-                </div>
-                <div className="text-left leading-tight">
-                  <div className="text-xs font-extrabold text-[#1D1C1A]">Deon Draijer</div>
-                  <div className="text-[10px] font-bold text-[#006448] uppercase tracking-wider">
-                    Superadmin
+              {/* User Profile & Settings Dropdown */}
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  aria-expanded={userDropdownOpen}
+                  className={`hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded border-2 transition-all cursor-pointer ${
+                    userDropdownOpen
+                      ? 'bg-[#d8e7e2] border-[#006448] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                      : 'bg-[#FAF7F2] border-[#1D1C1A] hover:bg-[#d8e7e2]/60 shadow-[2px_2px_0px_rgba(29,28,26,0.6)]'
+                  }`}
+                  title="Beheerder Profiel & Instellingen"
+                >
+                  <div className="w-7 h-7 rounded bg-[#caac8e] border border-[#1D1C1A] flex items-center justify-center font-bold text-xs text-[#1D1C1A] shrink-0">
+                    {initials}
                   </div>
-                </div>
-              </div>
+                  <div className="text-left leading-tight">
+                    <div className="text-xs font-extrabold text-[#1D1C1A]">
+                      {authData.user || 'Deon Draijer'}
+                    </div>
+                    <div className="text-[10px] font-bold text-[#006448] uppercase tracking-wider">
+                      {authData.role === 'admin' ? 'Superadmin' : 'Beheerder'}
+                    </div>
+                  </div>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-[#4c5752] transition-transform duration-200 ${
+                      userDropdownOpen ? 'rotate-180 text-[#006448]' : ''
+                    }`}
+                  />
+                </button>
 
-              {/* Desktop Logout Button */}
-              <button
-                onClick={handleLogout}
-                title="Veilig Uitloggen"
-                className="hidden sm:inline-flex btn-letterpress-outline px-3 py-2 text-xs font-extrabold items-center gap-1.5 rounded cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5 text-[#006448]" />
-                <span>Uitloggen</span>
-              </button>
+                {/* Dropdown Menu */}
+                {userDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150 font-sans">
+                    {/* Account Info Header */}
+                    <div className="px-4 py-3 border-b border-[#c1d4ce] bg-[#FAF7F2]">
+                      <div className="text-xs font-extrabold text-[#1D1C1A] truncate">
+                        {authData.user || 'Deon Draijer'}
+                      </div>
+                      <div className="text-xs text-[#4c5752] font-medium truncate mt-0.5">
+                        {authData.email || 'beheer@whiskyfestival.nl'}
+                      </div>
+                      <div className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider bg-[#d8e7e2] text-[#006448] border border-[#8ba198]">
+                        {authData.role === 'admin' ? 'Superadmin Rechten' : 'Scanner / Beheer'}
+                      </div>
+                    </div>
+
+                    {/* Menu Options */}
+                    <div className="py-1">
+                      <Link
+                        to="/admin/users"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className={`flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold transition-colors ${
+                          location.pathname === '/admin/users'
+                            ? 'bg-[#d8e7e2] text-[#006448] font-extrabold'
+                            : 'text-[#1D1C1A] hover:bg-[#FAF7F2] hover:text-[#006448]'
+                        }`}
+                      >
+                        <Users className="w-4 h-4 text-[#006448]" />
+                        <div className="flex-1">
+                          <div className="font-extrabold">Beheerders & Team</div>
+                          <div className="text-[10px] text-[#4c5752] font-normal">
+                            Accounts, rollen & scanner PINs
+                          </div>
+                        </div>
+                      </Link>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="border-t border-[#c1d4ce] my-1"></div>
+
+                    {/* Logout */}
+                    <div className="p-1">
+                      <button
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-extrabold text-red-800 hover:bg-red-50 hover:text-red-900 rounded transition-colors text-left cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4 text-red-700" />
+                        <span>Veilig Uitloggen</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Mobile Hamburger Toggle Button */}
               <button
@@ -180,12 +288,24 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 </Link>
               );
             })}
-            <div className="pt-2 border-t border-[#c1d4ce]">
+            <div className="pt-2 border-t border-[#c1d4ce] space-y-1">
+              <Link
+                to="/admin/users"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded font-extrabold text-xs uppercase tracking-wider border-2 transition-all ${
+                  location.pathname === '/admin/users'
+                    ? 'bg-[#006448] text-white border-[#1D1C1A]'
+                    : 'bg-[#FAF7F2] text-[#1D1C1A] border-[#c1d4ce]'
+                }`}
+              >
+                <Users className="w-4 h-4 text-[#006448]" />
+                <span>Beheerders & Team</span>
+              </Link>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-2 text-xs font-extrabold text-red-800 py-2 cursor-pointer w-full text-left"
+                className="flex items-center gap-2 text-xs font-extrabold text-red-800 py-2 px-3 cursor-pointer w-full text-left hover:bg-red-50 rounded"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4 text-red-700" />
                 <span>Veilig Uitloggen</span>
               </button>
             </div>

@@ -11,7 +11,6 @@ import {
   X,
   ArrowRight,
   ShieldCheck,
-  Sparkles,
   Layers,
   ArrowLeftRight
 } from 'lucide-react';
@@ -83,9 +82,18 @@ export const TicketsMonitorPage: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // City matcher helper
+  const isMatchingCity = (t: MonitorTicket) => {
+    if (!effectiveCity || effectiveCity === 'all') return true;
+    const target = effectiveCity.toLowerCase().replace(/\s+/g, '');
+    const tFestival = (t.festivalId || '').toLowerCase().replace(/\s+/g, '');
+    const tCity = (t.cityName || '').toLowerCase().replace(/\s+/g, '');
+    return tFestival === target || tCity.includes(target) || target.includes(tCity);
+  };
+
   // Filter tickets
   const filteredTickets = tickets.filter((t) => {
-    const matchesCity = effectiveCity === 'all' || t.cityName === effectiveCity || t.festivalId === effectiveCity;
+    const matchesCity = isMatchingCity(t);
     const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
@@ -99,11 +107,12 @@ export const TicketsMonitorPage: React.FC = () => {
     return matchesCity && matchesStatus && matchesSearch;
   });
 
-  // KPI calculations
-  const totalCount = tickets.length;
-  const validCount = tickets.filter((t) => t.status === 'valid').length;
-  const checkedInCount = tickets.filter((t) => t.status === 'checked_in').length;
-  const swappedCount = tickets.filter((t) => t.status === 'swapped' || t.status === 'cancelled').length;
+  // KPI calculations scoped to active festival
+  const scopedTickets = tickets.filter(isMatchingCity);
+  const totalCount = scopedTickets.length;
+  const validCount = scopedTickets.filter((t) => t.status === 'valid').length;
+  const checkedInCount = scopedTickets.filter((t) => t.status === 'checked_in').length;
+  const swappedCount = scopedTickets.filter((t) => t.status === 'swapped' || t.status === 'cancelled').length;
 
   const handleExecuteSwap = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -282,8 +291,20 @@ export const TicketsMonitorPage: React.FC = () => {
             <tbody className="divide-y divide-[#EAE5DC]">
               {filteredTickets.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-[#7A7268] font-semibold">
-                    Geen tickets gevonden binnen deze filters.
+                  <td colSpan={6} className="py-12 text-center">
+                    <div className="max-w-sm mx-auto space-y-2">
+                      <QrCode className="w-8 h-8 text-[#caac8e] mx-auto opacity-60" />
+                      <div className="font-extrabold text-[#1D1C1A] text-sm">
+                        {effectiveCity && effectiveCity !== 'all'
+                          ? `Geen tickets voor ${effectiveCity.charAt(0).toUpperCase() + effectiveCity.slice(1)}`
+                          : 'Nog geen tickets gegenereerd'}
+                      </div>
+                      <p className="text-xs text-[#4c5752]">
+                        {effectiveCity && (effectiveCity.toLowerCase().includes('denhaag') || effectiveCity.toLowerCase().includes('amsterdam'))
+                          ? 'Dit festival is momenteel in voorbereiding. Zodra de kaartverkoop start, verschijnen de officiële e-tickets en QR-codes hier direct.'
+                          : 'Officiële HMAC QR-codes en downloads verschijnen hier automatisch zodra betalingen via Mollie binnenkomen.'}
+                      </p>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -477,8 +498,8 @@ export const TicketsMonitorPage: React.FC = () => {
 
                 {/* Uitleg wat er gebeurt */}
                 <div className="bg-[#EBF3FB] border border-[#BFDBFE] rounded p-3 text-[11px] text-[#1E3A8A] space-y-1">
-                  <div className="font-bold flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5" />
+                  <div className="font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-[#006448]" />
                     Wat er direct gebeurt bij bevestiging:
                   </div>
                   <div>&bull; De oude barcode wordt <strong>per direct ongeldig</strong> gemaakt in alle scanners.</div>

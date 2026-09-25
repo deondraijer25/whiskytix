@@ -15,6 +15,10 @@
   --font-display: 'Rye', Georgia, serif;
 }
 
+html, body, button, input, select, textarea {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
 /* Den Haag Letterpress Tactile Button */
 .btn-letterpress {
   background-color: #006448;
@@ -94,3 +98,18 @@
   background-image: radial-gradient(rgba(0, 100, 72, 0.15) 1px, transparent 1px);
   background-size: 24px 24px;
 }
+
+/* Den Haag Signature Deep Emerald & Pine Gradient */
+.bg-denhaag-hero {
+  background: linear-gradient(135deg, #061A10 0%, #0E3823 35%, #165636 65%, #082114 100%);
+}
+
+.bg-denhaag-hero-pattern {
+  background-color: #061A10;
+  background-image: 
+    radial-gradient(rgba(202, 172, 142, 0.08) 1px, transparent 1px),
+    radial-gradient(circle at 50% 20%, rgba(22, 86, 54, 0.45) 0%, rgba(6, 26, 16, 0.1) 70%),
+    linear-gradient(135deg, #061A10 0%, #0E3823 35%, #165636 65%, #082114 100%);
+  background-size: 28px 28px, 100% 100%, 100% 100%;
+}
+

@@ -74,6 +74,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
   ];
 
   const handleLogout = () => {
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     localStorage.removeItem('whiskytix_auth');
     navigate('/admin/login');
   };

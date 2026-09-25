@@ -11,6 +11,7 @@ import { checkDbConnection } from './db/index.js';
 import { generateTicketPdf } from './modules/tickets/pdf.service.js';
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
 import { startStockCleanupWorker } from './modules/orders/stock-cleanup.worker.js';
+import { UsersRepository } from './modules/auth/users.repository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,6 +52,24 @@ export async function buildServer(): Promise<FastifyInstance> {
     };
   });
 
+  // Helper to extract authenticated user from cookie
+  const getAuthenticatedUser = (request: any) => {
+    const sessionCookie = request.cookies.whiskytix_session;
+    if (!sessionCookie || !sessionCookie.startsWith('session_token_')) return null;
+    try {
+      const emailBase64 = sessionCookie.replace('session_token_', '');
+      const email = Buffer.from(emailBase64, 'base64').toString('utf8');
+      const user = UsersRepository.getByEmail(email);
+      if (user) {
+        const { passwordHash, ...safe } = user;
+        return safe;
+      }
+      return { email, name: 'Beheerder', role: 'admin' };
+    } catch {
+      return null;
+    }
+  };
+
   // Rate-limited Auth endpoint (max 5 requests per minute per IP)
   server.post(
     '/api/auth/login',
@@ -70,16 +89,15 @@ export async function buildServer(): Promise<FastifyInstance> {
         return reply.status(400).send({ error: 'E-mailadres en wachtwoord zijn verplicht.' });
       }
 
-      // Strict password verification (default password: whisky2026)
-      const isValidAdmin =
-        email === 'beheer@whiskyfestival.nl' && password === 'whisky2026';
+      // Verify credentials against UsersRepository (bcrypt hash + storage)
+      const verifiedUser = await UsersRepository.verifyCredentials(email, password);
 
-      if (!isValidAdmin) {
+      if (!verifiedUser) {
         return reply.status(401).send({ error: 'Onjuist e-mailadres of wachtwoord.' });
       }
 
       // Set secure session cookie
-      reply.setCookie('whiskytix_session', 'session_token_' + Buffer.from(email).toString('base64'), {
+      reply.setCookie('whiskytix_session', 'session_token_' + Buffer.from(verifiedUser.email).toString('base64'), {
         path: '/',
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -89,11 +107,7 @@ export async function buildServer(): Promise<FastifyInstance> {
 
       return reply.send({
         success: true,
-        user: {
-          name: 'Deon Draijer',
-          email: 'beheer@whiskyfestival.nl',
-          role: 'admin',
-        },
+        user: verifiedUser,
       });
     }
   );
@@ -106,18 +120,79 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   // Current user endpoint
   server.get('/api/auth/me', async (request, reply) => {
-    const sessionCookie = request.cookies.whiskytix_session;
-    if (!sessionCookie) {
+    const user = getAuthenticatedUser(request);
+    if (!user) {
       return reply.status(401).send({ authenticated: false });
     }
     return reply.send({
       authenticated: true,
-      user: {
-        name: 'Deon Draijer',
-        email: 'beheer@whiskyfestival.nl',
-        role: 'admin',
-      },
+      user,
     });
+  });
+
+  // --- Admin Users & Team Management Endpoints ---
+
+  // GET /api/admin/users - List all users
+  server.get('/api/admin/users', async (request, reply) => {
+    const users = UsersRepository.getAll();
+    return reply.send({ success: true, users });
+  });
+
+  // POST /api/admin/users - Create new administrator or scanner
+  server.post('/api/admin/users', async (request, reply) => {
+    const body = request.body as any;
+    const { name, email, password, role, pinCode, assignedFestivalId } = body || {};
+
+    if (!name || !email || !password) {
+      return reply.status(400).send({ error: 'Naam, e-mailadres en wachtwoord zijn verplicht.' });
+    }
+
+    if (password.length < 6) {
+      return reply.status(400).send({ error: 'Het wachtwoord moet minimaal 6 tekens lang zijn.' });
+    }
+
+    try {
+      const newUser = await UsersRepository.create({
+        name,
+        email,
+        password,
+        role: role || 'admin',
+        pinCode: pinCode || '2026',
+        assignedFestivalId: assignedFestivalId || 'all',
+      });
+      return reply.status(201).send({ success: true, user: newUser });
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  // PUT /api/admin/users/:id - Update user details, role, password or PIN
+  server.put('/api/admin/users/:id', async (request, reply) => {
+    const params = request.params as { id: string };
+    const body = request.body as any;
+
+    try {
+      const updatedUser = await UsersRepository.update(params.id, body);
+      return reply.send({ success: true, user: updatedUser });
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  // DELETE /api/admin/users/:id - Delete a user
+  server.delete('/api/admin/users/:id', async (request, reply) => {
+    const params = request.params as { id: string };
+    const currentUser = getAuthenticatedUser(request);
+
+    try {
+      const success = await UsersRepository.delete(params.id, currentUser?.email);
+      if (!success) {
+        return reply.status(404).send({ error: 'Gebruiker niet gevonden.' });
+      }
+      return reply.send({ success: true, message: 'Gebruiker succesvol verwijderd.' });
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
   });
 
   // Official Vector A4 PDF E-Ticket Generator endpoint
@@ -151,10 +226,13 @@ export async function buildServer(): Promise<FastifyInstance> {
       attendeeName: query.name || 'Deon Draijer',
       cityName: query.city || 'denhaag',
       sessionTitle: cleanSessionTitle,
-      dateStr:
-        query.session === 'zaterdag_middag'
-          ? 'Zaterdag 14 november 2026'
-          : 'Vrijdag 13 november 2026',
+      dateStr: query.date || (
+        (query.city || '').toLowerCase().includes('gent')
+          ? (titleLower.includes('zaterdag') ? 'Zaterdag 3 oktober 2026' : titleLower.includes('zondag') ? 'Zondag 4 oktober 2026' : 'Vrijdag 2 oktober 2026')
+          : (query.city || '').toLowerCase().includes('amsterdam')
+          ? 'Zaterdag 16 januari 2027'
+          : (query.session === 'zaterdag_middag' || titleLower.includes('zaterdag') ? 'Zaterdag 14 november 2026' : titleLower.includes('zondag') ? 'Zondag 15 november 2026' : 'Vrijdag 13 november 2026')
+      ),
       timeStr,
       itemNumber: query.itemNumber || '1/1',
     });

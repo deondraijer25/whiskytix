@@ -42,10 +42,33 @@ export const sandboxPayments: Map<
 > = new Map();
 
 export class MollieService {
-  private static getApiKey(): string | null {
-    const key = process.env.MOLLIE_API_KEY_TEST || process.env.MOLLIE_API_KEY_LIVE || 'test_fcvDJF4xKDTvHAefdv5TBbf2PPzMHG';
-    if (key && key.startsWith('test_') && key !== 'test_placeholder') {
-      return key;
+  /**
+   * Returns current active mode based on MOLLIE_ENVIRONMENT or key presence
+   */
+  static getActiveMode(): 'test' | 'live' {
+    const env = process.env.MOLLIE_ENVIRONMENT?.toLowerCase();
+    if (env === 'live') return 'live';
+    const liveKey = process.env.MOLLIE_API_KEY_LIVE;
+    if (liveKey && liveKey.startsWith('live_') && liveKey !== 'live_placeholder' && env !== 'test') {
+      return 'live';
+    }
+    return 'test';
+  }
+
+  /**
+   * Resolves the API key for either test or live mode
+   */
+  static getApiKey(mode?: 'test' | 'live'): string | null {
+    const targetMode = mode || this.getActiveMode();
+    if (targetMode === 'live') {
+      const liveKey = process.env.MOLLIE_API_KEY_LIVE;
+      if (liveKey && liveKey.startsWith('live_') && liveKey !== 'live_placeholder') {
+        return liveKey;
+      }
+    }
+    const testKey = process.env.MOLLIE_API_KEY_TEST;
+    if (testKey && testKey.startsWith('test_') && testKey !== 'test_placeholder') {
+      return testKey;
     }
     return 'test_fcvDJF4xKDTvHAefdv5TBbf2PPzMHG';
   }
@@ -53,8 +76,8 @@ export class MollieService {
   /**
    * Creates a payment session via official Mollie API or local interactive sandbox
    */
-  static async createPayment(options: CreatePaymentOptions): Promise<PaymentInitResult> {
-    const apiKey = this.getApiKey();
+  static async createPayment(options: CreatePaymentOptions, mode?: 'test' | 'live'): Promise<PaymentInitResult> {
+    const apiKey = this.getApiKey(mode);
     const amountFormatted = (options.amountCents / 100).toFixed(2);
 
     // 1. If valid live/test key is provided, use official Mollie API
@@ -169,9 +192,10 @@ export class MollieService {
   /**
    * List recent payments from Mollie API to ensure live sync with Mollie Dashboard
    */
-  static async listRecentPayments(limit = 25): Promise<any[]> {
-    const apiKey = this.getApiKey();
+  static async listRecentPayments(limit = 25, mode?: 'test' | 'live'): Promise<any[]> {
+    const apiKey = this.getApiKey(mode);
     if (!apiKey) return [];
+    const isTestMode = apiKey.startsWith('test_');
 
     try {
       const client = createMollieClient({ apiKey });
@@ -186,6 +210,7 @@ export class MollieService {
         metadata: p.metadata || {},
         createdAt: p.createdAt,
         paidAt: p.paidAt,
+        environment: isTestMode ? 'test' : 'live',
       }));
     } catch (err: any) {
       console.warn('Could not fetch payments from Mollie API:', err.message);

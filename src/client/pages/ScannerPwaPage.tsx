@@ -9,7 +9,6 @@ import {
   Camera,
   X,
   UserCheck,
-  Sparkles,
   Settings2,
   Volume2,
   VolumeX,
@@ -37,7 +36,7 @@ export const ScannerPwaPage: React.FC = () => {
 
   // Scanner Audit History & Counters
   const [scans, setScans] = useState<ScanRecord[]>([]);
-  const [scanCount, setScanCount] = useState(343);
+  const [scanCount, setScanCount] = useState(0);
 
   // Active Scan Result Popup
   const [activeResult, setActiveResult] = useState<ScanRecord | null>(null);
@@ -62,7 +61,7 @@ export const ScannerPwaPage: React.FC = () => {
   useEffect(() => {
     const stored = getStoredScans();
     setScans(stored);
-    setScanCount(Math.max(343, stored.length));
+    setScanCount(stored.length);
 
     // Populate checked-in codes
     stored.forEach((s) => {
@@ -650,8 +649,8 @@ export const ScannerPwaPage: React.FC = () => {
             {/* Simulation Feedback Test Panel */}
             <div className="pt-2 border-t border-white/10 space-y-2">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#caac8e] flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5" />
-                Simuleer Feedback (Zonder Fysieke QR)
+                <Settings2 className="w-3.5 h-3.5" />
+                Test Signalen & Validatie (Zonder Fysieke QR)
               </span>
               <div className="grid grid-cols-3 gap-2">
                 <button

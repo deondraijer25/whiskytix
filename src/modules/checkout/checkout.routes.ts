@@ -339,6 +339,36 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   });
 
   /**
+   * 4c. SIMULATE PAYMENT (FOR TESTING & AUTOMATED FLOWS)
+   * POST /api/checkout/simulate-payment
+   */
+  server.post('/api/checkout/simulate-payment', async (request, reply) => {
+    try {
+      const body = (request.body || {}) as any;
+      const { orderNumber, paymentMethod = 'ideal' } = body;
+      if (!orderNumber) {
+        return reply.status(400).send({ error: 'Ordernummer is verplicht.' });
+      }
+
+      const updatedOrder = await OrdersRepository.markOrderPaid(orderNumber, { paymentMethod });
+      if (!updatedOrder) {
+        return reply.status(404).send({ error: 'Order niet gevonden.' });
+      }
+
+      return reply.send({
+        success: true,
+        orderNumber: updatedOrder.orderNumber,
+        status: updatedOrder.status,
+        tickets: updatedOrder.tickets,
+        issuedTicketsCount: updatedOrder.tickets.length,
+      });
+    } catch (err: any) {
+      server.log.error(err);
+      return reply.status(500).send({ error: err.message });
+    }
+  });
+
+  /**
    * 4b. GET ORDER DETAILS (JSON API)
    * GET /api/checkout/order/:orderNumber
    */
@@ -590,150 +620,167 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   });
 
   /**
-    * 8. GET ALL ORDERS LIST (FOR ADMIN COCKPIT)
+    * 8. GET ALL ORDERS LIST (FOR ADMIN COCKPIT & FESTIVAL HUBS)
     * GET /api/orders and GET /api/admin/orders
     */
+   const getSyncedOrders = async (query: { city?: string; festivalId?: string; env?: string }) => {
+     const allOrders = OrdersRepository.listOrders() || [];
+     
+     const formattedOrders = allOrders.map((o) => {
+       const city = o.festivalId || 'gent';
+       const cityName = city === 'gent' ? 'Gent' : city === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
+       const summary = Array.isArray(o.items) && o.items.length > 0 
+         ? o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ')
+         : 'Tickets & Toegang';
+
+       let tickets = Array.isArray(o.tickets) ? o.tickets.map((t) => ({
+         code: t.ticketCode,
+         type: t.sessionTitle || 'Toegangsbewijs',
+         session: t.sessionTitle,
+         attendeeName: t.attendeeName,
+         status: t.status,
+       })) : [];
+
+       if (tickets.length === 0) {
+         let count = 1;
+         const cleanNum = (o.orderNumber || 'WF').replace('#', '');
+         const qtyMatch = summary.match(/^(\d+)x/);
+         if (qtyMatch) {
+           count = parseInt(qtyMatch[1], 10);
+         } else if (o.totalCents === 25950) {
+           count = 6;
+         }
+         for (let i = 1; i <= count; i++) {
+           tickets.push({
+             code: `#${cleanNum}-${i}`,
+             type: 'Entreeticket',
+             session: summary.replace(/^\d+x\s*/, ''),
+             attendeeName: o.customerName || 'Bezoeker',
+             status: o.status === 'paid' ? 'valid' : 'cancelled',
+           });
+         }
+       }
+
+       return {
+         id: o.id || o.orderNumber,
+         orderNumber: o.orderNumber,
+         customerName: o.customerName || 'Klant',
+         customerEmail: o.customerEmail || '',
+         customerPhone: o.customerPhone || '',
+         city: city as 'denhaag' | 'amsterdam' | 'gent',
+         cityName,
+         itemsSummary: summary,
+         totalCents: o.totalCents || 0,
+         status: o.status || 'pending',
+         createdAt: o.createdAt || new Date().toISOString(),
+         environment: (o as any).environment || 'test',
+         tickets,
+       };
+     });
+
+     // Live Sync with Mollie API: Fetch payments for specified environment or active mode
+     try {
+       const targetMode = (query.env === 'live' ? 'live' : query.env === 'test' ? 'test' : MollieService.getActiveMode());
+       const molliePayments = await MollieService.listRecentPayments(50, targetMode);
+       
+       for (const p of molliePayments) {
+         const metaOrderNumber = p.metadata?.orderNumber;
+         if (metaOrderNumber) {
+           const existing = formattedOrders.find((o) => o.orderNumber === metaOrderNumber);
+           if (!existing) {
+             // The currently configured Mollie account is Gent's account.
+             // Den Haag & Amsterdam ticket sales are not yet launched.
+             const festId: 'denhaag' | 'amsterdam' | 'gent' = 'gent';
+             const cityName = 'Gent';
+             const valEur = parseFloat(p.amountValue || '0');
+             const amountCents = Math.round(valEur * 100);
+             const cleanNum = metaOrderNumber.replace('#', '');
+
+             const itemsSummaryFromMeta = p.metadata?.itemsSummary;
+             let cleanSummary = itemsSummaryFromMeta;
+             if (!cleanSummary) {
+               if (amountCents === 4400) cleanSummary = '1x Entreeticket Vrijdag';
+               else if (amountCents === 25950) cleanSummary = '6x Entreeticket Vrijdag';
+               else cleanSummary = p.description ? p.description.replace(/^Bestelling\s+#WF-[^\s-]+\s*-\s*/i, '') : 'Festival Entreetickets';
+             }
+
+             const resolvedName = p.metadata?.customerName || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'Deon Draijer' : 'Klant (' + (p.method ? p.method.toUpperCase() : 'iDEAL') + ')');
+             const resolvedEmail = p.metadata?.customerEmail || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'deondraijer@gmail.com' : 'deondraijer@gmail.com');
+
+             let ticketCount = 1;
+             const qtyMatch = cleanSummary.match(/^(\d+)x/);
+             if (qtyMatch) {
+               ticketCount = parseInt(qtyMatch[1], 10);
+             } else if (amountCents === 25950) {
+               ticketCount = 6;
+             }
+
+             const tickets: {
+               code: string;
+               type: string;
+               session: string;
+               attendeeName: string;
+               status: 'valid' | 'checked_in' | 'cancelled';
+             }[] = [];
+             for (let tIdx = 1; tIdx <= ticketCount; tIdx++) {
+               tickets.push({
+                 code: `#${cleanNum}-${tIdx}`,
+                 type: 'Entreeticket',
+                 session: cleanSummary.replace(/^\d+x\s*/, ''),
+                 attendeeName: resolvedName,
+                 status: p.status === 'paid' ? 'valid' : 'cancelled',
+               });
+             }
+
+             formattedOrders.unshift({
+               id: p.id,
+               orderNumber: metaOrderNumber,
+               customerName: resolvedName,
+               customerEmail: resolvedEmail,
+               customerPhone: p.metadata?.customerPhone || '',
+               city: festId,
+               cityName,
+               itemsSummary: cleanSummary,
+               totalCents: amountCents,
+               status: p.status === 'paid' ? 'paid' : (p.status as any),
+               createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
+               environment: p.environment || targetMode,
+               tickets,
+             });
+           } else if (p.status === 'paid' && existing.status !== 'paid') {
+             existing.status = 'paid';
+           }
+         }
+       }
+     } catch (syncErr: any) {
+       server.log.warn('Could not sync live orders from Mollie API: ' + syncErr.message);
+     }
+
+     // Sort all orders descending by createdAt
+     formattedOrders.sort((a, b) => {
+       const tA = new Date(a.createdAt).getTime() || 0;
+       const tB = new Date(b.createdAt).getTime() || 0;
+       return tB - tA;
+     });
+
+     const envFilter = query.env;
+     let filtered = formattedOrders;
+     if (envFilter && envFilter !== 'all') {
+       filtered = filtered.filter((o: any) => o.environment === envFilter);
+     }
+
+     const filterCity = query.city || query.festivalId;
+     const results = filterCity && filterCity !== 'all' 
+       ? filtered.filter((o) => o.city === filterCity)
+       : filtered;
+
+     return results;
+   };
+
    const handleGetOrders = async (request: any, reply: any) => {
      try {
-       const query = (request.query || {}) as { city?: string; festivalId?: string };
-       const allOrders = OrdersRepository.listOrders() || [];
-       
-       const formattedOrders = allOrders.map((o) => {
-         const city = o.festivalId || 'gent';
-         const cityName = city === 'gent' ? 'Gent' : city === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
-         const summary = Array.isArray(o.items) && o.items.length > 0 
-           ? o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ')
-           : 'Tickets & Toegang';
-
-         let tickets = Array.isArray(o.tickets) ? o.tickets.map((t) => ({
-           code: t.ticketCode,
-           type: t.sessionTitle || 'Toegangsbewijs',
-           session: t.sessionTitle,
-           attendeeName: t.attendeeName,
-           status: t.status,
-         })) : [];
-
-          // If tickets array is empty (e.g. created prior to webhook or synched without tickets), auto-generate tickets
-          if (tickets.length === 0) {
-            let count = 1;
-            const cleanNum = (o.orderNumber || 'WF').replace('#', '');
-            const qtyMatch = summary.match(/^(\d+)x/);
-            if (qtyMatch) {
-              count = parseInt(qtyMatch[1], 10);
-            } else if (o.totalCents === 25950) {
-              count = 6;
-            }
-            for (let i = 1; i <= count; i++) {
-              tickets.push({
-                code: `#${cleanNum}-${i}`,
-                type: 'Entreeticket',
-                session: summary.replace(/^\d+x\s*/, ''),
-                attendeeName: o.customerName || 'Bezoeker',
-                status: o.status === 'paid' ? 'valid' : 'cancelled',
-              });
-            }
-          }
-
-          return {
-            id: o.id || o.orderNumber,
-            orderNumber: o.orderNumber,
-            customerName: o.customerName || 'Klant',
-            customerEmail: o.customerEmail || '',
-            customerPhone: o.customerPhone || '',
-            city: city as 'denhaag' | 'amsterdam' | 'gent',
-            cityName,
-            itemsSummary: summary,
-            totalCents: o.totalCents || 0,
-            status: o.status || 'pending',
-            createdAt: o.createdAt || new Date().toISOString(),
-            tickets,
-          };
-        });
-
-       // Live Sync with Mollie API: If orders are missing from serverless in-memory store, sync paid Mollie transactions
-       try {
-         const molliePayments = await MollieService.listRecentPayments(25);
-         for (const p of molliePayments) {
-           const metaOrderNumber = p.metadata?.orderNumber;
-           if (metaOrderNumber) {
-             const existing = formattedOrders.find((o) => o.orderNumber === metaOrderNumber);
-             if (!existing) {
-               const festId = (p.metadata?.festivalId || 'gent') as 'denhaag' | 'amsterdam' | 'gent';
-               const cityName = festId === 'gent' ? 'Gent' : festId === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
-               const valEur = parseFloat(p.amountValue || '0');
-               const amountCents = Math.round(valEur * 100);
-               const cleanNum = metaOrderNumber.replace('#', '');
-
-                const itemsSummaryFromMeta = p.metadata?.itemsSummary;
-                let cleanSummary = itemsSummaryFromMeta;
-                if (!cleanSummary) {
-                  if (amountCents === 4400) cleanSummary = '1x Entreeticket Vrijdag';
-                  else if (amountCents === 25950) cleanSummary = '6x Entreeticket Vrijdag';
-                  else cleanSummary = p.description ? p.description.replace(/^Bestelling\s+#WF-[^\s-]+\s*-\s*/i, '') : 'Festival Entreetickets';
-                }
-
-                const resolvedName = p.metadata?.customerName || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'Deon Draijer' : 'Klant (' + (p.method ? p.method.toUpperCase() : 'iDEAL') + ')');
-                const resolvedEmail = p.metadata?.customerEmail || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'deondraijer@gmail.com' : 'deondraijer@gmail.com');
-
-                 let ticketCount = 1;
-                 const qtyMatch = cleanSummary.match(/^(\d+)x/);
-                 if (qtyMatch) {
-                   ticketCount = parseInt(qtyMatch[1], 10);
-                 } else if (amountCents === 25950) {
-                   ticketCount = 6;
-                 }
-
-                 const tickets: {
-                   code: string;
-                   type: string;
-                   session: string;
-                   attendeeName: string;
-                   status: 'valid' | 'checked_in' | 'cancelled';
-                 }[] = [];
-                 for (let tIdx = 1; tIdx <= ticketCount; tIdx++) {
-                   tickets.push({
-                     code: `#${cleanNum}-${tIdx}`,
-                     type: 'Entreeticket',
-                     session: cleanSummary.replace(/^\d+x\s*/, ''),
-                     attendeeName: resolvedName,
-                     status: p.status === 'paid' ? 'valid' : 'cancelled',
-                   });
-                 }
-
-                 formattedOrders.unshift({
-                   id: p.id,
-                   orderNumber: metaOrderNumber,
-                   customerName: resolvedName,
-                   customerEmail: resolvedEmail,
-                   customerPhone: p.metadata?.customerPhone || '',
-                   city: festId,
-                   cityName,
-                   itemsSummary: cleanSummary,
-                   totalCents: amountCents,
-                   status: p.status === 'paid' ? 'paid' : (p.status as any),
-                   createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
-                   tickets,
-                 });
-              } else if (p.status === 'paid' && existing.status !== 'paid') {
-                existing.status = 'paid';
-              }
-            }
-          }
-        } catch (syncErr: any) {
-          server.log.warn('Could not sync live orders from Mollie API: ' + syncErr.message);
-        }
-
-        // Sort all orders descending by createdAt
-        formattedOrders.sort((a, b) => {
-          const tA = new Date(a.createdAt).getTime() || 0;
-          const tB = new Date(b.createdAt).getTime() || 0;
-          return tB - tA;
-        });
-
-       const filterCity = query.city || query.festivalId;
-       const results = filterCity && filterCity !== 'all' 
-         ? formattedOrders.filter((o) => o.city === filterCity)
-         : formattedOrders;
+       const query = (request.query || {}) as { city?: string; festivalId?: string; env?: string };
+       const results = await getSyncedOrders(query);
 
        return reply.send({
          success: true,
@@ -749,18 +796,52 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
    server.get('/api/orders', handleGetOrders);
    server.get('/api/admin/orders', handleGetOrders);
 
+   // GET /api/admin/mollie/status
+   server.get('/api/admin/mollie/status', async (request, reply) => {
+     const activeMode = MollieService.getActiveMode();
+     const hasLiveKey = !!(process.env.MOLLIE_API_KEY_LIVE && process.env.MOLLIE_API_KEY_LIVE.startsWith('live_') && process.env.MOLLIE_API_KEY_LIVE !== 'live_placeholder');
+     const hasTestKey = !!(process.env.MOLLIE_API_KEY_TEST && process.env.MOLLIE_API_KEY_TEST.startsWith('test_') && process.env.MOLLIE_API_KEY_TEST !== 'test_placeholder');
+     return reply.send({
+       success: true,
+       activeMode,
+       hasLiveKey,
+       hasTestKey,
+     });
+   });
+
    /**
     * 9. TICKET & QR CODE MONITORING LIST
     * GET /api/admin/tickets
     */
    server.get('/api/admin/tickets', async (request, reply) => {
      try {
-       const query = (request.query || {}) as { city?: string; festivalId?: string };
-       const filterCity = query.city || query.festivalId;
-       let allTickets = OrdersRepository.listAllTickets();
-
-       if (filterCity && filterCity !== 'all') {
-         allTickets = allTickets.filter((t) => t.cityName === filterCity || t.festivalId === filterCity);
+       const query = (request.query || {}) as { city?: string; festivalId?: string; env?: string };
+       const syncedOrders = await getSyncedOrders(query);
+       
+       const allTickets: any[] = [];
+       for (const o of syncedOrders) {
+         if (o.status === 'paid' && Array.isArray(o.tickets)) {
+           for (const t of o.tickets) {
+             const cleanCode = t.code.replace('#', '');
+             allTickets.push({
+               id: t.code,
+               orderId: o.id,
+               orderNumber: o.orderNumber,
+               ticketCode: t.code,
+               qrPayload: `WT1:${cleanCode}:${o.city}:${t.session}:${t.attendeeName}`,
+               qrPayloadHash: cleanCode.substring(0, 10),
+               attendeeName: t.attendeeName,
+               customerEmail: o.customerEmail,
+               customerPhone: o.customerPhone,
+               status: t.status,
+               sessionTitle: t.session,
+               cityName: o.cityName,
+               festivalId: o.city,
+               pdfUrl: `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${o.city}&orderNumber=${encodeURIComponent(o.orderNumber)}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(t.session)}`,
+               createdAt: o.createdAt,
+             });
+           }
+         }
        }
 
        return reply.send({

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Layers, AlertCircle, CheckCircle, Edit3, Lock, Unlock, Users, Plus, Save } from 'lucide-react';
 import { INITIAL_SESSIONS, INITIAL_FESTIVALS, SessionCapacity } from '../data/mockData';
@@ -7,13 +7,50 @@ export const InventoryPage: React.FC = () => {
   const { cityId } = useParams<{ cityId?: string }>();
   const [sessions, setSessions] = useState<SessionCapacity[]>(INITIAL_SESSIONS);
   const [selectedCity, setSelectedCity] = useState<'denhaag' | 'amsterdam' | 'gent'>(
-    (cityId as any) || 'denhaag'
+    (cityId as any) || 'gent'
   );
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [tempCapacity, setTempCapacity] = useState<number>(0);
 
   const effectiveCity = (cityId as any) || selectedCity;
   const activeFestival = INITIAL_FESTIVALS.find((f) => f.id === effectiveCity);
+
+  useEffect(() => {
+    const fetchLiveCapacity = async () => {
+      try {
+        const res = await fetch(`/api/admin/orders?city=${effectiveCity}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.orders)) {
+            const paid = data.orders.filter((o: any) => o.status === 'paid');
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.city !== effectiveCity) return s;
+                let count = 0;
+                paid.forEach((o: any) => {
+                  if (Array.isArray(o.tickets)) {
+                    o.tickets.forEach((t: any) => {
+                      if (t.session && t.session.toLowerCase().includes(s.name.toLowerCase().replace(' sessie', ''))) {
+                        count++;
+                      }
+                    });
+                  }
+                });
+                return {
+                  ...s,
+                  sold: count,
+                  isSoldOut: count >= s.max,
+                };
+              })
+            );
+          }
+        }
+      } catch (err) {
+        console.error('Kon live capaciteit niet ophalen:', err);
+      }
+    };
+    fetchLiveCapacity();
+  }, [effectiveCity]);
 
   const filteredSessions = sessions.filter((s) => s.city === effectiveCity);
   const regularAndVip = filteredSessions.filter((s) => s.category !== 'masterclass');

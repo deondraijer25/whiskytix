@@ -7,12 +7,14 @@ import { InventoryPage } from './pages/InventoryPage';
 import { CouponsPage } from './pages/CouponsPage';
 import { DoorMonitorPage } from './pages/DoorMonitorPage';
 import { TicketsMonitorPage } from './pages/TicketsMonitorPage';
+import { UsersPage } from './pages/UsersPage';
 import { ScannerPwaPage } from './pages/ScannerPwaPage';
 import { ScanHistoryPage } from './pages/ScanHistoryPage';
 import { TicketViewPage } from './pages/TicketViewPage';
 import { FestivalOverviewPage } from './pages/FestivalOverviewPage';
 import { AdminLayout } from './components/AdminLayout';
 import { FestivalLayout } from './components/FestivalLayout';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const App: React.FC = () => {
   const [selectedCity, setSelectedCity] = useState<string>('all');
@@ -22,79 +24,107 @@ export const App: React.FC = () => {
       {/* 1. Admin Login Screen */}
       <Route path="/admin/login" element={<LoginPage />} />
 
-      {/* 2. LAYER 1: 3-Steden Centrale Cockpit Dashboard */}
+      {/* 2. LAYER 1: 3-Steden Centrale Cockpit Dashboard (Protected) */}
       <Route
         path="/admin"
         element={
-          <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
-            <AdminDashboardPage selectedCity={selectedCity} onCityChange={setSelectedCity} />
-          </AdminLayout>
+          <ProtectedRoute>
+            <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
+              <AdminDashboardPage selectedCity={selectedCity} onCityChange={setSelectedCity} />
+            </AdminLayout>
+          </ProtectedRoute>
         }
       />
       <Route
         path="/admin/tickets"
         element={
-          <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
-            <TicketsMonitorPage />
-          </AdminLayout>
+          <ProtectedRoute>
+            <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
+              <TicketsMonitorPage />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          <ProtectedRoute>
+            <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
+              <UsersPage />
+            </AdminLayout>
+          </ProtectedRoute>
         }
       />
 
-      {/* 3. LAYER 2: Festival Hub (Editie-specifieke omgeving) */}
+      {/* 3. LAYER 2: Festival Hub (Editie-specifieke omgeving - Protected) */}
       <Route
         path="/admin/festival/:cityId"
         element={
-          <FestivalLayout>
-            <FestivalOverviewPage />
-          </FestivalLayout>
+          <ProtectedRoute>
+            <FestivalLayout>
+              <FestivalOverviewPage />
+            </FestivalLayout>
+          </ProtectedRoute>
         }
       />
       <Route
         path="/admin/festival/:cityId/overview"
         element={
-          <FestivalLayout>
-            <FestivalOverviewPage />
-          </FestivalLayout>
+          <ProtectedRoute>
+            <FestivalLayout>
+              <FestivalOverviewPage />
+            </FestivalLayout>
+          </ProtectedRoute>
         }
       />
       <Route
         path="/admin/festival/:cityId/orders"
         element={
-          <FestivalLayout>
-            <OrdersPage />
-          </FestivalLayout>
+          <ProtectedRoute>
+            <FestivalLayout>
+              <OrdersPage />
+            </FestivalLayout>
+          </ProtectedRoute>
         }
       />
       <Route
         path="/admin/festival/:cityId/inventory"
         element={
-          <FestivalLayout>
-            <InventoryPage />
-          </FestivalLayout>
+          <ProtectedRoute>
+            <FestivalLayout>
+              <InventoryPage />
+            </FestivalLayout>
+          </ProtectedRoute>
         }
       />
       <Route
         path="/admin/festival/:cityId/door"
         element={
-          <FestivalLayout>
-            <DoorMonitorPage />
-          </FestivalLayout>
+          <ProtectedRoute>
+            <FestivalLayout>
+              <DoorMonitorPage />
+            </FestivalLayout>
+          </ProtectedRoute>
         }
       />
       <Route
         path="/admin/festival/:cityId/coupons"
         element={
-          <FestivalLayout>
-            <CouponsPage />
-          </FestivalLayout>
+          <ProtectedRoute>
+            <FestivalLayout>
+              <CouponsPage />
+            </FestivalLayout>
+          </ProtectedRoute>
         }
       />
       <Route
         path="/admin/festival/:cityId/tickets"
         element={
-          <FestivalLayout>
-            <TicketsMonitorPage />
-          </FestivalLayout>
+          <ProtectedRoute>
+            <FestivalLayout>
+              <TicketsMonitorPage />
+            </FestivalLayout>
+          </ProtectedRoute>
         }
       />
 
