@@ -4,11 +4,62 @@ import { Order } from '../data/mockData';
 
 interface OrderDetailDrawerProps {
   order: Order | null;
+  cityId?: string;
   onClose: () => void;
   onOrderUpdated?: () => void;
 }
 
-export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onClose, onOrderUpdated }) => {
+const DRAWER_THEMES: Record<string, {
+  primary: string;
+  headerBg: string;
+  headerBadgeBg: string;
+  textPrimary: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+  btnPrimary: string;
+  accentSubtle: string;
+  ring: string;
+}> = {
+  gent: {
+    primary: '#1E3A8A',
+    headerBg: 'bg-[#1E3A8A]',
+    headerBadgeBg: 'bg-[#BFDBFE] text-[#1E3A8A] border-[#93C5FD]',
+    textPrimary: 'text-[#1E3A8A]',
+    badgeBg: 'bg-[#EBF3FB]',
+    badgeText: 'text-[#1E3A8A]',
+    badgeBorder: 'border-[#BFDBFE]',
+    btnPrimary: 'bg-[#1E3A8A] hover:bg-[#172554] text-white',
+    accentSubtle: 'text-[#BFDBFE]',
+    ring: 'focus:ring-[#1E3A8A]',
+  },
+  denhaag: {
+    primary: '#006448',
+    headerBg: 'bg-[#006448]',
+    headerBadgeBg: 'bg-[#d8e7e2] text-[#006448] border-[#8ba198]',
+    textPrimary: 'text-[#006448]',
+    badgeBg: 'bg-[#d8e7e2]',
+    badgeText: 'text-[#006448]',
+    badgeBorder: 'border-[#8ba198]',
+    btnPrimary: 'bg-[#006448] hover:bg-[#00523b] text-white',
+    accentSubtle: 'text-[#d8e7e2]',
+    ring: 'focus:ring-[#006448]',
+  },
+  amsterdam: {
+    primary: '#8C0223',
+    headerBg: 'bg-[#8C0223]',
+    headerBadgeBg: 'bg-[#FECDD3] text-[#8C0223] border-[#FDA4AF]',
+    textPrimary: 'text-[#8C0223]',
+    badgeBg: 'bg-[#FCE8EC]',
+    badgeText: 'text-[#8C0223]',
+    badgeBorder: 'border-[#F5B7C2]',
+    btnPrimary: 'bg-[#8C0223] hover:bg-[#70021c] text-white',
+    accentSubtle: 'text-[#FECDD3]',
+    ring: 'focus:ring-[#8C0223]',
+  },
+};
+
+export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cityId, onClose, onOrderUpdated }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [swapModalTicket, setSwapModalTicket] = useState<any | null>(null);
   const [targetSession, setTargetSession] = useState<string>('Vrijdagavond 19:00 - 23:00');
@@ -17,6 +68,19 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
   const [localTickets, setLocalTickets] = useState<any[] | null>(null);
 
   if (!order) return null;
+
+  // Resolve dynamic city theme
+  const resolvedCityKey = (
+    cityId ||
+    (order.city || '') ||
+    (order.cityName || '')
+  ).toLowerCase().includes('gent')
+    ? 'gent'
+    : (cityId || (order.city || '') || (order.cityName || '')).toLowerCase().includes('amsterdam')
+    ? 'amsterdam'
+    : 'denhaag';
+
+  const theme = DRAWER_THEMES[resolvedCityKey] || DRAWER_THEMES.denhaag;
 
   // Initialize or use effective tickets
   let effectiveTickets: any[] = localTickets || (Array.isArray(order.tickets) && order.tickets.length > 0 ? [...order.tickets] : []);
@@ -52,10 +116,9 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
   const handleDownloadPdf = () => {
     showToast(`📄 PDF E-Ticket (#${order.orderNumber}) wordt geopend...`);
     const firstTicket = effectiveTickets[0];
-    const cityKey = order.cityName.toLowerCase().includes('gent') ? 'gent' : order.cityName.toLowerCase().includes('amsterdam') ? 'amsterdam' : 'denhaag';
     const code = firstTicket ? firstTicket.code.replace('#', '') : 'WF1861';
     const session = firstTicket ? firstTicket.session : 'VIP Sessie';
-    window.open(`/api/tickets/${encodeURIComponent(code)}/pdf?city=${cityKey}&name=${encodeURIComponent(order.customerName)}&title=${encodeURIComponent(session)}&orderNumber=${encodeURIComponent(order.orderNumber)}`, '_blank');
+    window.open(`/api/tickets/${encodeURIComponent(code)}/pdf?city=${resolvedCityKey}&name=${encodeURIComponent(order.customerName)}&title=${encodeURIComponent(session)}&orderNumber=${encodeURIComponent(order.orderNumber)}`, '_blank');
   };
 
   const handleRefund = () => {
@@ -101,7 +164,6 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
         setSwapModalTicket(null);
         if (onOrderUpdated) onOrderUpdated();
       } else {
-        // Fallback for demo if backend had specific error
         showToast(`⚠️ Omruil verwerkt in demo modus`);
         setSwapModalTicket(null);
       }
@@ -138,7 +200,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
     <div className="fixed inset-0 z-50 overflow-hidden flex justify-end bg-black/50 backdrop-blur-xs transition-opacity animate-in fade-in duration-200">
       <div className="w-full sm:max-w-xl bg-[#FCFAF7] border-l-2 sm:border-l-3 border-[#1D1C1A] shadow-2xl h-full flex flex-col justify-between overflow-hidden">
         {/* Drawer Header */}
-        <div className="p-4 sm:p-6 bg-[#006448] text-white border-b-2 border-[#1D1C1A] flex items-center justify-between shrink-0">
+        <div className={`p-4 sm:p-6 ${theme.headerBg} text-white border-b-2 border-[#1D1C1A] flex items-center justify-between shrink-0`}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded bg-[#1D1C1A] border border-[#caac8e] flex items-center justify-center font-extrabold text-xs sm:text-sm text-[#caac8e] shrink-0">
               #WF
@@ -146,16 +208,18 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-base sm:text-lg text-[#FAF7F2]">{order.orderNumber}</h3>
-                <span className="bg-[#d8e7e2] text-[#006448] text-[10px] font-bold px-2 py-0.5 rounded border border-[#8ba198] uppercase">
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded border uppercase ${theme.headerBadgeBg}`}>
                   {order.cityName}
                 </span>
               </div>
-              <p className="text-[11px] sm:text-xs text-[#d8e7e2]">Mollie Betaalreferentie • Status: {order.status === 'paid' ? 'Betaald' : order.status}</p>
+              <p className={`text-[11px] sm:text-xs ${theme.accentSubtle}`}>
+                Mollie Betaalreferentie • Status: {order.status === 'paid' ? 'Betaald' : order.status}
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-black/20 text-white transition-colors"
+            className="p-2 rounded-full hover:bg-black/20 text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -163,7 +227,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
 
         {/* Drawer Toast Notification */}
         {toastMessage && (
-          <div className="m-3 sm:m-4 p-3 bg-[#d8e7e2] border-2 border-[#006448] rounded text-[#006448] text-xs font-extrabold flex items-center gap-2 shadow-[2px_2px_0px_rgba(0,100,72,0.4)]">
+          <div className={`m-3 sm:m-4 p-3 border-2 rounded text-xs font-extrabold flex items-center gap-2 ${theme.badgeBg} ${theme.badgeBorder} ${theme.textPrimary} shadow-sm`}>
             <CheckCircle className="w-4 h-4 shrink-0" />
             <span>{toastMessage}</span>
           </div>
@@ -172,8 +236,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
         {/* Drawer Body Content (Scrollable independently) */}
         <div className="p-4 sm:p-6 space-y-5 flex-1 overflow-y-auto">
           {/* Klantgegevens Card */}
-          <div className="bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded p-4 shadow-[3px_3px_0px_rgba(29,28,26,0.15)]">
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#006448] mb-3 flex items-center gap-1.5">
+          <div className="bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg p-4 shadow-[3px_3px_0px_rgba(29,28,26,0.15)]">
+            <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${theme.textPrimary}`}>
               <User className="w-4 h-4" /> Klant- & Contactgegevens
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -187,28 +251,28 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
               </div>
               <div>
                 <span className="text-[#4c5752] block font-semibold text-[11px]">Telefoon:</span>
-                <span className="font-bold text-[#1D1C1A]">{order.customerPhone}</span>
+                <span className="font-bold text-[#1D1C1A]">{order.customerPhone || 'Niet opgegeven'}</span>
               </div>
               <div>
                 <span className="text-[#4c5752] block font-semibold text-[11px]">Aankoopmoment:</span>
                 <span className="font-bold text-[#1D1C1A] flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-[#006448]" /> {order.createdAt}
+                  <Calendar className={`w-3.5 h-3.5 ${theme.textPrimary}`} /> {order.createdAt}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Financiële Specificatie */}
-          <div className="bg-white border-2 border-[#c1d4ce] rounded p-4">
+          <div className="bg-[#FCFAF7] border-2 border-[#c1d4ce] rounded-lg p-4">
             <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce] mb-3">
               <span className="text-xs font-extrabold uppercase tracking-wider text-[#1D1C1A]">
                 Besteloverzicht:
               </span>
-              <span className="text-xs font-bold text-[#006448] text-right">{order.itemsSummary}</span>
+              <span className={`text-xs font-bold ${theme.textPrimary} text-right`}>{order.itemsSummary}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs sm:text-sm font-extrabold text-[#1D1C1A]">Totaalbedrag (incl. BTW):</span>
-              <span className="text-base sm:text-lg font-extrabold text-[#006448]">
+              <span className={`text-base sm:text-lg font-extrabold ${theme.textPrimary}`}>
                 € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
               </span>
             </div>
@@ -226,7 +290,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
                 Geen individuele toegangskaarten voor deze bestelling (bijvoorbeeld losse merchandise/festivalfles).
               </p>
             ) : (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 {effectiveTickets.map((t, idx) => {
                   const isSwapped = t.status === 'swapped';
                   const isCancelled = t.status === 'cancelled';
@@ -235,7 +299,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
                   return (
                     <div
                       key={idx}
-                      className={`p-3 border-2 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-[2px_2px_0px_rgba(29,28,26,0.1)] transition-colors ${
+                      className={`p-3.5 border-2 rounded-lg space-y-2.5 shadow-[2px_2px_0px_rgba(29,28,26,0.15)] transition-colors ${
                         isSwapped
                           ? 'bg-amber-50/60 border-amber-400 opacity-90'
                           : isCancelled
@@ -243,39 +307,69 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
                           : 'bg-[#FAF7F2] border-[#1D1C1A]'
                       }`}
                     >
-                      <div className="space-y-0.5">
-                        <div className="flex flex-wrap items-center gap-2">
+                      {/* Top Row: Ticket Code & Attendee + Status Badge */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className={`font-mono text-xs font-extrabold px-1.5 py-0.5 rounded border ${
+                            className={`font-mono text-xs font-extrabold px-2 py-0.5 rounded border shrink-0 ${
                               isSwapped
                                 ? 'bg-amber-100 text-amber-900 border-amber-400 line-through'
                                 : isCancelled
                                 ? 'bg-red-100 text-red-800 border-red-400 line-through'
-                                : 'text-[#006448] bg-[#d8e7e2] border-[#8ba198]'
+                                : `${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`
                             }`}
                           >
                             {t.code}
                           </span>
-                          <span className={`text-xs font-extrabold ${isCancelled ? 'line-through text-gray-500' : 'text-[#1D1C1A]'}`}>
+                          <span className={`text-xs font-extrabold truncate ${isCancelled ? 'line-through text-gray-500' : 'text-[#1D1C1A]'}`}>
                             {t.attendeeName}
                           </span>
                         </div>
-                        <div className="text-[11px] text-[#4c5752] font-medium">
-                          {t.type} • {t.session}
+
+                        {/* Status Badge right-aligned at top */}
+                        <div className="shrink-0">
+                          {isValid && (
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}>
+                              <CheckCircle className="w-3 h-3" /> GELDIG
+                            </span>
+                          )}
+                          {isSwapped && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-400">
+                              <RefreshCw className="w-3 h-3" /> OMGERUILD
+                            </span>
+                          )}
+                          {isCancelled && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-red-100 text-red-800 border border-red-400">
+                              <X className="w-3 h-3" /> GEANNULEERD
+                            </span>
+                          )}
                         </div>
+                      </div>
+
+                      {/* Middle: Session details */}
+                      <div className="text-[11px] text-[#4c5752] font-semibold">
+                        {t.type} • {t.session}
                         {isSwapped && t.replacedBy && (
-                          <div className="text-[10px] text-amber-800 font-bold flex items-center gap-1">
-                            <span>↳ Omgeruild voor ticket #{t.replacedBy}</span>
+                          <div className="text-[10px] text-amber-800 font-bold flex items-center gap-1 mt-0.5">
+                            <span>↳ Vervangen door ticket #{t.replacedBy}</span>
                           </div>
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-center">
-                        {isValid && (
-                          <>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-[#d8e7e2] text-[#006448] border border-[#006448]">
-                              <CheckCircle className="w-3 h-3" /> GELDIG
-                            </span>
+                      {/* Bottom Row: Actions Bar */}
+                      {isValid && (
+                        <div className="pt-2 border-t border-[#c1d4ce]/70 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={`/api/tickets/${encodeURIComponent(t.code.replace('#', ''))}/pdf?city=${resolvedCityKey}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(t.session)}&orderNumber=${encodeURIComponent(order.orderNumber)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border-2 border-[#1D1C1A] bg-white hover:bg-[#FAF7F2] text-[#1D1C1A] text-xs font-extrabold shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer"
+                              title="Bekijk of download ticket PDF"
+                            >
+                              <Download className="w-3.5 h-3.5 text-[#4c5752]" />
+                              <span>Ticket PDF ↗</span>
+                            </a>
 
                             <button
                               type="button"
@@ -283,45 +377,24 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
                                 setSwapModalTicket(t);
                                 setTargetSession(t.session.includes('Vrijdag') ? 'Zaterdagmiddag 13:00 - 17:00' : 'Vrijdagavond 19:00 - 23:00');
                               }}
-                              className="px-2 py-1 rounded bg-[#caac8e] hover:bg-[#b89a7c] text-[#1D1C1A] text-[10px] font-extrabold border border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)] flex items-center gap-1 transition-transform active:translate-y-0.5"
-                              title="Ruil dit ticket om voor een andere sessie of tickettype"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border-2 border-[#1D1C1A] bg-[#caac8e] hover:bg-[#b89a7c] text-[#1D1C1A] text-xs font-extrabold shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer"
+                              title="Ruil dit ticket om voor een andere sessie"
                             >
-                              <RefreshCw className="w-2.5 h-2.5" />
-                              <span>Inruilen</span>
+                              <RefreshCw className="w-3 h-3 text-[#1D1C1A]" />
+                              <span>Omruilen</span>
                             </button>
+                          </div>
 
-                            <a
-                              href={`/api/tickets/${encodeURIComponent(t.code.replace('#', ''))}/pdf?city=${order.cityName.toLowerCase().includes('gent') ? 'gent' : order.cityName.toLowerCase().includes('amsterdam') ? 'amsterdam' : 'denhaag'}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(t.session)}&orderNumber=${encodeURIComponent(order.orderNumber)}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[10px] font-extrabold text-[#006448] hover:underline bg-white px-2 py-1 rounded border border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)] flex items-center gap-1 cursor-pointer"
-                            >
-                              <span>PDF ↗</span>
-                            </a>
-
-                            <button
-                              type="button"
-                              onClick={() => handleCancelSingleTicket(t)}
-                              className="px-1.5 py-1 rounded text-[10px] font-bold text-red-700 hover:bg-red-100/80 border border-transparent hover:border-red-300"
-                              title="Annuleer alleen dit ticket"
-                            >
-                              Annuleer
-                            </button>
-                          </>
-                        )}
-
-                        {isSwapped && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-500">
-                            🔄 OMGERUILD
-                          </span>
-                        )}
-
-                        {isCancelled && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-100 text-red-800 border border-red-400">
-                            ✕ GEANNULEERD
-                          </span>
-                        )}
-                      </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCancelSingleTicket(t)}
+                            className="text-[11px] font-bold text-red-700 hover:text-red-900 hover:underline px-2 py-1 transition-colors cursor-pointer"
+                            title="Annuleer alleen dit ticket"
+                          >
+                            Annuleren
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -339,15 +412,15 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
               onClick={handleResendEmail}
-              className="btn-letterpress py-2.5 px-3 rounded text-xs font-extrabold flex items-center justify-center gap-1.5 text-center"
+              className={`py-2.5 px-3 rounded border-2 border-[#1D1C1A] text-xs font-extrabold flex items-center justify-center gap-1.5 text-center shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer transition-all ${theme.btnPrimary}`}
             >
-              <Mail className="w-4 h-4 text-[#e4d5c4]" />
+              <Mail className="w-4 h-4" />
               <span>Verstuur E-Tickets Opnieuw</span>
             </button>
 
             <button
               onClick={handleDownloadPdf}
-              className="btn-letterpress-gold py-2.5 px-3 rounded text-xs font-extrabold flex items-center justify-center gap-1.5 text-center"
+              className="py-2.5 px-3 rounded border-2 border-[#1D1C1A] bg-[#caac8e] hover:bg-[#b89a7c] text-[#1D1C1A] text-xs font-extrabold flex items-center justify-center gap-1.5 text-center shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer transition-all"
             >
               <Download className="w-4 h-4 text-[#1D1C1A]" />
               <span>Download Alle E-Tickets (PDF)</span>
@@ -356,7 +429,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, onC
 
           <button
             onClick={handleRefund}
-            className="w-full py-2 px-3 rounded border-2 border-red-800 text-red-800 hover:bg-red-50 text-xs font-extrabold flex items-center justify-center gap-1.5 transition-colors text-center"
+            className="w-full py-2 px-3 rounded border-2 border-red-800 text-red-800 hover:bg-red-50 text-xs font-extrabold flex items-center justify-center gap-1.5 transition-colors text-center cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Annuleren & Voorraad Teruggeven</span>

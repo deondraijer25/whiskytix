@@ -23,12 +23,56 @@ import {
 } from '../data/mockData';
 import { OrderDetailDrawer } from '../components/OrderDetailDrawer';
 
+const CITY_THEMES: Record<string, {
+  primary: string;
+  gradientClass: string;
+  dotColor: string;
+  progressBar: string;
+  accentText: string;
+  badgeBg: string;
+  badgeBorder: string;
+  buttonBg: string;
+}> = {
+  gent: {
+    primary: '#1E3A8A',
+    gradientClass: 'bg-gradient-to-br from-[#172554] via-[#1E3A8A] to-[#1D4ED8]',
+    dotColor: 'bg-[#1E3A8A]',
+    progressBar: 'bg-[#1E3A8A]',
+    accentText: 'text-[#1E3A8A]',
+    badgeBg: 'bg-[#EBF3FB]',
+    badgeBorder: 'border-[#BFDBFE]',
+    buttonBg: 'bg-[#1E3A8A]',
+  },
+  denhaag: {
+    primary: '#006448',
+    gradientClass: 'bg-gradient-to-br from-[#003B2A] via-[#006448] to-[#047857]',
+    dotColor: 'bg-[#006448]',
+    progressBar: 'bg-[#006448]',
+    accentText: 'text-[#006448]',
+    badgeBg: 'bg-[#d8e7e2]',
+    badgeBorder: 'border-[#8ba198]',
+    buttonBg: 'bg-[#006448]',
+  },
+  amsterdam: {
+    primary: '#8C0223',
+    gradientClass: 'bg-gradient-to-br from-[#5C0117] via-[#8C0223] to-[#B91C1C]',
+    dotColor: 'bg-[#8C0223]',
+    progressBar: 'bg-[#8C0223]',
+    accentText: 'text-[#8C0223]',
+    badgeBg: 'bg-[#FCE8EC]',
+    badgeBorder: 'border-[#F5B7C2]',
+    buttonBg: 'bg-[#8C0223]',
+  },
+};
+
 export const FestivalOverviewPage: React.FC = () => {
   const { cityId = 'gent' } = useParams<{ cityId?: string }>();
   const navigate = useNavigate();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const theme = CITY_THEMES[cityId] || CITY_THEMES.denhaag;
 
   const activeFestival = useMemo(() => {
     return INITIAL_FESTIVALS.find((f) => f.id === cityId) || INITIAL_FESTIVALS[0];
@@ -101,57 +145,54 @@ export const FestivalOverviewPage: React.FC = () => {
 
   return (
     <div className="space-y-6 sm:space-y-8 font-sans">
-      {/* 1. Header Banner */}
-      <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-6 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* 1. Header Hero Banner with Festival Gradient */}
+      <div className={`${theme.gradientClass} border-2 border-[#1D1C1A] rounded-lg p-5 sm:p-6 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-white`}>
         <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest bg-[#FCFAF7] text-[#1D1C1A] px-2.5 py-0.5 rounded border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]">
               {activeFestival.edition} • Directie Dashboard
             </span>
-            <span className="text-xs text-[#4c5752] font-semibold">
+            <span className="text-xs text-[#FAF7F2]/90 font-semibold">
               • {activeFestival.location}
             </span>
             <span
-              className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                isPrelaunch
-                  ? 'bg-[#FAF7F2] text-[#4c5752] border-[#c1d4ce]'
-                  : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-              }`}
+              className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border-2 border-[#1D1C1A] bg-[#FCFAF7] text-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)] flex items-center gap-1.5"
             >
+              <span className={`w-1.5 h-1.5 rounded-full ${isPrelaunch ? 'bg-amber-500' : 'bg-emerald-600'}`}></span>
               {isPrelaunch ? 'In Voorbereiding' : 'Mollie Actief'}
             </span>
           </div>
-          <h1 className="text-xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
+          <h1 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-sm">
             Overzicht: {activeFestival.name}
           </h1>
-          <p className="text-xs sm:text-sm text-[#4c5752] mt-0.5 font-medium">
+          <p className="text-xs sm:text-sm text-[#FAF7F2]/90 mt-1 font-medium">
             {isPrelaunch
               ? 'Deze festivaleditie staat momenteel in voorbereiding. De kaartverkoop is nog niet gestart.'
               : 'Realtime inzicht in omzet, zaalcapaciteit en bestellingen via Mollie.'}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
           <button
             onClick={fetchOrders}
             disabled={isLoading}
-            className="p-2.5 rounded border-2 border-[#1D1C1A] bg-[#FAF7F2] text-[#1D1C1A] hover:bg-[#d8e7e2] shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer disabled:opacity-50"
+            className="p-2.5 rounded border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer disabled:opacity-50 transition-all active:translate-y-0.5"
             title="Ververs gegevens"
           >
-            <RefreshCw className={`w-4 h-4 text-[#006448] ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 text-[#1D1C1A] ${isLoading ? 'animate-spin' : ''}`} />
           </button>
           <Link
             to={`/admin/festival/${cityId}/orders`}
-            className="btn-letterpress flex-1 sm:flex-initial px-3.5 py-2 rounded text-xs font-extrabold flex items-center justify-center gap-2 shadow-[2px_2px_0px_rgba(29,28,26,0.9)]"
+            className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded text-xs font-extrabold flex items-center justify-center gap-2 border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all active:translate-y-0.5"
           >
-            <Search className="w-4 h-4" />
+            <Search className="w-4 h-4 text-[#1D1C1A]" />
             <span>Bestellingen</span>
           </Link>
           <Link
             to={`/scan?festival=${cityId}`}
-            className="btn-letterpress-outline flex-1 sm:flex-initial px-3.5 py-2 rounded text-xs font-extrabold flex items-center justify-center gap-2"
+            className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded text-xs font-extrabold flex items-center justify-center gap-2 border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all active:translate-y-0.5"
           >
-            <QrCode className="w-4 h-4 text-[#006448]" />
+            <QrCode className="w-4 h-4 text-[#1D1C1A]" />
             <span>Deurscanner</span>
           </Link>
         </div>
@@ -186,7 +227,7 @@ export const FestivalOverviewPage: React.FC = () => {
       <div>
         <div className="flex items-center justify-between mb-2.5 sm:mb-3">
           <h2 className="text-xs font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
+            <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
             Totaalscore {activeFestival.name}
           </h2>
           <span className="text-[10px] sm:text-xs text-[#4c5752] font-bold">
@@ -201,11 +242,11 @@ export const FestivalOverviewPage: React.FC = () => {
               <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
                 Bruto Omzet
               </span>
-              <div className="w-6 h-6 rounded bg-[#d8e7e2] text-[#006448] flex items-center justify-center font-bold text-xs border border-[#8ba198]">
+              <div className={`w-6 h-6 rounded ${theme.badgeBg} ${theme.accentText} flex items-center justify-center font-bold text-xs border ${theme.badgeBorder}`}>
                 €
               </div>
             </div>
-            <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-[#006448] tracking-tight">
+            <div className={`text-lg sm:text-2xl lg:text-3xl font-extrabold ${theme.accentText} tracking-tight`}>
               € {(totalRevenueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="mt-1 text-[10px] sm:text-[11px] font-medium text-[#4c5752] truncate">
@@ -219,8 +260,8 @@ export const FestivalOverviewPage: React.FC = () => {
               <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
                 Tickets Verkocht
               </span>
-              <div className="w-6 h-6 rounded bg-[#d8e7e2] text-[#006448] flex items-center justify-center font-bold text-xs border border-[#8ba198]">
-                <Ticket className="w-3.5 h-3.5 text-[#006448]" />
+              <div className={`w-6 h-6 rounded ${theme.badgeBg} ${theme.accentText} flex items-center justify-center font-bold text-xs border ${theme.badgeBorder}`}>
+                <Ticket className={`w-3.5 h-3.5 ${theme.accentText}`} />
               </div>
             </div>
             <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
@@ -231,7 +272,7 @@ export const FestivalOverviewPage: React.FC = () => {
             </div>
             <div className="w-full bg-[#c1d4ce] h-2 rounded-full mt-2 overflow-hidden">
               <div
-                className="bg-[#006448] h-full rounded-full transition-all duration-500"
+                className={`${theme.progressBar} h-full rounded-full transition-all duration-500`}
                 style={{ width: `${Math.min(100, Math.max(totalTicketsSold > 0 ? 1 : 0, parseFloat(soldPct)))}%` }}
               ></div>
             </div>
@@ -246,8 +287,8 @@ export const FestivalOverviewPage: React.FC = () => {
               <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
                 Aantal Orders
               </span>
-              <div className="w-6 h-6 rounded bg-[#d8e7e2] text-[#006448] flex items-center justify-center font-bold text-xs border border-[#8ba198]">
-                <ShoppingBag className="w-3.5 h-3.5 text-[#006448]" />
+              <div className={`w-6 h-6 rounded ${theme.badgeBg} ${theme.accentText} flex items-center justify-center font-bold text-xs border ${theme.badgeBorder}`}>
+                <ShoppingBag className={`w-3.5 h-3.5 ${theme.accentText}`} />
               </div>
             </div>
             <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
@@ -284,7 +325,7 @@ export const FestivalOverviewPage: React.FC = () => {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
+              <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
               Sessie-Thermometer (Voortgang per Dagdeel)
             </h2>
             <p className="text-[11px] sm:text-xs text-[#4c5752] font-medium mt-0.5">
@@ -294,7 +335,7 @@ export const FestivalOverviewPage: React.FC = () => {
 
           <Link
             to={`/admin/festival/${cityId}/inventory`}
-            className="text-xs font-extrabold text-[#006448] hover:underline flex items-center gap-1 shrink-0"
+            className={`text-xs font-extrabold ${theme.accentText} hover:underline flex items-center gap-1 shrink-0`}
           >
             <span>Zaalcapaciteit Beheren</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -322,7 +363,7 @@ export const FestivalOverviewPage: React.FC = () => {
                         Uitverkocht
                       </span>
                     ) : (
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${theme.badgeBg} ${theme.accentText} border ${theme.badgeBorder}`}>
                         {remaining} Beschikbaar
                       </span>
                     )}
@@ -332,7 +373,7 @@ export const FestivalOverviewPage: React.FC = () => {
                     {session.name}
                   </h3>
                   <div className="flex items-center gap-1 text-xs text-[#4c5752] font-semibold mb-3">
-                    <Clock className="w-3.5 h-3.5 text-[#006448]" />
+                    <Clock className={`w-3.5 h-3.5 ${theme.accentText}`} />
                     <span>{session.time} uur</span>
                   </div>
 
@@ -346,7 +387,7 @@ export const FestivalOverviewPage: React.FC = () => {
                     </div>
                     <div className="w-full bg-[#c1d4ce] h-2 rounded-full overflow-hidden">
                       <div
-                        className="bg-[#006448] h-full rounded-full transition-all duration-300"
+                        className={`${theme.progressBar} h-full rounded-full transition-all duration-300`}
                         style={{ width: `${Math.min(100, Math.max(session.sold > 0 ? 1 : 0, pct))}%` }}
                       ></div>
                     </div>
@@ -364,12 +405,12 @@ export const FestivalOverviewPage: React.FC = () => {
         <div className="lg:col-span-2 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
+              <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
               Recente Bestellingen {activeFestival.name}
             </h2>
             <Link
               to={`/admin/festival/${cityId}/orders`}
-              className="text-xs font-extrabold text-[#006448] hover:underline flex items-center gap-1"
+              className={`text-xs font-extrabold ${theme.accentText} hover:underline flex items-center gap-1`}
             >
               <span>Alle Bestellingen</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -378,7 +419,7 @@ export const FestivalOverviewPage: React.FC = () => {
 
           {orders.length === 0 ? (
             <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-8 text-center shadow-[3px_3px_0px_rgba(29,28,26,0.9)]">
-              <div className="w-10 h-10 rounded-full bg-[#d8e7e2] text-[#006448] flex items-center justify-center mx-auto mb-2 border border-[#8ba198]">
+              <div className={`w-10 h-10 rounded-full ${theme.badgeBg} ${theme.accentText} flex items-center justify-center mx-auto mb-2 border ${theme.badgeBorder}`}>
                 <Receipt className="w-5 h-5" />
               </div>
               <div className="font-extrabold text-sm text-[#1D1C1A]">
@@ -410,7 +451,7 @@ export const FestivalOverviewPage: React.FC = () => {
                       className="hover:bg-[#FAF7F2] transition-colors cursor-pointer"
                       onClick={() => setSelectedOrder(order)}
                     >
-                      <td className="py-2.5 px-3 font-mono font-extrabold text-[#006448]">
+                      <td className={`py-2.5 px-3 font-mono font-extrabold ${theme.accentText}`}>
                         {order.orderNumber}
                       </td>
                       <td className="py-2.5 px-3 font-bold text-[#1D1C1A]">
@@ -455,17 +496,17 @@ export const FestivalOverviewPage: React.FC = () => {
         {/* Kolom 3: Directie Quick-Actions & Live Systeemstatus */}
         <div className="space-y-4">
           <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
+            <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
             Snelle Acties
           </h2>
 
           <div className="space-y-2">
             <Link
               to={`/admin/festival/${cityId}/orders`}
-              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#d8e7e2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
+              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#FAF7F2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
             >
               <div className="flex items-center gap-2.5">
-                <Search className="w-4 h-4 text-[#006448]" />
+                <Search className={`w-4 h-4 ${theme.accentText}`} />
                 <span>Zoek Klant of Ticketnummer</span>
               </div>
               <ArrowRight className="w-4 h-4 text-[#4c5752] group-hover:translate-x-1 transition-transform" />
@@ -473,10 +514,10 @@ export const FestivalOverviewPage: React.FC = () => {
 
             <Link
               to={`/admin/festival/${cityId}/inventory`}
-              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#d8e7e2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
+              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#FAF7F2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
             >
               <div className="flex items-center gap-2.5">
-                <Layers className="w-4 h-4 text-[#006448]" />
+                <Layers className={`w-4 h-4 ${theme.accentText}`} />
                 <span>Zaalcapaciteit & Masterclasses</span>
               </div>
               <ArrowRight className="w-4 h-4 text-[#4c5752] group-hover:translate-x-1 transition-transform" />
@@ -484,10 +525,10 @@ export const FestivalOverviewPage: React.FC = () => {
 
             <Link
               to={`/admin/festival/${cityId}/door`}
-              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#d8e7e2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
+              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#FAF7F2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
             >
               <div className="flex items-center gap-2.5">
-                <Activity className="w-4 h-4 text-[#006448]" />
+                <Activity className={`w-4 h-4 ${theme.accentText}`} />
                 <span>Live Deurmonitor & Check-ins</span>
               </div>
               <ArrowRight className="w-4 h-4 text-[#4c5752] group-hover:translate-x-1 transition-transform" />
@@ -495,7 +536,7 @@ export const FestivalOverviewPage: React.FC = () => {
 
             <Link
               to={`/scan?festival=${cityId}`}
-              className="w-full bg-[#006448] text-white border-2 border-[#1D1C1A] hover:bg-[#004d37] p-3 rounded-lg font-extrabold text-xs flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
+              className={`w-full ${theme.buttonBg} text-white border-2 border-[#1D1C1A] hover:opacity-90 p-3 rounded-lg font-extrabold text-xs flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group`}
             >
               <div className="flex items-center gap-2.5">
                 <QrCode className="w-4 h-4 text-[#caac8e]" />
@@ -533,6 +574,7 @@ export const FestivalOverviewPage: React.FC = () => {
       {/* Order Detail Drawer */}
       <OrderDetailDrawer
         order={selectedOrder}
+        cityId={cityId}
         onClose={() => setSelectedOrder(null)}
       />
     </div>

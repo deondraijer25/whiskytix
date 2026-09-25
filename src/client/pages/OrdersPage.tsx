@@ -20,6 +20,40 @@ function formatOrderDate(dateStr: string): string {
   }
 }
 
+const CITY_THEMES: Record<string, {
+  primary: string;
+  textPrimary: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+  focusRing: string;
+}> = {
+  gent: {
+    primary: '#1E3A8A',
+    textPrimary: 'text-[#1E3A8A]',
+    badgeBg: 'bg-[#EBF3FB]',
+    badgeText: 'text-[#1E3A8A]',
+    badgeBorder: 'border-[#BFDBFE]',
+    focusRing: 'focus:ring-[#1E3A8A]',
+  },
+  denhaag: {
+    primary: '#006448',
+    textPrimary: 'text-[#006448]',
+    badgeBg: 'bg-[#d8e7e2]',
+    badgeText: 'text-[#006448]',
+    badgeBorder: 'border-[#8ba198]',
+    focusRing: 'focus:ring-[#006448]',
+  },
+  amsterdam: {
+    primary: '#8C0223',
+    textPrimary: 'text-[#8C0223]',
+    badgeBg: 'bg-[#FCE8EC]',
+    badgeText: 'text-[#8C0223]',
+    badgeBorder: 'border-[#F5B7C2]',
+    focusRing: 'focus:ring-[#8C0223]',
+  },
+};
+
 export const OrdersPage: React.FC = () => {
   const { cityId } = useParams<{ cityId?: string }>();
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,6 +65,7 @@ export const OrdersPage: React.FC = () => {
 
   const activeFestival = cityId ? INITIAL_FESTIVALS.find((f) => f.id === cityId) : null;
   const effectiveCity = cityId || selectedCity;
+  const theme = CITY_THEMES[effectiveCity] || CITY_THEMES.denhaag;
 
   const fetchOrders = async () => {
     setIsLoading(true);
@@ -86,7 +121,7 @@ export const OrdersPage: React.FC = () => {
       <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-6 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
+            <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-widest px-2 py-0.5 rounded border ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}>
               {activeFestival ? `${activeFestival.edition} • Klantenbeheer` : 'Klanten & Bestellingen'}
             </span>
             <span className="text-xs text-[#4c5752] font-semibold">
@@ -108,12 +143,12 @@ export const OrdersPage: React.FC = () => {
             className="p-2 rounded border-2 border-[#1D1C1A] bg-[#FAF7F2] text-[#1D1C1A] hover:bg-[#d8e7e2] shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer disabled:opacity-50"
             title="Ververs bestellingen"
           >
-            <RefreshCw className={`w-4 h-4 text-[#006448] ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${theme.textPrimary} ${isLoading ? 'animate-spin' : ''}`} />
           </button>
           <span className="bg-[#FAF7F2] border border-[#c1d4ce] px-3 py-1.5 rounded">
-            Aantal: <strong className="text-[#006448]">{filteredOrders.length}</strong> orders
+            Aantal: <strong className={theme.textPrimary}>{filteredOrders.length}</strong> orders
           </span>
-          <span className="bg-[#d8e7e2] border border-[#8ba198] px-3 py-1.5 rounded text-[#006448]">
+          <span className={`border px-3 py-1.5 rounded ${theme.badgeBg} ${theme.badgeBorder} ${theme.badgeText}`}>
             Omzet: <strong>€ {(totalRevenueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
           </span>
         </div>
@@ -123,13 +158,13 @@ export const OrdersPage: React.FC = () => {
       <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-3 sm:p-4 shadow-[3px_3px_0px_rgba(29,28,26,0.9)] space-y-2.5 sm:space-y-0 sm:flex sm:gap-3">
         {/* Search Input */}
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-[#006448] absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className={`w-4 h-4 ${theme.textPrimary} absolute left-3 top-1/2 -translate-y-1/2`} />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Typ naam, e-mail of #WF code..."
-            className="w-full pl-9 pr-8 py-2 bg-white border-2 border-[#1D1C1A] rounded text-base sm:text-xs text-[#1D1C1A] font-semibold focus:outline-none focus:ring-2 focus:ring-[#006448]"
+            className={`w-full pl-9 pr-8 py-2 bg-white border-2 border-[#1D1C1A] rounded text-base sm:text-xs text-[#1D1C1A] font-semibold focus:outline-none focus:ring-2 ${theme.focusRing}`}
           />
           {searchQuery && (
             <button
@@ -220,7 +255,7 @@ export const OrdersPage: React.FC = () => {
                       <Clock className="w-3 h-3" /> In afw.
                     </span>
                   )}
-                  <ChevronRight className="w-4 h-4 text-[#006448]" />
+                  <ChevronRight className={`w-4 h-4 ${theme.textPrimary}`} />
                 </div>
               </div>
             </div>
@@ -258,7 +293,7 @@ export const OrdersPage: React.FC = () => {
                     onClick={() => setSelectedOrder(order)}
                     className="hover:bg-[#FAF7F2] transition-colors cursor-pointer"
                   >
-                    <td className="py-3 px-4 font-mono font-extrabold text-[#006448]">
+                    <td className={`py-3 px-4 font-mono font-extrabold ${theme.textPrimary}`}>
                       {order.orderNumber}
                     </td>
                     <td className="py-3 px-4">
@@ -266,7 +301,13 @@ export const OrdersPage: React.FC = () => {
                       <div className="text-[11px] text-[#4c5752] font-normal">{order.customerEmail}</div>
                     </td>
                     <td className="py-3 px-4">
-                      <span className="bg-[#d8e7e2] text-[#006448] px-2 py-0.5 rounded font-extrabold text-[10px] border border-[#8ba198] uppercase">
+                      <span className={`px-2 py-0.5 rounded font-extrabold text-[10px] border uppercase ${
+                        order.city === 'gent' || (order.cityName || '').toLowerCase().includes('gent')
+                          ? 'bg-[#EBF3FB] text-[#1E3A8A] border-[#BFDBFE]'
+                          : order.city === 'amsterdam' || (order.cityName || '').toLowerCase().includes('amsterdam')
+                          ? 'bg-[#FCE8EC] text-[#8C0223] border-[#F5B7C2]'
+                          : 'bg-[#d8e7e2] text-[#006448] border-[#8ba198]'
+                      }`}>
                         {order.cityName}
                       </span>
                     </td>
@@ -310,7 +351,12 @@ export const OrdersPage: React.FC = () => {
       </div>
 
       {/* Slide-out Order Detail Drawer */}
-      <OrderDetailDrawer order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+      <OrderDetailDrawer
+        order={selectedOrder}
+        cityId={cityId || (effectiveCity !== 'all' ? effectiveCity : undefined)}
+        onClose={() => setSelectedOrder(null)}
+        onOrderUpdated={fetchOrders}
+      />
     </div>
   );
 };

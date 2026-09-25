@@ -62,7 +62,7 @@ const FESTIVAL_THEMES: Record<string, FestivalTheme> = {
     defaultMonth: 'OKT',
     defaultDay: '02',
     year: '2026',
-    pillLocation: 'SINT-VEERLEPLEIN 5, GENT',
+    pillLocation: 'DE OUDE VISMIJN  \u2022  GENT',
     colors: {
       primary: '#1E3A8A',        // Gent Royal Blue (--whisky-gold-dark)
       accent: '#CAAC8E',         // Gent Vintage Beige/Gold (--whisky-gold)
@@ -92,7 +92,7 @@ const FESTIVAL_THEMES: Record<string, FestivalTheme> = {
     defaultMonth: 'NOV',
     defaultDay: '13',
     year: '2026',
-    pillLocation: 'ROND DE GROTE KERK 12, DEN HAAG',
+    pillLocation: 'GROTE KERK  \u2022  DEN HAAG',
     colors: {
       primary: '#006448',        // Den Haag Pine Green
       accent: '#CAAC8E',         // Champagne Gold
@@ -122,7 +122,7 @@ const FESTIVAL_THEMES: Record<string, FestivalTheme> = {
     defaultMonth: 'JAN',
     defaultDay: '16',
     year: '2027',
-    pillLocation: 'HANNIE DANKBAARPASSAGE 47, AMS',
+    pillLocation: 'DE HALLEN  \u2022  AMSTERDAM',
     colors: {
       primary: '#8C0223',        // Amsterdam Crimson Red
       accent: '#CAAC8E',         // Warm Gold
@@ -152,6 +152,7 @@ function hexToRgb(hex: string) {
  */
 function getFestivalLogoPng(cityKey: string): Buffer | null {
   const possiblePaths = [
+    path.join(process.cwd(), 'src', 'assets', 'logos', `logo-${cityKey}-color.svg`),
     path.join(process.cwd(), 'src', 'assets', 'logos', `logo-${cityKey}.svg`),
     path.join(process.cwd(), 'dist', 'assets', 'logos', `logo-${cityKey}.svg`),
     path.join(process.cwd(), 'public', `logo-${cityKey}.svg`),
@@ -163,7 +164,7 @@ function getFestivalLogoPng(cityKey: string): Buffer | null {
     if (fs.existsSync(p)) {
       try {
         const svgContent = fs.readFileSync(p, 'utf8');
-        const resvg = new Resvg(svgContent, { fitTo: { mode: 'height', value: 200 } });
+        const resvg = new Resvg(svgContent, { fitTo: { mode: 'height', value: 300 } });
         return Buffer.from(resvg.render().asPng());
       } catch (err) {
         console.error(`Error rasterizing SVG logo for ${cityKey}:`, err);
@@ -175,14 +176,17 @@ function getFestivalLogoPng(cityKey: string): Buffer | null {
 
 export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint8Array> {
   const {
-    ticketCode = '#WF-2026-84387-1',
-    orderNumber = 'WF1861',
     attendeeName = 'Deon Draijer',
     cityName = 'gent',
     sessionTitle = 'VIP SESSIE \u2014 VRIJDAG',
     timeStr = '13:30 - 17:30 UUR',
     itemNumber = '1/1',
   } = options;
+
+  // Sanitize order number and ticket code to avoid double ##
+  const cleanOrderNumber = (options.orderNumber || 'WF1861').replace(/^#+/, '').trim();
+  const cleanTicketCode = (options.ticketCode || 'WF-2026-84387-1').replace(/^#+/, '').trim();
+  const formattedTicketCode = `#${cleanTicketCode}`;
 
   // Resolve specific festival branding
   const cityKey = cityName.toLowerCase().includes('gent')
@@ -216,7 +220,7 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
 
   // Generate high-resolution cryptographic HMAC QR code PNG
   const qrDataUrl = await generateQrPngDataUrl({
-    ticketCode,
+    ticketCode: formattedTicketCode,
     cityName: cityKey,
     sessionTitle,
     attendeeName,
@@ -293,29 +297,32 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     color: colorCharcoal,
   });
 
-  // White Card Surface with 2px solid Charcoal Border
+  // Festival Color Card Surface with 2px solid Charcoal Border
   page.drawRectangle({
     x: headerX,
     y: headerY,
     width: contentW,
     height: headerH,
-    color: colorWhite,
+    color: colorPrimary,
     borderColor: colorCharcoal,
     borderWidth: 2,
   });
 
-  // Left: Official Circular Full-Color Logo
-  let textStartX = headerX + 14;
+  // Left: Official Circular Full-Color Logo with Overlap Effect (Den Haag tactile badge / website style)
+  let textStartX = headerX + 16;
   if (logoImage) {
-    const logoDisplayH = 42;
+    const logoDisplayH = 68;
     const logoDisplayW = (logoImage.width / logoImage.height) * logoDisplayH;
+    const logoX = headerX + 12;
+    const logoY = headerY - 8; // Hangs 8pt below banner bottom edge, overlaps tactile border
     page.drawImage(logoImage, {
-      x: headerX + 10,
-      y: headerY + (headerH - logoDisplayH) / 2,
+      x: logoX,
+      y: logoY,
       width: logoDisplayW,
       height: logoDisplayH,
     });
-    textStartX = headerX + 10 + logoDisplayW + 12;
+    // Shift banner text comfortably to the right so it never collides with the badge
+    textStartX = logoX + logoDisplayW + 14;
   }
 
   // Festival Title (10 pt bold)
@@ -324,7 +331,7 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     y: headerY + 31,
     size: 10,
     font: fontHelveticaBold,
-    color: colorCharcoal,
+    color: colorWhite,
   });
 
   // Festival Metadata Subtitle (8 pt)
@@ -333,28 +340,28 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     y: headerY + 15,
     size: 8,
     font: fontHelvetica,
-    color: colorMuted,
+    color: colorParchment,
   });
 
   // Right Side: Order Number (10 pt bold) & Status (8 pt)
-  const orderRefText = `BESTELLING #${orderNumber}`;
+  const orderRefText = `BESTELLING #${cleanOrderNumber}`;
   const orderRefW = fontHelveticaBold.widthOfTextAtSize(orderRefText, 10);
   page.drawText(orderRefText, {
-    x: headerX + contentW - 14 - orderRefW,
+    x: headerX + contentW - 16 - orderRefW,
     y: headerY + 31,
     size: 10,
     font: fontHelveticaBold,
-    color: colorPrimary,
+    color: colorWhite,
   });
 
   const ticketCountText = `Officieel Toegangsbewijs  \u2022  Volgnr. ${itemNumber}`;
   const ticketCountW = fontHelvetica.widthOfTextAtSize(ticketCountText, 8);
   page.drawText(ticketCountText, {
-    x: headerX + contentW - 14 - ticketCountW,
+    x: headerX + contentW - 16 - ticketCountW,
     y: headerY + 15,
     size: 8,
     font: fontHelvetica,
-    color: colorMuted,
+    color: colorParchment,
   });
 
   // =========================================================================
@@ -463,7 +470,7 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
   });
 
   // Formatted Ticket Code in Charcoal (10 pt bold)
-  const formattedCode = ticketCode.startsWith('#') ? ticketCode : `#${ticketCode}`;
+  const formattedCode = formattedTicketCode;
   const codeW = fontHelveticaBold.widthOfTextAtSize(formattedCode, 10);
   page.drawText(formattedCode, {
     x: cardX + (cardW - codeW) / 2,
@@ -678,7 +685,7 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     color: colorCharcoal,
   });
 
-  const orderMetaStr = `Ticket ${itemNumber}  \u2022  Bestelling #${orderNumber}`;
+  const orderMetaStr = `Ticket ${itemNumber}  \u2022  Bestelling #${cleanOrderNumber}`;
   const orderMetaW = fontHelvetica.widthOfTextAtSize(orderMetaStr, 8);
   page.drawText(orderMetaStr, {
     x: width - marginX - orderMetaW,
@@ -695,9 +702,9 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     color: colorRecessedBorder,
   });
 
-  // 3 Symmetrische Info Cards (100% gelijke hoogte 175 pt)
-  const colGap = 12;
-  const colW = (contentW - colGap * 2) / 3; // 170.42 pt
+  // 2 Symmetrische Info Cards verdeeld over de volledige breedte (175 pt hoog)
+  const colGap = 16;
+  const colW = (contentW - colGap) / 2; // 259.64 pt
   const colH = 175;
   const colY = infoHeaderY - 14 - colH; // 181.89 pt
 
@@ -720,84 +727,59 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     });
   }
 
+  const infoPillW = colW - 28;
+  const infoPillH = 22;
+  const infoPillY = colY + 12;
+
   // --- CARD 1: ADRES & PARKEREN ---
   const box1X = marginX;
   drawSymmetricCard(box1X, colY, colW, colH);
 
-  page.drawText('ADRES & PARKEREN', { x: box1X + 12, y: colY + colH - 18, size: 10, font: fontHelveticaBold, color: colorCharcoal });
-  page.drawLine({ start: { x: box1X + 12, y: colY + colH - 24 }, end: { x: box1X + colW - 12, y: colY + colH - 24 }, thickness: 0.75, color: colorRecessedBorder });
+  page.drawText('ADRES & PARKEREN', { x: box1X + 14, y: colY + colH - 18, size: 10, font: fontHelveticaBold, color: colorCharcoal });
+  page.drawLine({ start: { x: box1X + 14, y: colY + colH - 24 }, end: { x: box1X + colW - 14, y: colY + colH - 24 }, thickness: 0.75, color: colorRecessedBorder });
 
-  page.drawText(theme.venue, { x: box1X + 12, y: colY + colH - 38, size: 8, font: fontHelveticaBold, color: colorCharcoal });
+  page.drawText(theme.venue, { x: box1X + 14, y: colY + colH - 38, size: 8, font: fontHelveticaBold, color: colorCharcoal });
   page.drawText(
     `Adres:\n${theme.address}\n\nOpenbaar Vervoer:\n${theme.transit}\n\nParkeergelegenheid:\n${theme.parking}`,
     {
-      x: box1X + 12,
+      x: box1X + 14,
       y: colY + colH - 52,
       size: 8,
       font: fontHelvetica,
       color: colorMuted,
-      lineHeight: 11,
+      lineHeight: 11.5,
     }
   );
 
-  const pill1W = colW - 24;
-  const pill1H = 22;
-  const pill1Y = colY + 12;
-
-  page.drawRectangle({ x: box1X + 12, y: pill1Y, width: pill1W, height: pill1H, color: colorRecessedBg, borderColor: colorRecessedBorder, borderWidth: 1 });
+  page.drawRectangle({ x: box1X + 14, y: infoPillY, width: infoPillW, height: infoPillH, color: colorRecessedBg, borderColor: colorRecessedBorder, borderWidth: 1 });
   const pill1Text = theme.pillLocation;
   const pill1TextW = fontHelveticaBold.widthOfTextAtSize(pill1Text, 8);
-  page.drawText(pill1Text, { x: box1X + 12 + (pill1W - pill1TextW) / 2, y: pill1Y + 7, size: 8, font: fontHelveticaBold, color: colorPrimary });
+  page.drawText(pill1Text, { x: box1X + 14 + (infoPillW - pill1TextW) / 2, y: infoPillY + 7, size: 8, font: fontHelveticaBold, color: colorPrimary });
 
-  // --- CARD 2: SCHENKTIJDEN & 18+ ---
-  const box2X = box1X + colW + colGap;
+  // --- CARD 2: SCHENKTIJDEN & REGELS ---
+  const box2X = marginX + colW + colGap;
   drawSymmetricCard(box2X, colY, colW, colH);
 
-  page.drawText('SCHENKTIJDEN & REGELS', { x: box2X + 12, y: colY + colH - 18, size: 10, font: fontHelveticaBold, color: colorCharcoal });
-  page.drawLine({ start: { x: box2X + 12, y: colY + colH - 24 }, end: { x: box2X + colW - 12, y: colY + colH - 24 }, thickness: 0.75, color: colorRecessedBorder });
+  page.drawText('SCHENKTIJDEN & REGELS', { x: box2X + 14, y: colY + colH - 18, size: 10, font: fontHelveticaBold, color: colorCharcoal });
+  page.drawLine({ start: { x: box2X + 14, y: colY + colH - 24 }, end: { x: box2X + colW - 14, y: colY + colH - 24 }, thickness: 0.75, color: colorRecessedBorder });
 
-  page.drawText('Strikte NIX18 Controle', { x: box2X + 12, y: colY + colH - 38, size: 8, font: fontHelveticaBold, color: colorCharcoal });
+  page.drawText('Huisregels & Schenktijden', { x: box2X + 14, y: colY + colH - 38, size: 8, font: fontHelveticaBold, color: colorCharcoal });
   page.drawText(
-    `Laatste Ronde:\n15 minuten voor einde sessie stopt\nhet inschenken van alle whisky's.\n\nLegitimatiecontrole:\nStrikte 18+ controle bij de entree.\nNeem een geldig paspoort, ID of\nrijbewijs mee.`,
+    `Laatste Ronde:\n15 minuten voor het einde van de sessie\nstopt het inschenken van alle dranken.\n\nLegitimatie (Strikte NIX18 Controle):\nToegang uitsluitend voor 18 jaar en ouder.\nNeem een geldig legitimatiebewijs mee\n(paspoort, ID-kaart of rijbewijs).`,
     {
-      x: box2X + 12,
+      x: box2X + 14,
       y: colY + colH - 52,
       size: 8,
       font: fontHelvetica,
       color: colorMuted,
-      lineHeight: 11,
+      lineHeight: 11.5,
     }
   );
 
-  page.drawRectangle({ x: box2X + 12, y: pill1Y, width: pill1W, height: pill1H, color: colorRecessedBg, borderColor: colorRecessedBorder, borderWidth: 1 });
-  const pill2Text = 'NIX18 GECONTROLEERD';
+  page.drawRectangle({ x: box2X + 14, y: infoPillY, width: infoPillW, height: infoPillH, color: colorRecessedBg, borderColor: colorRecessedBorder, borderWidth: 1 });
+  const pill2Text = 'NIX18 GECONTROLEERD  \u2022  TOEGANG 18+';
   const pill2TextW = fontHelveticaBold.widthOfTextAtSize(pill2Text, 8);
-  page.drawText(pill2Text, { x: box2X + 12 + (pill1W - pill2TextW) / 2, y: pill1Y + 7, size: 8, font: fontHelveticaBold, color: colorPrimary });
-
-  // --- CARD 3: FESTIVAL SLIJTERIJ ---
-  const box3X = box2X + colW + colGap;
-  drawSymmetricCard(box3X, colY, colW, colH);
-
-  page.drawText('FESTIVAL SLIJTERIJ', { x: box3X + 12, y: colY + colH - 18, size: 10, font: fontHelveticaBold, color: colorCharcoal });
-  page.drawLine({ start: { x: box3X + 12, y: colY + colH - 24 }, end: { x: box3X + colW - 12, y: colY + colH - 24 }, thickness: 0.75, color: colorRecessedBorder });
-
-  page.drawText('Stand 48 in Festivalhal', { x: box3X + 12, y: colY + colH - 38, size: 8, font: fontHelveticaBold, color: colorCharcoal });
-  page.drawText(
-    `Exclusieve Bottelingen:\nKoop unieke festivalbottelingen en\nfavoriete flessen direct ter plekke.\n\nBetaalmogelijkheden:\nZowel PIN als contant mogelijk.\n\nDrams (Proefmunten):\nVerkrijgbaar bij de festivalkassa`,
-    {
-      x: box3X + 12,
-      y: colY + colH - 52,
-      size: 8,
-      font: fontHelvetica,
-      color: colorMuted,
-      lineHeight: 11,
-    }
-  );
-
-  page.drawRectangle({ x: box3X + 12, y: pill1Y, width: pill1W, height: pill1H, color: colorRecessedBg, borderColor: colorRecessedBorder, borderWidth: 1 });
-  const pill3Text = 'STAND 48  \u2022  PIN & CONTANT';
-  const pill3TextW = fontHelveticaBold.widthOfTextAtSize(pill3Text, 8);
-  page.drawText(pill3Text, { x: box3X + 12 + (pill1W - pill3TextW) / 2, y: pill1Y + 7, size: 8, font: fontHelveticaBold, color: colorPrimary });
+  page.drawText(pill2Text, { x: box2X + 14 + (infoPillW - pill2TextW) / 2, y: infoPillY + 7, size: 8, font: fontHelveticaBold, color: colorPrimary });
 
   // =========================================================================
   // 5. FOOTER
@@ -810,12 +792,12 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     color: colorRecessedBorder,
   });
 
-  page.drawText('INCLUSIEF OFFICIEEL GLENCAIRN PROEFGLAS BIJ BINNENKOMST', {
+  page.drawText('WHISKYTIX  \u2022  OFFICIEEL DIGITAAL TOEGANGSBEWIJS', {
     x: marginX,
     y: footerLineY - 14,
     size: 8,
     font: fontHelveticaBold,
-    color: colorPrimary,
+    color: colorMuted,
   });
 
   const emailInfo = `Vragen over uw bestelling? Mail ${theme.email}`;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, Mail, ShieldAlert, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Footer } from '../components/Footer';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -222,6 +223,8 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
       </div>
+
+      <Footer className="pt-6 pb-2" />
     </div>
   );
 };

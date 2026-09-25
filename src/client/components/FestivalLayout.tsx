@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -10,17 +10,44 @@ import {
   QrCode,
   LogOut,
   ChevronDown,
-  Calendar,
-  MapPin,
   Menu,
   X,
   Building2,
+  Users,
 } from 'lucide-react';
 import { INITIAL_FESTIVALS } from '../data/mockData';
+import { FestivalBadgeLogo } from './FestivalBadgeLogo';
+import { Footer } from './Footer';
 
-interface FestivalLayoutProps {
-  children: React.ReactNode;
-}
+const CITY_THEMES: Record<string, {
+  primary: string;
+  dotColor: string;
+  activeTabBg: string;
+  iconActiveColor: string;
+  iconColor: string;
+}> = {
+  gent: {
+    primary: '#1E3A8A',
+    dotColor: 'bg-[#1E3A8A]',
+    activeTabBg: 'bg-[#1E3A8A] text-white',
+    iconActiveColor: 'text-[#BFDBFE]',
+    iconColor: 'text-[#1E3A8A]',
+  },
+  denhaag: {
+    primary: '#006448',
+    dotColor: 'bg-[#006448]',
+    activeTabBg: 'bg-[#006448] text-white',
+    iconActiveColor: 'text-[#e4d5c4]',
+    iconColor: 'text-[#006448]',
+  },
+  amsterdam: {
+    primary: '#8C0223',
+    dotColor: 'bg-[#8C0223]',
+    activeTabBg: 'bg-[#8C0223] text-white',
+    iconActiveColor: 'text-[#FECDD3]',
+    iconColor: 'text-[#8C0223]',
+  },
+};
 
 export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
   const location = useLocation();
@@ -28,9 +55,58 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
   const { cityId = 'denhaag' } = useParams<{ cityId: string }>();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+  const cityDropdownRef = useRef<HTMLDivElement>(null);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
 
   const currentFestival =
     INITIAL_FESTIVALS.find((f) => f.id === cityId) || INITIAL_FESTIVALS[0];
+
+  const theme = CITY_THEMES[cityId] || CITY_THEMES.denhaag;
+
+  const authData = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('whiskytix_auth');
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // fallback
+    }
+    return { user: 'Deon Draijer', email: 'beheer@whiskyfestival.nl', role: 'admin' };
+  }, []);
+
+  const initials = useMemo(() => {
+    if (!authData?.user) return 'DD';
+    const parts = authData.user.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return authData.user.slice(0, 2).toUpperCase();
+  }, [authData]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (cityDropdownRef.current && !cityDropdownRef.current.contains(target)) {
+        setCityDropdownOpen(false);
+      }
+      if (userDropdownRef.current && !userDropdownRef.current.contains(target)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setCityDropdownOpen(false);
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
 
   const festivalNavItems = [
     {
@@ -60,16 +136,9 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
       icon: Ticket,
     },
     {
-      label: 'Ticket & QR Monitor',
+      label: 'Ticket & QR',
       path: `/admin/festival/${cityId}/tickets`,
       icon: QrCode,
-    },
-    {
-      label: 'Deurscanner',
-      path: `/scan?festival=${cityId}`,
-      icon: QrCode,
-      highlight: true,
-      external: false,
     },
   ];
 
@@ -81,97 +150,68 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
 
   const handleCitySwitch = (newCityId: string) => {
     setCityDropdownOpen(false);
-    // Keep the current subpage (e.g. orders, inventory, door)
+    // Keep current subpage if possible
     const currentSubPage = location.pathname.split('/').pop() || 'orders';
-    const targetSubPage = ['orders', 'inventory', 'door', 'coupons'].includes(currentSubPage)
-      ? currentSubPage
-      : 'orders';
-    navigate(`/admin/festival/${newCityId}/${targetSubPage}`);
+    const targetSubPage = ['orders', 'inventory', 'door', 'coupons', 'tickets'].includes(currentSubPage)
+      ? targetSubPageOrDefault(currentSubPage)
+      : '';
+    if (targetSubPage) {
+      navigate(`/admin/festival/${newCityId}/${targetSubPage}`);
+    } else {
+      navigate(`/admin/festival/${newCityId}`);
+    }
   };
+
+  function targetSubPageOrDefault(sub: string) {
+    return sub;
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] bg-parchment-pattern flex flex-col font-sans text-[#1D1C1A]">
-      {/* Top Notice Bar with Quick Back-to-Cockpit */}
-      <header className="bg-[#1D1C1A] text-[#d8e7e2] text-[11px] sm:text-xs py-2 px-3 sm:px-6 border-b border-[#006448]/40">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link
-            to="/admin"
-            className="flex items-center gap-1.5 text-[#caac8e] hover:text-white font-bold transition-colors group"
-          >
-            <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform text-[#006448]" />
-            <span>← Terug naar Centrale Cockpit</span>
-          </Link>
-
-          <div className="flex items-center gap-3">
-            <span className="text-gray-400 hidden sm:inline text-[11px]">
-              Actieve Festival Context:
-            </span>
-            <span className="bg-[#006448] text-white px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider">
-              {currentFestival.edition}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="text-gray-400 hover:text-white text-[11px] font-semibold hidden xs:flex items-center gap-1 ml-2 cursor-pointer"
-            >
-              <LogOut className="w-3 h-3" />
-              <span>Uitloggen</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Festival Hub Header & Identity Banner */}
+      {/* Main Header: 2-Level Festival Hub Navigation */}
       <div className="bg-[#FCFAF7] border-b-2 border-[#1D1C1A] shadow-sm sticky top-0 z-40">
+        {/* Level 1: Global Platform Bar & Festival Switcher */}
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20 sm:h-24">
-            {/* Festival Title & Badges */}
-            <div className="flex items-center gap-3 sm:gap-4">
-              <Link
-                to={`/admin/festival/${cityId}/orders`}
-                className="w-12 h-12 sm:w-14 sm:h-14 bg-[#006448] border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] rounded-lg flex items-center justify-center p-2 shrink-0 hover:scale-105 transition-transform"
-                title="Festival Hub"
-              >
-                <img
-                  src="/logo-white.svg"
-                  alt="Whiskytix Logo"
-                  className="w-full h-full object-contain"
-                />
+          <div className="flex items-center justify-between h-16 sm:h-20">
+            
+            {/* Left: Whiskytix Logo + Back to Cockpit & Active Festival Breadcrumb */}
+            <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+              <Link to="/admin" title="Centrale Cockpit" className="focus:outline-none">
+                <FestivalBadgeLogo cityId="whiskytix" className="-mb-6 sm:-mb-8" />
               </Link>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="bg-[#d8e7e2] text-[#006448] text-[10px] sm:text-xs px-2 py-0.5 rounded font-extrabold uppercase tracking-wider border border-[#8ba198]">
-                    {currentFestival.edition}
-                  </span>
-                  <span className="text-[10px] sm:text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full hidden xs:inline">
-                    {currentFestival.statusLabel}
-                  </span>
-                </div>
-                <h1 className="font-extrabold text-lg sm:text-2xl text-[#1D1C1A] tracking-tight mt-0.5 leading-tight">
-                  {currentFestival.name}
-                </h1>
-                <div className="flex items-center gap-3 text-xs text-[#4c5752] font-medium mt-0.5 flex-wrap">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-[#006448]" />
-                    {currentFestival.dates}
-                  </span>
-                  <span className="hidden sm:flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-[#006448]" />
-                    {currentFestival.location}
-                  </span>
-                </div>
+
+              <div className="flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-3 border-l-2 border-[#c1d4ce]">
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded text-xs font-extrabold uppercase tracking-wider text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] transition-all group"
+                  title="Terug naar Centrale Cockpit"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform text-[#006448]" />
+                  <span>Cockpit</span>
+                </Link>
+                <span className="text-[#c1d4ce] font-bold">/</span>
+                <span className="text-xs font-extrabold text-[#1D1C1A] flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${theme.dotColor}`}></span>
+                  <span className="hidden md:inline">{currentFestival.name}</span>
+                  <span className="md:hidden">{cityId === 'denhaag' ? 'Den Haag' : cityId === 'amsterdam' ? 'Amsterdam' : 'Gent'} Hub</span>
+                </span>
               </div>
             </div>
 
-            {/* Fast Festival Switcher Dropdown (Switch between Den Haag, Amsterdam, Gent) */}
-            <div className="flex items-center gap-2">
-              <div className="relative">
+            {/* Right: City Switcher, Quick Scanner & Profile Dropdown */}
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              
+              {/* Fast City Switcher */}
+              <div className="relative" ref={cityDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setCityDropdownOpen(!cityDropdownOpen)}
-                  className="bg-[#FAF7F2] hover:bg-[#d8e7e2] border-2 border-[#1D1C1A] px-3 py-2 rounded font-extrabold text-xs text-[#1D1C1A] flex items-center gap-2 shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer transition-all"
+                  aria-expanded={cityDropdownOpen}
+                  className="h-10 bg-[#FAF7F2] hover:bg-[#d8e7e2] border-2 border-[#1D1C1A] px-3 rounded font-extrabold text-xs text-[#1D1C1A] flex items-center gap-2 shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer transition-all shrink-0"
                   title="Wissel van festival locatie"
                 >
-                  <Building2 className="w-3.5 h-3.5 text-[#006448]" />
-                  <span className="hidden sm:inline">Wissel Editie:</span>
+                  <Building2 className="w-4 h-4 text-[#006448]" />
+                  <span className="text-[#4c5752] font-semibold">Editie:</span>
                   <span className="text-[#006448]">
                     {cityId === 'denhaag' ? 'Den Haag' : cityId === 'amsterdam' ? 'Amsterdam' : 'Gent'}
                   </span>
@@ -186,6 +226,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                     {INITIAL_FESTIVALS.map((fest) => (
                       <button
                         key={fest.id}
+                        type="button"
                         onClick={() => handleCitySwitch(fest.id)}
                         className={`w-full text-left px-3 py-2.5 text-xs font-bold flex items-center justify-between hover:bg-[#FAF7F2] cursor-pointer transition-colors ${
                           fest.id === cityId
@@ -208,8 +249,112 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                 )}
               </div>
 
+              {/* Quick Scanner PWA Button */}
+              <Link
+                to={`/scan?festival=${cityId}`}
+                className="hidden md:flex h-10 items-center gap-2 px-3 rounded border-2 border-[#1D1C1A] bg-[#FAF7F2] hover:bg-[#d8e7e2] text-[#1D1C1A] text-xs font-extrabold uppercase tracking-wider shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer shrink-0"
+                title="Mobiele Deurscanner PWA"
+              >
+                <QrCode className="w-4 h-4 text-[#006448]" />
+                <span>Scanner</span>
+              </Link>
+
+              {/* User Profile & Settings Dropdown */}
+              <div className="relative" ref={userDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                  aria-expanded={userDropdownOpen}
+                  className={`h-10 flex items-center gap-2 px-3 rounded border-2 border-[#1D1C1A] transition-all cursor-pointer shrink-0 shadow-[2px_2px_0px_rgba(29,28,26,0.9)] ${
+                    userDropdownOpen
+                      ? 'bg-[#d8e7e2]'
+                      : 'bg-[#FAF7F2] hover:bg-[#d8e7e2]'
+                  }`}
+                  title="Beheerder Profiel & Instellingen"
+                >
+                  <div className="w-6 h-6 rounded bg-[#caac8e] border border-[#1D1C1A] flex items-center justify-center font-extrabold text-[11px] text-[#1D1C1A] shrink-0">
+                    {initials}
+                  </div>
+                  <span className="text-xs font-extrabold text-[#1D1C1A] hidden sm:inline">
+                    {authData.user || 'Deon Draijer'}
+                  </span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-[#4c5752] transition-transform duration-200 ${
+                      userDropdownOpen ? 'rotate-180 text-[#006448]' : ''
+                    }`}
+                  />
+                </button>
+
+                {userDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150 font-sans">
+                    <div className="px-4 py-3 border-b border-[#c1d4ce] bg-[#FAF7F2]">
+                      <div className="text-xs font-extrabold text-[#1D1C1A] truncate">
+                        {authData.user || 'Deon Draijer'}
+                      </div>
+                      <div className="text-xs text-[#4c5752] font-medium truncate mt-0.5">
+                        {authData.email || 'beheer@whiskyfestival.nl'}
+                      </div>
+                      <div className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider bg-[#d8e7e2] text-[#006448] border border-[#8ba198]">
+                        {authData.role === 'admin' ? 'Superadmin Rechten' : 'Scanner / Beheer'}
+                      </div>
+                    </div>
+
+                    <div className="py-1">
+                      <Link
+                        to="/admin/users"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className={`flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold transition-colors ${
+                          location.pathname === '/admin/users'
+                            ? 'bg-[#d8e7e2] text-[#006448] font-extrabold'
+                            : 'text-[#1D1C1A] hover:bg-[#FAF7F2] hover:text-[#006448]'
+                        }`}
+                      >
+                        <Users className="w-4 h-4 text-[#006448]" />
+                        <div className="flex-1">
+                          <div className="font-extrabold">Beheerders & Team</div>
+                          <div className="text-[10px] text-[#4c5752] font-normal">
+                            Accounts, rollen & scanner PINs
+                          </div>
+                        </div>
+                      </Link>
+
+                      <Link
+                        to={`/scan?festival=${cityId}`}
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex md:hidden items-center gap-2.5 px-4 py-2.5 text-xs font-bold text-[#1D1C1A] hover:bg-[#FAF7F2] hover:text-[#006448] transition-colors"
+                      >
+                        <QrCode className="w-4 h-4 text-[#006448]" />
+                        <div className="flex-1">
+                          <div className="font-extrabold">Deurscanner PWA</div>
+                          <div className="text-[10px] text-[#4c5752] font-normal">
+                            Mobiele camera ticket scanner
+                          </div>
+                        </div>
+                      </Link>
+                    </div>
+
+                    <div className="border-t border-[#c1d4ce] my-1"></div>
+
+                    <div className="p-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-extrabold text-red-800 hover:bg-red-50 hover:text-red-900 rounded transition-colors text-left cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4 text-red-700" />
+                        <span>Veilig Uitloggen</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Mobile hamburger toggle */}
               <button
+                type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="lg:hidden p-2 rounded border-2 border-[#1D1C1A] bg-[#FAF7F2] text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer"
                 aria-label="Menu"
@@ -220,20 +365,10 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
           </div>
         </div>
 
-        {/* Desktop Navigation Tabs for this Festival */}
-        <div className="border-t border-[#c1d4ce] bg-[#FCFAF7] hidden lg:block overflow-x-auto">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav className="flex items-center space-x-1.5 py-1.5">
-              {/* Underlined link: Terug naar Alle (Cockpit) */}
-              <Link
-                to="/admin"
-                className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-[#006448] hover:text-[#1D1C1A] underline underline-offset-4 decoration-2 mr-2.5 pr-2.5 border-r-2 border-[#c1d4ce] transition-colors group shrink-0 whitespace-nowrap"
-                title="Terug naar het 3-Steden Cockpit Overzicht"
-              >
-                <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-                <span>Terug naar Alle</span>
-              </Link>
-
+        {/* Level 2: Dedicated Festival Hub Sub-navigation Tabs with Dynamic Festival Theme */}
+        <div className="hidden lg:block bg-[#FCFAF7] border-t border-[#c1d4ce]/80">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+            <nav className="flex items-center justify-end gap-1.5 xl:gap-2 py-2 pl-36 overflow-x-auto scrollbar-none">
               {festivalNavItems.map((item) => {
                 const isActive = item.exact
                   ? location.pathname === item.path || location.pathname === `${item.path}/overview`
@@ -243,15 +378,13 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold uppercase tracking-wider rounded transition-all whitespace-nowrap shrink-0 ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-extrabold uppercase tracking-wider transition-all shrink-0 ${
                       isActive
-                        ? 'bg-[#006448] text-white shadow-[2px_2px_0px_rgba(29,28,26,0.9)] border-2 border-[#1D1C1A]'
-                        : item.highlight
-                        ? 'bg-[#caac8e]/30 text-[#006448] border-2 border-dashed border-[#006448] hover:bg-[#caac8e]/50 ml-auto'
-                        : 'text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2]'
+                        ? `${theme.activeTabBg} border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]`
+                        : 'text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] border border-transparent'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#e4d5c4]' : 'text-[#006448]'}`} />
+                    <Icon className={`w-3.5 h-3.5 ${isActive ? theme.iconActiveColor : theme.iconColor}`} />
                     <span>{item.label}</span>
                   </Link>
                 );
@@ -260,12 +393,27 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
           </div>
         </div>
 
-        {/* Mobile menu dropdown */}
+        {/* Mobile Menu Dropdown */}
         {mobileMenuOpen && (
           <div className="lg:hidden border-t-2 border-[#1D1C1A] bg-[#FCFAF7] p-4 space-y-2 shadow-xl">
-            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752] mb-1">
-              Navigatie {currentFestival.edition}:
+            <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce]">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752]">
+                Navigatie {currentFestival.edition}:
+              </span>
+              <span className={`text-[10px] text-white px-2 py-0.5 rounded font-extrabold ${theme.dotColor}`}>
+                {currentFestival.statusLabel}
+              </span>
             </div>
+
+            <Link
+              to="/admin"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2.5 px-3 py-2 rounded font-extrabold text-xs uppercase tracking-wider text-[#1D1C1A] bg-[#FAF7F2] border-2 border-[#c1d4ce]"
+            >
+              <ArrowLeft className="w-4 h-4 text-[#006448]" />
+              <span>← Terug naar Centrale Cockpit</span>
+            </Link>
+
             {festivalNavItems.map((item) => {
               const isActive = item.exact
                 ? location.pathname === item.path || location.pathname === `${item.path}/overview`
@@ -278,33 +426,48 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                   onClick={() => setMobileMenuOpen(false)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded font-extrabold text-xs uppercase tracking-wider border-2 transition-all ${
                     isActive
-                      ? 'bg-[#006448] text-white border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                      ? `${theme.activeTabBg} border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]`
                       : 'bg-[#FAF7F2] text-[#4c5752] border-[#c1d4ce]'
                   }`}
                 >
-                  <Icon className="w-4 h-4 text-[#006448]" />
+                  <Icon className={`w-4 h-4 ${isActive ? theme.iconActiveColor : theme.iconColor}`} />
                   <span>{item.label}</span>
                 </Link>
               );
             })}
-            <div className="pt-2 border-t border-[#c1d4ce]">
+
+            <div className="pt-2 border-t border-[#c1d4ce] space-y-2">
               <Link
-                to="/admin"
+                to={`/scan?festival=${cityId}`}
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-2 text-xs font-extrabold text-[#006448] py-2"
+                className="flex items-center gap-2 px-3 py-2 rounded font-extrabold text-xs text-[#006448] bg-[#caac8e]/20 border border-[#caac8e]"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Terug naar Centrale Cockpit</span>
+                <QrCode className="w-4 h-4" />
+                <span>Open Deurscanner PWA</span>
               </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleLogout();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-extrabold text-red-800 hover:bg-red-50 hover:text-red-900 rounded"
+              >
+                <LogOut className="w-4 h-4 text-red-700" />
+                <span>Veilig Uitloggen</span>
+              </button>
             </div>
           </div>
         )}
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 lg:p-8 mb-16 lg:mb-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-6 sm:pt-8 lg:pt-8 pb-3 sm:pb-6 lg:pb-8">
         {children}
       </main>
+
+      {/* Footer */}
+      <Footer className="pb-24 lg:pb-8" />
 
       {/* Mobile Bottom Dock Bar */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#FCFAF7] border-t-2 border-[#1D1C1A] px-2 py-1.5 shadow-[0px_-4px_10px_rgba(0,0,0,0.08)] flex items-center justify-around">

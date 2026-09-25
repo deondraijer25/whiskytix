@@ -28,6 +28,28 @@ interface MollieStatus {
   hasTestKey: boolean;
 }
 
+const CITY_THEMES: Record<string, {
+  primary: string;
+  gradientClass: string;
+  progressBar: string;
+}> = {
+  gent: {
+    primary: '#1E3A8A',
+    gradientClass: 'bg-gradient-to-br from-[#172554] via-[#1E3A8A] to-[#1D4ED8]',
+    progressBar: 'bg-[#1E3A8A]',
+  },
+  denhaag: {
+    primary: '#006448',
+    gradientClass: 'bg-gradient-to-br from-[#003B2A] via-[#006448] to-[#047857]',
+    progressBar: 'bg-[#006448]',
+  },
+  amsterdam: {
+    primary: '#8C0223',
+    gradientClass: 'bg-gradient-to-br from-[#5C0117] via-[#8C0223] to-[#B91C1C]',
+    progressBar: 'bg-[#8C0223]',
+  },
+};
+
 export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   selectedCity,
   onCityChange,
@@ -364,7 +386,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
       {/* 3. FESTIVAL LOCATIES OVERZICHT (Gent Live Mollie + Den Haag & Amsterdam in voorbereiding) */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <div>
             <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
@@ -374,95 +396,97 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               Klik op een festival om de bestellingen, zaalcapaciteit en scanner voor die locatie te beheren.
             </p>
           </div>
-          <span className="text-[11px] sm:text-xs text-[#006448] font-extrabold bg-[#d8e7e2] px-2.5 py-1 rounded border border-[#8ba198] shrink-0">
-            Gent Live • Den Haag & A'dam Prep
+          <span className="text-[11px] sm:text-xs text-[#1D1C1A] font-extrabold bg-[#FCFAF7] px-2.5 py-1 rounded border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.8)] shrink-0 flex items-center gap-2 self-start sm:self-auto">
+            <span className="flex items-center gap-1 text-[#1E3A8A]"><span className="w-2 h-2 rounded-full bg-[#1E3A8A]"></span> Gent</span>
+            <span className="text-[#c1d4ce]">•</span>
+            <span className="flex items-center gap-1 text-[#006448]"><span className="w-2 h-2 rounded-full bg-[#006448]"></span> Den Haag</span>
+            <span className="text-[#c1d4ce]">•</span>
+            <span className="flex items-center gap-1 text-[#8C0223]"><span className="w-2 h-2 rounded-full bg-[#8C0223]"></span> Amsterdam</span>
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {displayedFestivals.map((fest) => {
+            const theme = CITY_THEMES[fest.id] || CITY_THEMES.denhaag;
             return (
               <div
                 key={fest.id}
-                className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-5 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col justify-between"
+                className={`${theme.gradientClass} border-2 border-[#1D1C1A] rounded-lg shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col justify-between overflow-hidden hover:-translate-y-0.5 transition-all`}
               >
-                <div>
-                  {/* City Badge & Status */}
-                  <div className="flex items-center justify-between mb-2.5 sm:mb-3">
-                    <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
-                      {fest.edition}
-                    </span>
-                    <span
-                      className={`text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                        fest.statusType === 'live'
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-400'
-                          : fest.statusType === 'test'
-                          ? 'bg-amber-100 text-amber-800 border-amber-400'
-                          : 'bg-[#FAF7F2] text-[#4c5752] border-[#c1d4ce]'
-                      }`}
-                    >
-                      {fest.statusLabel}
-                    </span>
-                  </div>
-
-                  <h3 className="font-extrabold text-base sm:text-lg text-[#1D1C1A] tracking-tight mb-1">
-                    {fest.name}
-                  </h3>
-
-                  <div className="text-xs text-[#4c5752] space-y-1 mb-3 sm:mb-4 font-medium">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-[#006448] shrink-0" />
-                      <span>{fest.dates}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-[#006448] shrink-0" />
-                      <span className="truncate">{fest.location}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px] text-[#006448] font-bold">
-                      <Building2 className="w-3.5 h-3.5 shrink-0" />
-                      <span>{fest.accountInfo}</span>
-                    </div>
-                  </div>
-
-                  {/* Financial & Ticket Line Details */}
-                  <div className="bg-[#FAF7F2] border border-[#c1d4ce] rounded p-3 space-y-2 mb-3 sm:mb-4">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-[#4c5752] font-bold">Omzet:</span>
-                      <span className="font-extrabold text-[#006448]">
-                        € {(fest.revenueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className="p-4 sm:p-5 flex flex-col flex-1 justify-between">
+                  <div>
+                    {/* City Badge & Status */}
+                    <div className="flex items-center justify-between mb-2.5 sm:mb-3">
+                      <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest bg-[#FCFAF7] text-[#1D1C1A] px-2.5 py-0.5 rounded border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]">
+                        {fest.edition}
+                      </span>
+                      <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#FCFAF7] text-[#1D1C1A] border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)] flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          fest.statusType === 'live' ? 'bg-emerald-600' : fest.statusType === 'test' ? 'bg-amber-500' : 'bg-gray-400'
+                        }`}></span>
+                        {fest.statusLabel}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-[#4c5752] font-bold">Tickets:</span>
-                      <span className="font-extrabold text-[#1D1C1A]">
-                        {fest.ticketsSold.toLocaleString('nl-NL')} / {fest.ticketsTotal.toLocaleString('nl-NL')} ({fest.pct}%)
-                      </span>
+
+                    <h3 className="font-extrabold text-base sm:text-lg text-white tracking-tight mb-1.5 drop-shadow-sm">
+                      {fest.name}
+                    </h3>
+
+                    <div className="text-xs text-[#FAF7F2]/90 space-y-1 mb-3 sm:mb-4 font-medium">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-[#caac8e] shrink-0" />
+                        <span>{fest.dates}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-[#caac8e] shrink-0" />
+                        <span className="truncate">{fest.location}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[11px] text-[#e4d5c4] font-bold">
+                        <Building2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>{fest.accountInfo}</span>
+                      </div>
                     </div>
-                    <div className="w-full bg-[#c1d4ce] h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-[#006448] h-full rounded-full"
-                        style={{ width: `${Math.min(100, Math.max(fest.ticketsSold > 0 ? 1 : 0, parseFloat(fest.pct)))}%` }}
-                      ></div>
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] sm:text-[11px] pt-1 border-t border-[#c1d4ce]">
-                      <span className="text-[#4c5752] font-medium truncate mr-2">Status:</span>
-                      <span className="font-bold text-[#1D1C1A]">
-                        {fest.vipNote}
-                      </span>
+
+                    {/* Financial & Ticket Line Details (Enclosed card) */}
+                    <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3 space-y-2 mb-3 sm:mb-4 shadow-[2px_2px_0px_rgba(29,28,26,0.9)] text-[#1D1C1A]">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[#4c5752] font-bold">Omzet:</span>
+                        <span className="font-extrabold text-[#1D1C1A]">
+                          € {(fest.revenueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[#4c5752] font-bold">Tickets:</span>
+                        <span className="font-extrabold text-[#1D1C1A]">
+                          {fest.ticketsSold.toLocaleString('nl-NL')} / {fest.ticketsTotal.toLocaleString('nl-NL')} ({fest.pct}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-[#c1d4ce] h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className={`${theme.progressBar} h-full rounded-full transition-all duration-500`}
+                          style={{ width: `${Math.min(100, Math.max(fest.ticketsSold > 0 ? 1 : 0, parseFloat(fest.pct)))}%` }}
+                        ></div>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] sm:text-[11px] pt-1 border-t border-[#c1d4ce]/60">
+                        <span className="text-[#4c5752] font-medium truncate mr-2">Status:</span>
+                        <span className="font-bold text-[#1D1C1A]">
+                          {fest.vipNote}
+                        </span>
+                      </div>
                     </div>
                   </div>
+
+                  {/* City Manage Button */}
+                  <button
+                    onClick={() => {
+                      navigate(`/admin/festival/${fest.id}`);
+                    }}
+                    className="w-full py-2.5 px-3 rounded text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] active:translate-y-0.5 group"
+                  >
+                    <span>Open Hub: {fest.id === 'denhaag' ? 'Den Haag' : fest.id === 'amsterdam' ? 'Amsterdam' : 'Gent'}</span>
+                    <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                  </button>
                 </div>
-
-                {/* City Manage Button */}
-                <button
-                  onClick={() => {
-                    navigate(`/admin/festival/${fest.id}`);
-                  }}
-                  className="btn-letterpress-outline w-full py-2.5 px-3 rounded text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-[#006448] hover:text-white transition-all shadow-[2px_2px_0px_rgba(29,28,26,0.9)]"
-                >
-                  <span>Open Hub: {fest.id === 'denhaag' ? 'Den Haag' : fest.id === 'amsterdam' ? 'Amsterdam' : 'Gent'}</span>
-                  <ChevronRight className="w-4 h-4 text-[#006448] group-hover:text-white" />
-                </button>
               </div>
             );
           })}
