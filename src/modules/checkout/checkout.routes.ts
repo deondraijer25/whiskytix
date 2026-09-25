@@ -457,6 +457,70 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     if (!order) {
       return reply.status(404).send({ error: 'Bestelling niet gevonden.' });
     }
+
+    // Generate pre-rendered ticket cards HTML for festival websites
+    const cityConfig: Record<string, { primary: string; primaryLight: string; badgeBorder: string; venue: string; gradient: string }> = {
+      gent: { primary: '#1E3A8A', primaryLight: '#E0E9FF', badgeBorder: '#93C5FD', venue: 'De Oude Vismijn, Gent', gradient: 'linear-gradient(90deg, #1E3A8A 0%, #2563EB 50%, #1E3A8A 100%)' },
+      denhaag: { primary: '#006448', primaryLight: '#E6F4EA', badgeBorder: '#A8DAB5', venue: 'Grote Kerk, Den Haag', gradient: 'linear-gradient(90deg, #006448 0%, #008060 50%, #006448 100%)' },
+      amsterdam: { primary: '#8C0223', primaryLight: '#FEE2E2', badgeBorder: '#FCA5A5', venue: 'Amsterdam Venue', gradient: 'linear-gradient(90deg, #8C0223 0%, #B91C3C 50%, #8C0223 100%)' },
+    };
+    const city = cityConfig[order.festivalId || 'gent'] || cityConfig.gent;
+    const apiBase = `${request.protocol}://${request.headers.host || 'whiskytix-r1qq.vercel.app'}`;
+
+    let ticketsHtml = '';
+    if (order.status === 'paid' && order.tickets && order.tickets.length > 0) {
+      for (const ticket of order.tickets) {
+        const cleanCode = (ticket.ticketCode || '').replace('#', '');
+        const pdfUrl = `${apiBase}/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${encodeURIComponent(order.festivalId || 'gent')}&name=${encodeURIComponent(ticket.attendeeName || order.customerName || 'Bezoeker')}&title=${encodeURIComponent(ticket.sessionTitle || 'Entreeticket')}&time=${encodeURIComponent(ticket.timeStr || '13:00 - 17:00 UUR')}&orderNumber=${encodeURIComponent(order.orderNumber || '')}`;
+        const shareText = encodeURIComponent(`*${order.festivalId === 'gent' ? 'Whisky Festival Gent 2026' : order.festivalId === 'amsterdam' ? 'Amsterdam Whisky Festival 2026' : 'International Whisky Festival 2026'}*\nE-ticket: ${ticket.sessionTitle || 'Entreeticket'}\n\nKaarthouder: ${ticket.attendeeName || order.customerName}\nTijdslot: ${ticket.timeStr || ''}\nTicket Code: ${ticket.ticketCode}\nLocatie: ${city.venue}\n\nDownload je E-ticket (PDF):\n${pdfUrl}`);
+        const mailSubject = encodeURIComponent(`E-ticket: ${ticket.sessionTitle || 'Entreeticket'}`);
+
+        ticketsHtml += `<div style="background:#FCFAF7;border:2px solid #1D1C1A;border-radius:12px;box-shadow:3px 3px 0px rgba(29,28,26,0.85);overflow:hidden;margin-bottom:1.25rem;">
+  <div style="height:6px;background:${city.gradient};border-radius:10px 10px 0 0;"></div>
+  <div style="padding:1.5rem;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem;gap:0.75rem;">
+      <div>
+        <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:1.15rem;font-weight:800;color:#1D1C1A;margin:0;">${ticket.sessionTitle || 'Entreeticket'}</h3>
+        <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.85rem;color:${city.primary};font-weight:700;margin:4px 0 0;">${ticket.dateStr || ''} • ${ticket.timeStr || ''}</p>
+      </div>
+      <span style="display:inline-flex;align-items:center;gap:4px;background:${city.primaryLight};color:${city.primary};font-size:0.7rem;font-weight:800;padding:4px 10px;border-radius:6px;border:1px solid ${city.badgeBorder};text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        Geldig Toegangsbewijs
+      </span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:1rem;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;margin-bottom:1rem;">
+      <div>
+        <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;display:block;margin-bottom:2px;">Kaarthouder</span>
+        <strong style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.95rem;font-weight:700;color:#1D1C1A;">${ticket.attendeeName || order.customerName || 'Bezoeker'}</strong>
+      </div>
+      <div>
+        <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;display:block;margin-bottom:2px;">Locatie</span>
+        <strong style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.95rem;font-weight:700;color:#1D1C1A;">${city.venue}</strong>
+      </div>
+      <div>
+        <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;display:block;margin-bottom:2px;">Ticket Code</span>
+        <strong style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.95rem;font-weight:700;color:${city.primary};">${ticket.ticketCode || ''}</strong>
+      </div>
+      <div>
+        <span style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;display:block;margin-bottom:2px;">Bestelling</span>
+        <strong style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.95rem;font-weight:700;color:#1D1C1A;">${order.orderNumber}</strong>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+      <a href="${pdfUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:0.65rem 1.25rem;background:${city.primary};color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-size:0.85rem;font-weight:700;border:2px solid #1D1C1A;border-radius:8px;cursor:pointer;box-shadow:2px 2px 0px rgba(29,28,26,0.9);text-decoration:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download E-Ticket (PDF)
+      </a>
+      <a href="https://api.whatsapp.com/send?text=${shareText}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:0.65rem 1.25rem;background:#FCFAF7;color:#1D1C1A;font-family:'Plus Jakarta Sans',sans-serif;font-size:0.85rem;font-weight:700;border:2px solid #1D1C1A;border-radius:8px;cursor:pointer;box-shadow:2px 2px 0px rgba(29,28,26,0.9);text-decoration:none;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Deel Ticket
+      </a>
+    </div>
+  </div>
+</div>`;
+      }
+    }
+
     return reply.send({
       success: true,
       order: {
@@ -470,7 +534,8 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         items: order.items,
         tickets: order.tickets,
         createdAt: order.createdAt,
-      }
+      },
+      ticketsHtml,
     });
   });
 
