@@ -375,6 +375,64 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   server.get('/api/checkout/order/:orderNumber', async (request, reply) => {
     const params = request.params as { orderNumber: string };
     let order = await OrdersRepository.findOrder(params.orderNumber);
+
+    // If order not in memory (e.g. Vercel cold start), reconstruct from Mollie API
+    if (!order) {
+      try {
+        const molliePayments = await MollieService.listRecentPayments(50);
+        const cleanedOrderNumber = params.orderNumber.startsWith('#') ? params.orderNumber : `#${params.orderNumber}`;
+        const matchedPayment = molliePayments.find((p: any) =>
+          p.metadata?.orderNumber === cleanedOrderNumber || p.metadata?.orderNumber === params.orderNumber
+        );
+
+        if (matchedPayment) {
+          const meta = matchedPayment.metadata || {};
+          const festivalId = (meta.festivalId || 'gent') as 'gent' | 'denhaag' | 'amsterdam';
+          const valEur = parseFloat(matchedPayment.amountValue || '0');
+          const amountCents = Math.round(valEur * 100);
+          const itemsSummary = meta.itemsSummary || 'Festival Entreetickets';
+          const qtyMatch = itemsSummary.match(/^(\d+)x\s*/);
+          const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+          const itemTitle = itemsSummary.replace(/^\d+x\s*/, '').trim() || 'Entreeticket';
+
+          const reconstructedOrder = await OrdersRepository.createOrder({
+            id: meta.orderId || matchedPayment.id,
+            orderNumber: cleanedOrderNumber,
+            festivalId,
+            customerName: meta.customerName || 'Bezoeker',
+            customerEmail: meta.customerEmail || '',
+            customerPhone: meta.customerPhone || '',
+            subtotalCents: amountCents,
+            discountCents: 0,
+            totalCents: amountCents,
+            status: 'pending',
+            molliePaymentId: matchedPayment.id,
+            createdAt: matchedPayment.paidAt || matchedPayment.createdAt || new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+            items: [{
+              id: crypto.randomUUID(),
+              orderId: meta.orderId || matchedPayment.id,
+              ticketTypeId: `${festivalId}-reconstructed`,
+              title: itemTitle,
+              quantity: qty,
+              unitPriceCents: Math.round(amountCents / qty),
+            }],
+          });
+
+          if (matchedPayment.status === 'paid') {
+            const paidOrder = await OrdersRepository.markOrderPaid(reconstructedOrder.orderNumber, {
+              paymentMethod: matchedPayment.method || 'ideal',
+            });
+            if (paidOrder) order = paidOrder;
+          } else {
+            order = reconstructedOrder;
+          }
+        }
+      } catch (err: any) {
+        server.log.warn('Could not reconstruct order from Mollie: ' + err.message);
+      }
+    }
+
     if (!order) {
       return reply.status(404).send({ error: 'Bestelling niet gevonden.' });
     }
@@ -430,15 +488,97 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       return reply.send(`<h1>Geen ordernummer opgegeven.</h1><p><a href="/">Terug naar home</a></p>`);
     }
 
-    const order = await OrdersRepository.findOrder(orderNumber);
+    let order = await OrdersRepository.findOrder(orderNumber);
+
+    // If order not in memory (e.g. Vercel cold start), reconstruct from Mollie API
+    if (!order) {
+      try {
+        const molliePayments = await MollieService.listRecentPayments(50);
+        const cleanedOrderNumber = orderNumber.startsWith('#') ? orderNumber : `#${orderNumber}`;
+        const matchedPayment = molliePayments.find((p: any) =>
+          p.metadata?.orderNumber === cleanedOrderNumber || p.metadata?.orderNumber === orderNumber
+        );
+
+        if (matchedPayment && matchedPayment.status === 'paid') {
+          const meta = matchedPayment.metadata || {};
+          const festivalId = (meta.festivalId || 'gent') as 'gent' | 'denhaag' | 'amsterdam';
+          const valEur = parseFloat(matchedPayment.amountValue || '0');
+          const amountCents = Math.round(valEur * 100);
+          const customerName = meta.customerName || 'Bezoeker';
+          const customerEmail = meta.customerEmail || '';
+
+          // Parse items from metadata summary
+          const itemsSummary = meta.itemsSummary || 'Festival Entreetickets';
+          const qtyMatch = itemsSummary.match(/^(\d+)x\s*/);
+          const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+          const itemTitle = itemsSummary.replace(/^\d+x\s*/, '').trim() || 'Entreeticket';
+
+          // Create the order in memory for this session
+          const reconstructedOrder = await OrdersRepository.createOrder({
+            id: meta.orderId || matchedPayment.id,
+            orderNumber: cleanedOrderNumber,
+            festivalId,
+            customerName,
+            customerEmail,
+            customerPhone: meta.customerPhone || '',
+            subtotalCents: amountCents,
+            discountCents: 0,
+            totalCents: amountCents,
+            status: 'pending',
+            molliePaymentId: matchedPayment.id,
+            createdAt: matchedPayment.paidAt || matchedPayment.createdAt || new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+            items: [{
+              id: crypto.randomUUID(),
+              orderId: meta.orderId || matchedPayment.id,
+              ticketTypeId: `${festivalId}-reconstructed`,
+              title: itemTitle,
+              quantity: qty,
+              unitPriceCents: Math.round(amountCents / qty),
+            }],
+          });
+
+          // Now mark it paid to generate tickets
+          const paidOrder = await OrdersRepository.markOrderPaid(reconstructedOrder.orderNumber, {
+            paymentMethod: matchedPayment.method || 'ideal',
+          });
+          if (paidOrder) {
+            order = paidOrder;
+          }
+        }
+      } catch (err: any) {
+        server.log.warn('Could not reconstruct order from Mollie: ' + err.message);
+      }
+    }
+
     if (!order) {
       reply.type('text/html');
       return reply.send(`<h1>Bestelling ${orderNumber} niet gevonden.</h1><p><a href="/">Terug</a></p>`);
     }
 
+    // Auto-verify with Mollie if order is still pending (webhook may not have arrived yet)
+    if (order.status !== 'paid' && order.molliePaymentId) {
+      try {
+        const verification = await MollieService.verifyPayment(order.molliePaymentId);
+        if (verification.isPaid) {
+          const updated = await OrdersRepository.markOrderPaid(order.orderNumber, {
+            paymentMethod: verification.method || 'ideal',
+          });
+          if (updated) {
+            order = updated;
+          }
+        }
+      } catch (err: any) {
+        server.log.warn('Could not auto-verify Mollie payment on confirmation page: ' + err.message);
+      }
+    }
+
     // Auto-issue tickets if paid and not yet present
     if (order.status === 'paid' && order.tickets.length === 0) {
-      await OrdersRepository.markOrderPaid(order.orderNumber);
+      const updated = await OrdersRepository.markOrderPaid(order.orderNumber);
+      if (updated) {
+        order = updated;
+      }
     }
 
     const totalEur = (order.totalCents / 100).toFixed(2).replace('.', ',');
