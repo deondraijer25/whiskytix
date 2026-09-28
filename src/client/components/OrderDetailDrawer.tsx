@@ -181,16 +181,14 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       .filter((it) => Boolean(it.title));
   }, [effectiveTickets, order?.itemsSummary]);
 
-  if (!order) return null;
-
   // Resolve dynamic city theme
   const resolvedCityKey = (
     cityId ||
-    (order.city || '') ||
-    (order.cityName || '')
+    (order?.city || '') ||
+    (order?.cityName || '')
   ).toLowerCase().includes('gent')
     ? 'gent'
-    : (cityId || (order.city || '') || (order.cityName || '')).toLowerCase().includes('amsterdam')
+    : (cityId || (order?.city || '') || (order?.cityName || '')).toLowerCase().includes('amsterdam')
     ? 'amsterdam'
     : 'denhaag';
 
@@ -205,17 +203,19 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const masterclasses = useMemo(() => catalog.filter((i) => i.category === 'masterclass'), [catalog]);
   const specials = useMemo(() => catalog.filter((i) => i.category === 'special'), [catalog]);
 
+  if (!order) return null;
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
   };
 
   const handleResendEmail = () => {
-    showToast(`✉️ E-Tickets opnieuw verstuurd naar ${order.customerEmail} via Resend!`);
+    showToast(`E-Tickets opnieuw verstuurd naar ${order.customerEmail} via Resend!`);
   };
 
   const handleDownloadPdf = () => {
-    showToast(`📄 PDF E-Ticket (#${order.orderNumber}) wordt geopend...`);
+    showToast(`PDF E-Ticket (#${order.orderNumber}) wordt geopend...`);
     const firstTicket = effectiveTickets[0];
     const code = firstTicket ? firstTicket.code.replace('#', '') : 'WF1861';
     const session = firstTicket ? firstTicket.session : 'VIP Sessie';
@@ -224,7 +224,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
   const handleRefund = () => {
     if (window.confirm(`Weet u zeker dat u bestelling ${order.orderNumber} wilt annuleren en de voorraad wilt teruggeven?`)) {
-      showToast(`🔄 Bestelling ${order.orderNumber} is geannuleerd. Zaalvoorraad direct teruggegeven.`);
+      showToast(`Bestelling ${order.orderNumber} is geannuleerd. Zaalvoorraad direct teruggegeven.`);
     }
   };
 
@@ -308,14 +308,14 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       return t;
     });
     setLocalTickets(updated);
-    showToast(`🚫 Ticket ${ticket.code} is geannuleerd en QR is ongeldig gemaakt.`);
+    showToast(`Ticket ${ticket.code} is geannuleerd en QR is ongeldig gemaakt.`);
     if (onOrderUpdated) onOrderUpdated();
   };
 
   const handleAddTicketSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCatalogItem) {
-      showToast('⚠️ Selecteer een ticket of masterclass uit de lijst.');
+      showToast('Selecteer een ticket of masterclass uit de lijst.');
       return;
     }
     setIsSubmittingAddTicket(true);
@@ -335,7 +335,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast(`🎁 Ticket "${selectedCatalogItem.title}" succesvol toegevoegd aan bestelling!`);
+        showToast(`Ticket "${selectedCatalogItem.title}" succesvol toegevoegd aan bestelling!`);
         setShowAddTicketModal(false);
         const newTicket = data.ticket;
         const updated = [...effectiveTickets, {
@@ -348,10 +348,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
         setLocalTickets(updated);
         if (onOrderUpdated) onOrderUpdated();
       } else {
-        showToast(`⚠️ Fout bij toevoegen: ${data.error || 'Onbekende fout'}`);
+        showToast(`Fout bij toevoegen: ${data.error || 'Onbekende fout'}`);
       }
     } catch (err: any) {
-      showToast(`⚠️ Fout bij toevoegen: ${err.message}`);
+      showToast(`Fout bij toevoegen: ${err.message}`);
     } finally {
       setIsSubmittingAddTicket(false);
     }
