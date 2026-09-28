@@ -98,6 +98,27 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const [addReason, setAddReason] = useState<string>('VIP / Zakenrelatie');
   const [isSubmittingAddTicket, setIsSubmittingAddTicket] = useState<boolean>(false);
 
+  const summaryItems = useMemo(() => {
+    if (!order?.itemsSummary) return [];
+    return order.itemsSummary
+      .split(',')
+      .map((part) => {
+        const p = part.trim();
+        const m = p.match(/^(\d+)x\s*(.*)$/i);
+        if (m) {
+          return {
+            quantity: parseInt(m[1], 10) || 1,
+            title: m[2].trim(),
+          };
+        }
+        return {
+          quantity: 1,
+          title: p,
+        };
+      })
+      .filter((it) => Boolean(it.title));
+  }, [order?.itemsSummary]);
+
   if (!order) return null;
 
   // Resolve dynamic city theme
@@ -187,27 +208,6 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       effectiveTickets = expanded;
     }
   }
-
-  const summaryItems = useMemo(() => {
-    if (!order?.itemsSummary) return [];
-    return order.itemsSummary
-      .split(',')
-      .map((part) => {
-        const p = part.trim();
-        const m = p.match(/^(\d+)x\s*(.*)$/i);
-        if (m) {
-          return {
-            quantity: parseInt(m[1], 10) || 1,
-            title: m[2].trim(),
-          };
-        }
-        return {
-          quantity: 1,
-          title: p,
-        };
-      })
-      .filter((it) => Boolean(it.title));
-  }, [order?.itemsSummary]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
