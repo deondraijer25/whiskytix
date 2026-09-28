@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar, Plus, Ticket, Tag, Check } from 'lucide-react';
 import { Order } from '../data/mockData';
 import { getFestivalCatalog, FestivalCatalogItem, formatEuro } from '../data/festivalCatalog';
