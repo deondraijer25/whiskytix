@@ -226,11 +226,37 @@ export function parseTicketDateTime(
     month = month || 'OKT';
     year = year || '2026';
 
-    if (titleLower.includes('cvh') || titleLower.includes('fettercairn') || titleLower.includes('bowmore') || titleLower.includes('bulleit')) {
+    if (titleLower.includes('fuji')) {
+      dayName = dayName || 'ZATERDAG';
+      day = day || '03';
+      if (!timeStr) timeStr = '21:00 - 21:45 UUR';
+    } else if (titleLower.includes('jura')) {
+      dayName = dayName || 'ZONDAG';
+      day = day || '04';
+      if (!timeStr) timeStr = '12:15 - 13:00 UUR';
+    } else if (titleLower.includes('laphroaig')) {
+      dayName = dayName || 'ZONDAG';
+      day = day || '04';
+      if (!timeStr) timeStr = '13:30 - 14:15 UUR';
+    } else if (titleLower.includes('boot') || titleLower.includes('bootje')) {
+      dayName = dayName || 'ZATERDAG';
+      day = day || '03';
+      if (!timeStr) timeStr = '12:00 - 13:00 UUR';
+    } else if (titleLower.includes('rondleiding')) {
+      if (titleLower.includes('vrijdag')) {
+        dayName = dayName || 'VRIJDAG';
+        day = day || '02';
+        if (!timeStr) timeStr = '18:00 - 19:30 UUR';
+      } else {
+        dayName = dayName || 'ZATERDAG';
+        day = day || '03';
+        if (!timeStr) timeStr = '11:00 - 12:30 UUR';
+      }
+    } else if (titleLower.includes('cvh') || titleLower.includes('fettercairn') || titleLower.includes('bowmore') || titleLower.includes('bulleit')) {
       dayName = dayName || 'ZATERDAG';
       day = day || '03';
       if (!timeStr) {
-        if (titleLower.includes('cvh')) timeStr = '14:00 - 14:45 UUR';
+        if (titleLower.includes('cvh')) timeStr = '12:15 - 13:00 UUR';
         else if (titleLower.includes('fettercairn')) timeStr = '15:00 - 15:45 UUR';
         else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:15 UUR';
         else if (titleLower.includes('bulleit')) timeStr = '16:15 - 17:00 UUR';
@@ -241,7 +267,7 @@ export function parseTicketDateTime(
       if (!timeStr) {
         if (titleLower.includes('belgian owl')) timeStr = '13:30 - 14:15 UUR';
         else if (titleLower.includes('glenfiddich') || titleLower.includes('balvenie')) timeStr = '15:00 - 15:45 UUR';
-        else if (titleLower.includes('suntory')) timeStr = '16:30 - 17:15 UUR';
+        else if (titleLower.includes('suntory')) timeStr = '15:00 - 15:45 UUR';
       }
     } else if (titleLower.includes('dada chapel')) {
       if (titleLower.includes('vrijdag')) {

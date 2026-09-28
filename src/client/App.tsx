@@ -12,6 +12,7 @@ import { ScannerPwaPage } from './pages/ScannerPwaPage';
 import { ScanHistoryPage } from './pages/ScanHistoryPage';
 import { TicketViewPage } from './pages/TicketViewPage';
 import { FestivalOverviewPage } from './pages/FestivalOverviewPage';
+import { CreateInvitationPage } from './pages/CreateInvitationPage';
 import { AdminLayout } from './components/AdminLayout';
 import { FestivalLayout } from './components/FestivalLayout';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -55,6 +56,16 @@ export const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/invitations/new"
+        element={
+          <ProtectedRoute>
+            <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
+              <CreateInvitationPage />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
 
       {/* 3. LAYER 2: Festival Hub (Editie-specifieke omgeving - Protected) */}
       <Route
@@ -83,6 +94,16 @@ export const App: React.FC = () => {
           <ProtectedRoute>
             <FestivalLayout>
               <OrdersPage />
+            </FestivalLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/festival/:cityId/invitations/new"
+        element={
+          <ProtectedRoute>
+            <FestivalLayout>
+              <CreateInvitationPage />
             </FestivalLayout>
           </ProtectedRoute>
         }

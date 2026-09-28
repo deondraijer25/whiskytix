@@ -169,10 +169,33 @@ export class OrdersRepository {
     let timeStr = explicitTime && explicitTime !== 'Regulier' ? explicitTime.replace(/–/g, '-') : '';
 
     if (cityName === 'Gent') {
-      if (titleLower.includes('cvh') || titleLower.includes('fettercairn') || titleLower.includes('bowmore') || titleLower.includes('bulleit')) {
+      if (titleLower.includes('fuji')) {
+        dateStr = dateStr || 'Zaterdag 3 oktober 2026';
+        if (!timeStr) timeStr = '21:00 - 21:45 UUR';
+      } else if (titleLower.includes('jura')) {
+        dateStr = dateStr || 'Zondag 4 oktober 2026';
+        if (!timeStr) timeStr = '12:15 - 13:00 UUR';
+      } else if (titleLower.includes('laphroaig')) {
+        dateStr = dateStr || 'Zondag 4 oktober 2026';
+        if (!timeStr) timeStr = '13:30 - 14:15 UUR';
+      } else if (titleLower.includes('boot') || titleLower.includes('bootje')) {
+        dateStr = dateStr || 'Zaterdag 3 oktober 2026';
+        if (!timeStr) timeStr = '12:00 - 13:00 UUR';
+      } else if (titleLower.includes('rondleiding')) {
+        if (titleLower.includes('vrijdag')) {
+          dateStr = dateStr || 'Vrijdag 2 oktober 2026';
+          if (!timeStr) timeStr = '18:00 - 19:30 UUR';
+        } else {
+          dateStr = dateStr || 'Zaterdag 3 oktober 2026';
+          if (!timeStr) timeStr = '11:00 - 12:30 UUR';
+        }
+      } else if (titleLower.includes('botteling')) {
+        dateStr = dateStr || 'Afhalen Festival (2-4 okt)';
+        if (!timeStr) timeStr = 'Hele dag';
+      } else if (titleLower.includes('cvh') || titleLower.includes('fettercairn') || titleLower.includes('bowmore') || titleLower.includes('bulleit')) {
         dateStr = dateStr || 'Zaterdag 3 oktober 2026';
         if (!timeStr) {
-          if (titleLower.includes('cvh')) timeStr = '14:00 - 14:45 UUR';
+          if (titleLower.includes('cvh')) timeStr = '12:15 - 13:00 UUR';
           else if (titleLower.includes('fettercairn')) timeStr = '15:00 - 15:45 UUR';
           else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:15 UUR';
           else if (titleLower.includes('bulleit')) timeStr = '16:15 - 17:00 UUR';
@@ -182,7 +205,7 @@ export class OrdersRepository {
         if (!timeStr) {
           if (titleLower.includes('belgian owl')) timeStr = '13:30 - 14:15 UUR';
           else if (titleLower.includes('glenfiddich') || titleLower.includes('balvenie')) timeStr = '15:00 - 15:45 UUR';
-          else if (titleLower.includes('suntory')) timeStr = '16:30 - 17:15 UUR';
+          else if (titleLower.includes('suntory')) timeStr = '15:00 - 15:45 UUR';
         }
       } else if (titleLower.includes('dada chapel')) {
         if (titleLower.includes('vrijdag')) {
@@ -1009,6 +1032,9 @@ export class OrdersRepository {
     const qty = Math.max(1, Math.min(Number(params.quantity) || 1, 50));
     const isMasterclass = params.sessionTitle.toLowerCase().includes('masterclass');
 
+    const reasonText = params.reason || 'VIP / Gast';
+    const noteText = params.notes?.trim() ? ` — Notitie: ${params.notes.trim()}` : '';
+
     const orderItem: StoredOrderItem = {
       id: crypto.randomUUID(),
       orderId,
@@ -1019,7 +1045,7 @@ export class OrdersRepository {
       category: isMasterclass ? 'masterclass' : 'entree',
       date: dateStr,
       time: timeStr,
-      delivery: params.reason ? `Uitnodiging: ${params.reason}` : 'Gastuitnodiging (€0,-)',
+      delivery: `Uitnodiging: ${reasonText}${noteText}`,
     };
 
     const tickets: StoredIssuedTicket[] = [];
@@ -1053,7 +1079,7 @@ export class OrdersRepository {
         dateStr,
         timeStr,
         pdfUrl,
-        swapReason: `Handmatige uitnodiging: ${params.reason || 'VIP / Gast'}`,
+        swapReason: `Handmatige uitnodiging: ${reasonText}${noteText}`,
         createdAt: nowIso,
       });
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, ShoppingBag, CheckCircle2, Clock, X, ChevronRight, Download, Mail, RefreshCw, Plus, Ticket, UserCheck, CheckCircle, Calendar, Check } from 'lucide-react';
 import { INITIAL_FESTIVALS, Order } from '../data/mockData';
 import { OrderDetailDrawer } from '../components/OrderDetailDrawer';
@@ -66,40 +66,16 @@ const CITY_THEMES: Record<string, {
 
 export const OrdersPage: React.FC = () => {
   const { cityId } = useParams<{ cityId?: string }>();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const openOrderParam = searchParams.get('openOrder');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCity, setSelectedCity] = useState(cityId || 'all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  // New Guest Comp Order Modal States
-  const [showCreateGuestModal, setShowCreateGuestModal] = useState<boolean>(false);
-  const [guestName, setGuestName] = useState<string>('');
-  const [guestEmail, setGuestEmail] = useState<string>('');
-  const [guestPhone, setGuestPhone] = useState<string>('');
-  const [guestCity, setGuestCity] = useState<'gent' | 'denhaag' | 'amsterdam'>('gent');
-  const [selectedGuestCatalogItem, setSelectedGuestCatalogItem] = useState<FestivalCatalogItem | null>(null);
-  const [guestCatalogFilterTab, setGuestCatalogFilterTab] = useState<'all' | 'entree' | 'masterclass' | 'special'>('all');
-  const [guestQuantity, setGuestQuantity] = useState<number>(1);
-  const [guestReason, setGuestReason] = useState<string>('VIP / Zakenrelatie');
-  const [guestNotes, setGuestNotes] = useState<string>('');
-  const [isSubmittingGuest, setIsSubmittingGuest] = useState<boolean>(false);
-
-  const guestCatalogItems = useMemo(() => getFestivalCatalog(guestCity), [guestCity]);
-  const filteredGuestCatalogItems = useMemo(() => {
-    if (guestCatalogFilterTab === 'all') return guestCatalogItems;
-    return guestCatalogItems.filter((i) => i.category === guestCatalogFilterTab);
-  }, [guestCatalogItems, guestCatalogFilterTab]);
-
-  // Keep selected item valid when filter changes
-  useEffect(() => {
-    if (filteredGuestCatalogItems.length > 0) {
-      if (!selectedGuestCatalogItem || !filteredGuestCatalogItems.some((i) => i.id === selectedGuestCatalogItem.id)) {
-        setSelectedGuestCatalogItem(filteredGuestCatalogItems[0]);
-      }
-    }
-  }, [filteredGuestCatalogItems, selectedGuestCatalogItem]);
 
   const activeFestival = cityId ? INITIAL_FESTIVALS.find((f) => f.id === cityId) : null;
   const effectiveCity = cityId || selectedCity;
@@ -114,6 +90,16 @@ export const OrdersPage: React.FC = () => {
         const data = await res.json();
         if (data && Array.isArray(data.orders)) {
           setOrders(data.orders);
+          if (openOrderParam) {
+            const found = data.orders.find(
+              (o: Order) =>
+                o.orderNumber === openOrderParam ||
+                o.orderNumber.replace('#', '') === openOrderParam.replace('#', '')
+            );
+            if (found) {
+              setSelectedOrder(found);
+            }
+          }
         } else {
           setOrders([]);
         }
@@ -128,7 +114,7 @@ export const OrdersPage: React.FC = () => {
 
   useEffect(() => {
     fetchOrders();
-  }, [effectiveCity]);
+  }, [effectiveCity, openOrderParam]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -152,76 +138,6 @@ export const OrdersPage: React.FC = () => {
   }, [filteredOrders]);
 
   const isPrelaunch = effectiveCity === 'denhaag' || effectiveCity === 'amsterdam';
-
-  const handleCreateGuestSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!guestName.trim() || !guestEmail.trim() || !selectedGuestCatalogItem) {
-      alert('Vul alstublieft minimaal naam, e-mailadres en selecteer een geldige sessie of masterclass.');
-      return;
-    }
-
-    setIsSubmittingGuest(true);
-    try {
-      const res = await fetch('/api/admin/orders/create-manual', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName: guestName.trim(),
-          customerEmail: guestEmail.trim(),
-          customerPhone: guestPhone.trim() || undefined,
-          city: guestCity,
-          sessionTitle: selectedGuestCatalogItem.title,
-          dateStr: selectedGuestCatalogItem.dateStr,
-          timeStr: selectedGuestCatalogItem.timeStr,
-          quantity: guestQuantity,
-          reason: guestReason,
-          notes: guestNotes,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setShowCreateGuestModal(false);
-        setGuestName('');
-        setGuestEmail('');
-        setGuestPhone('');
-        setGuestQuantity(1);
-        setGuestNotes('');
-        setSelectedGuestCatalogItem(null);
-        await fetchOrders();
-        if (data.order) {
-          const createdOrder: Order = {
-            id: data.order.id,
-            orderNumber: data.order.orderNumber,
-            customerName: data.order.customerName,
-            customerEmail: data.order.customerEmail,
-            customerPhone: data.order.customerPhone || '',
-            city: data.order.festivalId,
-            cityName: data.order.festivalId === 'gent' ? 'Gent' : data.order.festivalId === 'amsterdam' ? 'Amsterdam' : 'Den Haag',
-            itemsSummary: `${data.order.tickets.length}x ${selectedGuestCatalogItem.title}`,
-            totalCents: 0,
-            status: 'paid',
-            createdAt: data.order.createdAt,
-            environment: 'live',
-            tickets: data.order.tickets.map((t: any) => ({
-              code: t.ticketCode,
-              type: t.sessionTitle.toLowerCase().includes('masterclass') ? 'Masterclass' : 'Entreeticket',
-              session: t.sessionTitle,
-              attendeeName: t.attendeeName,
-              status: t.status,
-            })),
-          };
-          setSelectedOrder(createdOrder);
-        }
-      } else {
-        alert(`⚠️ Fout bij aanmaken: ${data.error || 'Onbekende fout'}`);
-      }
-    } catch (err: any) {
-      alert(`⚠️ Fout bij aanmaken: ${err.message}`);
-    } finally {
-      setIsSubmittingGuest(false);
-    }
-  };
 
   return (
     <div className="space-y-4 sm:space-y-6 font-sans">
@@ -248,14 +164,14 @@ export const OrdersPage: React.FC = () => {
           <button
             onClick={() => {
               const defaultCity = (effectiveCity === 'amsterdam' || effectiveCity === 'denhaag') ? effectiveCity : 'gent';
-              setGuestCity(defaultCity as any);
-              const items = getFestivalCatalog(defaultCity);
-              setSelectedGuestCatalogItem(items[0] || null);
-              setGuestCatalogFilterTab('all');
-              setShowCreateGuestModal(true);
+              if (cityId) {
+                navigate(`/admin/festival/${cityId}/invitations/new`);
+              } else {
+                navigate(`/admin/festival/${defaultCity}/invitations/new`);
+              }
             }}
             className={`px-3.5 py-2 rounded border-2 border-[#1D1C1A] ${theme.btnBg} text-white ${theme.btnHover} shadow-[2px_2px_0px_rgba(29,28,26,0.9)] text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shrink-0`}
-            title="Maak handmatig een gastuitnodiging of comp bestelling aan"
+            title="Maak een officiële gastuitnodiging of comp bestelling aan"
           >
             <Plus className="w-4 h-4" />
             <span>Nieuwe Gastuitnodiging</span>
@@ -482,333 +398,6 @@ export const OrdersPage: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Modal: Nieuwe Gastuitnodiging & Vrijkaart */}
-      {showCreateGuestModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-[#FCFAF7] border-3 border-[#1D1C1A] rounded-lg shadow-[6px_6px_0px_rgba(29,28,26,0.9)] max-w-2xl w-full max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-150 my-auto">
-            {/* Header */}
-            <div className="p-4 sm:p-5 border-b-2 border-[#1D1C1A] flex items-center justify-between shrink-0 bg-[#FAF7F2]">
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded bg-[#FAF7F2] border-2 border-[#1D1C1A] flex items-center justify-center ${theme.textPrimary} shadow-[2px_2px_0px_rgba(29,28,26,0.9)]`}>
-                  <Ticket className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-black text-[#1D1C1A]">
-                    Nieuwe Gastuitnodiging & Vrijkaart
-                  </h3>
-                  <p className="text-xs text-[#4c5752]">
-                    Officiële uitnodiging voor relaties, pers of medewerkers (kosteloos verstrekt)
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowCreateGuestModal(false)}
-                className="p-1.5 text-[#1D1C1A] hover:bg-gray-200 rounded border border-transparent hover:border-[#1D1C1A] transition-all cursor-pointer"
-                title="Sluiten"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Scrollable Form Body */}
-            <form onSubmit={handleCreateGuestSubmit} className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs font-sans">
-              {/* Stad & Gast Type & Aantal */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Festival Stad Keuze */}
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
-                    Festival Stad:
-                  </label>
-                  <select
-                    value={guestCity}
-                    onChange={(e) => {
-                      const c = e.target.value as 'gent' | 'denhaag' | 'amsterdam';
-                      setGuestCity(c);
-                      const items = getFestivalCatalog(c);
-                      setSelectedGuestCatalogItem(items[0] || null);
-                    }}
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  >
-                    <option value="gent">Gent (2, 3 & 4 okt 2026)</option>
-                    <option value="denhaag">Den Haag (13, 14 & 15 nov 2026)</option>
-                    <option value="amsterdam">Amsterdam (16 jan 2027)</option>
-                  </select>
-                </div>
-
-                {/* Type Gast / Reden */}
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
-                    Type Gast / Reden:
-                  </label>
-                  <select
-                    value={guestReason}
-                    onChange={(e) => setGuestReason(e.target.value)}
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  >
-                    <option value="VIP / Zakenrelatie">VIP / Zakenrelatie</option>
-                    <option value="Spreker / Masterclass Host">Spreker / Masterclass Host</option>
-                    <option value="Pers & Media">Pers & Media</option>
-                    <option value="Organisatie & Crew">Organisatie & Crew</option>
-                    <option value="Vrijkaart / Winactie">Vrijkaart / Winactie</option>
-                    <option value="Relatiegeschenk">Relatiegeschenk</option>
-                  </select>
-                </div>
-
-                {/* Aantal tickets */}
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
-                    Aantal Tickets:
-                  </label>
-                  <div className="flex items-center gap-1.5">
-                    {[1, 2, 4].map((num) => (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() => setGuestQuantity(num)}
-                        className={`flex-1 py-2 rounded border-2 border-[#1D1C1A] text-xs font-black transition-all cursor-pointer ${
-                          guestQuantity === num
-                            ? 'bg-[#006448] text-white shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
-                            : 'bg-white text-[#1D1C1A] hover:bg-[#FAF7F2]'
-                        }`}
-                      >
-                        {num}x
-                      </button>
-                    ))}
-                    <input
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={guestQuantity}
-                      onChange={(e) => setGuestQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                      className="w-14 p-2 text-center bg-white border-2 border-[#1D1C1A] rounded text-xs font-black text-[#1D1C1A]"
-                      title="Aangepast aantal"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Sessie / Masterclass Selectie met Categorie Tabs */}
-              <div className="space-y-2 pt-1 border-t border-[#c1d4ce]">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A]">
-                    Selecteer Sessie of Masterclass: <span className="text-red-600">*</span>
-                  </label>
-                  {/* Category Filter Tabs */}
-                  <div className="flex items-center gap-1 bg-[#FAF7F2] p-1 border-2 border-[#1D1C1A] rounded">
-                    <button
-                      type="button"
-                      onClick={() => setGuestCatalogFilterTab('all')}
-                      className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer ${
-                        guestCatalogFilterTab === 'all'
-                          ? 'bg-[#006448] text-white shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
-                          : 'text-[#4c5752] hover:text-[#1D1C1A]'
-                      }`}
-                    >
-                      Alle ({guestCatalogItems.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGuestCatalogFilterTab('entree')}
-                      className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer ${
-                        guestCatalogFilterTab === 'entree'
-                          ? 'bg-[#006448] text-white shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
-                          : 'text-[#4c5752] hover:text-[#1D1C1A]'
-                      }`}
-                    >
-                      Entrees ({guestCatalogItems.filter((i) => i.category === 'entree').length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGuestCatalogFilterTab('masterclass')}
-                      className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer ${
-                        guestCatalogFilterTab === 'masterclass'
-                          ? 'bg-[#006448] text-white shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
-                          : 'text-[#4c5752] hover:text-[#1D1C1A]'
-                      }`}
-                    >
-                      Masterclasses ({guestCatalogItems.filter((i) => i.category === 'masterclass').length})
-                    </button>
-                    {guestCatalogItems.some((i) => i.category === 'special') && (
-                      <button
-                        type="button"
-                        onClick={() => setGuestCatalogFilterTab('special')}
-                        className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer ${
-                          guestCatalogFilterTab === 'special'
-                            ? 'bg-[#006448] text-white shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
-                            : 'text-[#4c5752] hover:text-[#1D1C1A]'
-                        }`}
-                      >
-                        VIP & Specials ({guestCatalogItems.filter((i) => i.category === 'special').length})
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Dropdown Selector */}
-                <select
-                  value={selectedGuestCatalogItem?.id || ''}
-                  onChange={(e) => {
-                    const found = guestCatalogItems.find((i) => i.id === e.target.value);
-                    if (found) setSelectedGuestCatalogItem(found);
-                  }}
-                  className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                >
-                  {filteredGuestCatalogItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.dateStr} • {item.timeStr} — {item.title} (Normale waarde: {formatEuro(item.originalPriceEur)})
-                    </option>
-                  ))}
-                </select>
-
-                {/* Live Ticket Preview Card */}
-                {selectedGuestCatalogItem && (
-                  <div className="p-3.5 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg shadow-[2px_2px_0px_rgba(29,28,26,0.15)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
-                            selectedGuestCatalogItem.category === 'masterclass'
-                              ? 'bg-[#e4d5c4] text-[#543b20] border-[#caac8e]'
-                              : selectedGuestCatalogItem.category === 'special'
-                              ? 'bg-[#eedccb] text-[#6d4c1d] border-[#caac8e]'
-                              : 'bg-[#d8e7e2] text-[#006448] border-[#8ba198]'
-                          }`}
-                        >
-                          {selectedGuestCatalogItem.category === 'masterclass'
-                            ? 'MASTERCLASS'
-                            : selectedGuestCatalogItem.category === 'special'
-                            ? 'VIP & ARRANGEMENT'
-                            : 'ENTREETICKET'}
-                        </span>
-                        <div className="flex items-center gap-1 text-[11px] text-[#4c5752] font-semibold">
-                          <Calendar className="w-3.5 h-3.5 text-[#006448]" />
-                          <span>{selectedGuestCatalogItem.dateStr}</span>
-                          <span className="text-[#8ba198]">•</span>
-                          <Clock className="w-3.5 h-3.5 text-[#006448]" />
-                          <span>{selectedGuestCatalogItem.timeStr}</span>
-                        </div>
-                      </div>
-                      <div className="text-sm font-extrabold text-[#1D1C1A]">
-                        {selectedGuestCatalogItem.title}
-                      </div>
-                      {selectedGuestCatalogItem.location && (
-                        <div className="text-[11px] text-[#4c5752]">
-                          Locatie: {selectedGuestCatalogItem.location}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="text-left sm:text-right shrink-0 bg-white sm:bg-transparent p-2 sm:p-0 rounded border sm:border-0 border-[#c1d4ce] w-full sm:w-auto">
-                      <div className="text-[11px] text-[#4c5752] font-semibold">
-                        Normale waarde:{' '}
-                        <span className="line-through font-bold">
-                          {formatEuro(selectedGuestCatalogItem.originalPriceEur)}
-                        </span>
-                      </div>
-                      <div className="text-xs font-black text-[#006448]">
-                        Kosteloos verstrekt (€ 0,00)
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Klant/Gast Gegevens */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-[#c1d4ce]">
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
-                    Naam Gast / Contactpersoon: <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    placeholder="Bijv. Jan de Vries"
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-medium text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
-                    E-mailadres Gast: <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={guestEmail}
-                    onChange={(e) => setGuestEmail(e.target.value)}
-                    placeholder="gast@bedrijf.nl"
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-medium text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  />
-                  <p className="text-[10px] text-[#4c5752] mt-0.5">De gast kan hiermee direct inloggen op het online portaal.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
-                    Telefoonnummer (Optioneel):
-                  </label>
-                  <input
-                    type="tel"
-                    value={guestPhone}
-                    onChange={(e) => setGuestPhone(e.target.value)}
-                    placeholder="+31 6 12345678"
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-medium text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
-                    Interne Notitie (Optioneel):
-                  </label>
-                  <input
-                    type="text"
-                    value={guestNotes}
-                    onChange={(e) => setGuestNotes(e.target.value)}
-                    placeholder="Bijv. Uitgenodigd via directie"
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-medium text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  />
-                </div>
-              </div>
-
-              {/* Info banner */}
-              <div className="p-3 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg text-[11px] text-[#4c5752] space-y-1 shadow-[2px_2px_0px_rgba(29,28,26,0.15)]">
-                <div className="font-extrabold text-[#1D1C1A] flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 text-[#006448]" />
-                  Directe Ingangscontrole & Portaal-koppeling:
-                </div>
-                <div>• Er wordt een officieel bestelnummer aangemaakt met status <strong>Betaald (€ 0,00)</strong>.</div>
-                <div>
-                  • {guestQuantity}x ticket(s) voor <strong>{selectedGuestCatalogItem?.title || 'geselecteerde sessie'}</strong> met unieke toegangscode, direct scanbaar aan de kassa.
-                </div>
-                <div>• De gast kan met dit e-mailadres direct inloggen in het gastportaal en de PDF downloaden.</div>
-              </div>
-
-              {/* Footer buttons */}
-              <div className="flex gap-2 pt-2 border-t border-[#c1d4ce]">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateGuestModal(false)}
-                  className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-white text-xs font-extrabold text-[#1D1C1A] hover:bg-gray-100 shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer"
-                >
-                  Annuleren
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingGuest || !selectedGuestCatalogItem}
-                  className={`flex-1 py-2.5 rounded border-2 border-[#1D1C1A] ${theme.btnBg} text-white ${theme.btnHover} text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50`}
-                >
-                  <Ticket className="w-4 h-4" />
-                  <span>{isSubmittingGuest ? 'Aanmaken...' : 'Gastuitnodiging Aanmaken'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Slide-out Order Detail Drawer */}
       <OrderDetailDrawer
