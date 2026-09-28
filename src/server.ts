@@ -224,20 +224,14 @@ export async function buildServer(): Promise<FastifyInstance> {
     const titleLower = rawSessionTitle.toLowerCase();
     const cleanSessionTitle = rawSessionTitle.replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*-\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '').trim();
 
-    const timeStr = query.time || ticket?.timeStr || (order?.items && (order.items[0]?.timeslot || order.items[0]?.time)) ||
-      (titleLower.includes('avond') || (query.session && query.session.includes('avond'))
-        ? '19:00 - 23:00 UUR'
-        : (query.session === 'vip_vrijdag'
-        ? '13:00 - 17:00 UUR'
-        : '13:00 - 17:00 UUR'));
-
-    const dateStr = query.date || ticket?.dateStr || (order?.items && order.items[0]?.date) || (
-      resolvedCity.includes('gent')
-        ? (titleLower.includes('zaterdag') ? 'Zaterdag 3 oktober 2026' : titleLower.includes('zondag') ? 'Zondag 4 oktober 2026' : 'Vrijdag 2 oktober 2026')
-        : resolvedCity.includes('amsterdam')
-        ? 'Zaterdag 16 januari 2027'
-        : (query.session === 'zaterdag_middag' || titleLower.includes('zaterdag') ? 'Zaterdag 14 november 2026' : titleLower.includes('zondag') ? 'Zondag 15 november 2026' : 'Vrijdag 13 november 2026')
+    const resolvedSession = OrdersRepository.resolveSessionDateTime(
+      resolvedCity,
+      rawSessionTitle,
+      query.date || ticket?.dateStr || (order?.items && order.items[0]?.date),
+      query.time || ticket?.timeStr || (order?.items && (order.items[0]?.timeslot || order.items[0]?.time))
     );
+    const timeStr = resolvedSession.timeStr;
+    const dateStr = resolvedSession.dateStr;
 
     // Calculate itemNumber if multiple tickets in order
     let itemNumber = query.itemNumber;

@@ -605,7 +605,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <th className="py-3 px-4">Order #</th>
                     <th className="py-3 px-4">Klantnaam</th>
                     <th className="py-3 px-4">Stad</th>
-                    <th className="py-3 px-4">Bestelde Items</th>
+                    <th className="py-3 px-4 text-center">Items</th>
                     <th className="py-3 px-4">Bedrag</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Actie</th>
@@ -632,7 +632,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           {order.cityName}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-[#1D1C1A] font-medium">{order.itemsSummary}</td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="font-mono font-extrabold text-xs bg-[#FAF7F2] border border-[#c1d4ce] px-2.5 py-0.5 rounded text-[#1D1C1A]">
+                          {order.tickets && order.tickets.length > 0
+                            ? order.tickets.length
+                            : order.itemsSummary
+                            ? order.itemsSummary.split(',').reduce((sum, p) => {
+                                const m = p.match(/(\d+)x/i);
+                                return sum + (m ? parseInt(m[1], 10) : 1);
+                              }, 0)
+                            : 1}
+                        </span>
+                      </td>
                       <td className="py-3 px-4 font-extrabold text-[#1D1C1A]">
                         € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
                       </td>

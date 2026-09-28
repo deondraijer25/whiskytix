@@ -403,7 +403,7 @@ export const OrdersPage: React.FC = () => {
                   <th className="py-3 px-4">Order #</th>
                   <th className="py-3 px-4">Klantnaam & Contact</th>
                   <th className="py-3 px-4">Editie</th>
-                  <th className="py-3 px-4">Bestelde Kaarten</th>
+                  <th className="py-3 px-4 text-center">Items</th>
                   <th className="py-3 px-4">Bedrag</th>
                   <th className="py-3 px-4">Datum</th>
                   <th className="py-3 px-4">Status</th>
@@ -435,8 +435,17 @@ export const OrdersPage: React.FC = () => {
                         {order.cityName}
                       </span>
                     </td>
-                    <td className="py-3 px-4 font-medium text-[#1D1C1A] max-w-[200px] truncate">
-                      {order.itemsSummary}
+                    <td className="py-3 px-4 text-center">
+                      <span className="font-mono font-extrabold text-xs bg-[#FAF7F2] border border-[#c1d4ce] px-2.5 py-0.5 rounded text-[#1D1C1A]">
+                        {order.tickets && order.tickets.length > 0
+                          ? order.tickets.length
+                          : order.itemsSummary
+                          ? order.itemsSummary.split(',').reduce((sum, p) => {
+                              const m = p.match(/(\d+)x/i);
+                              return sum + (m ? parseInt(m[1], 10) : 1);
+                            }, 0)
+                          : 1}
+                      </span>
                     </td>
                     <td className="py-3 px-4 font-extrabold text-[#1D1C1A]">
                       € {(order.totalCents / 100).toFixed(2).replace('.', ',')}

@@ -438,14 +438,24 @@ export const FestivalOverviewPage: React.FC = () => {
                   <tr className="bg-[#FAF7F2] border-b-2 border-[#1D1C1A] text-[#4c5752] font-extrabold uppercase tracking-wider">
                     <th className="py-2.5 px-3">Order #</th>
                     <th className="py-2.5 px-3">Klant</th>
-                    <th className="py-2.5 px-3">Items</th>
+                    <th className="py-2.5 px-3 text-center">Items</th>
                     <th className="py-2.5 px-3">Bedrag</th>
                     <th className="py-2.5 px-3">Status</th>
                     <th className="py-2.5 px-3 text-right">Actie</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#c1d4ce]">
-                  {orders.slice(0, 8).map((order) => (
+                  {orders.slice(0, 8).map((order) => {
+                    const ticketCount = order.tickets && order.tickets.length > 0
+                      ? order.tickets.length
+                      : order.itemsSummary
+                      ? order.itemsSummary.split(',').reduce((sum, p) => {
+                          const m = p.match(/(\d+)x/i);
+                          return sum + (m ? parseInt(m[1], 10) : 1);
+                        }, 0)
+                      : 1;
+
+                    return (
                     <tr
                       key={order.id}
                       className="hover:bg-[#FAF7F2] transition-colors cursor-pointer"
@@ -457,8 +467,10 @@ export const FestivalOverviewPage: React.FC = () => {
                       <td className="py-2.5 px-3 font-bold text-[#1D1C1A]">
                         {order.customerName}
                       </td>
-                      <td className="py-2.5 px-3 text-[#4c5752] truncate max-w-[180px]">
-                        {order.itemsSummary}
+                      <td className="py-2.5 px-3 text-center">
+                        <span className="font-mono font-extrabold text-xs bg-[#FAF7F2] border border-[#c1d4ce] px-2.5 py-0.5 rounded text-[#1D1C1A]">
+                          {ticketCount}
+                        </span>
                       </td>
                       <td className="py-2.5 px-3 font-extrabold text-[#1D1C1A]">
                         € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
@@ -486,7 +498,8 @@ export const FestivalOverviewPage: React.FC = () => {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
                 </tbody>
               </table>
             </div>

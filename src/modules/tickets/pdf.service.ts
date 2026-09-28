@@ -174,12 +174,145 @@ function getFestivalLogoPng(cityKey: string): Buffer | null {
   return null;
 }
 
+export function parseTicketDateTime(
+  cityKey: string,
+  sessionTitle: string,
+  rawDateStr?: string,
+  rawTimeStr?: string
+): {
+  dayName: string;
+  day: string;
+  month: string;
+  year: string;
+  timeStr: string;
+} {
+  const titleLower = sessionTitle.toLowerCase();
+  let dayName = '';
+  let day = '';
+  let month = '';
+  let year = '2026';
+  let timeStr = (rawTimeStr || '').trim().replace(/–/g, '-');
+
+  // 1. If explicit dateStr is provided, parse it
+  if (rawDateStr && rawDateStr.trim() && rawDateStr !== 'Festivaldag') {
+    const dLower = rawDateStr.toLowerCase();
+    
+    // Day name
+    if (dLower.includes('vrijdag')) dayName = 'VRIJDAG';
+    else if (dLower.includes('zaterdag')) dayName = 'ZATERDAG';
+    else if (dLower.includes('zondag')) dayName = 'ZONDAG';
+
+    // Day number (e.g. "3" or "03" or "2" or "14")
+    const dayMatch = rawDateStr.match(/\b([0-3]?\d)\b/);
+    if (dayMatch) {
+      day = dayMatch[1].padStart(2, '0');
+    }
+
+    // Month
+    if (dLower.includes('okt') || dLower.includes('oct')) month = 'OKT';
+    else if (dLower.includes('nov')) month = 'NOV';
+    else if (dLower.includes('jan')) month = 'JAN';
+
+    // Year
+    const yearMatch = rawDateStr.match(/\b(202\d)\b/);
+    if (yearMatch) {
+      year = yearMatch[1];
+    }
+  }
+
+  // 2. If day, month or dayName are still missing, resolve intelligently per festival & sessionTitle
+  if (cityKey === 'gent') {
+    month = month || 'OKT';
+    year = year || '2026';
+
+    if (titleLower.includes('cvh') || titleLower.includes('fettercairn') || titleLower.includes('bowmore') || titleLower.includes('bulleit')) {
+      dayName = dayName || 'ZATERDAG';
+      day = day || '03';
+      if (!timeStr) {
+        if (titleLower.includes('cvh')) timeStr = '14:00 - 14:45 UUR';
+        else if (titleLower.includes('fettercairn')) timeStr = '15:00 - 15:45 UUR';
+        else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:15 UUR';
+        else if (titleLower.includes('bulleit')) timeStr = '16:15 - 17:00 UUR';
+      }
+    } else if (titleLower.includes('belgian owl') || titleLower.includes('glenfiddich') || titleLower.includes('balvenie') || titleLower.includes('suntory')) {
+      dayName = dayName || 'ZONDAG';
+      day = day || '04';
+      if (!timeStr) {
+        if (titleLower.includes('belgian owl')) timeStr = '13:30 - 14:15 UUR';
+        else if (titleLower.includes('glenfiddich') || titleLower.includes('balvenie')) timeStr = '15:00 - 15:45 UUR';
+        else if (titleLower.includes('suntory')) timeStr = '16:30 - 17:15 UUR';
+      }
+    } else if (titleLower.includes('dada chapel')) {
+      if (titleLower.includes('vrijdag')) {
+        dayName = dayName || 'VRIJDAG';
+        day = day || '02';
+        if (!timeStr) timeStr = '20:00 - 20:45 UUR';
+      } else {
+        dayName = dayName || 'ZATERDAG';
+        day = day || '03';
+        if (!timeStr) timeStr = '13:45 - 14:30 UUR';
+      }
+    } else if (titleLower.includes('zaterdag')) {
+      dayName = dayName || 'ZATERDAG';
+      day = day || '03';
+      if (!timeStr) {
+        timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
+      }
+    } else if (titleLower.includes('zondag')) {
+      dayName = dayName || 'ZONDAG';
+      day = day || '04';
+      if (!timeStr) timeStr = '13:00 - 17:00 UUR';
+    } else if (titleLower.includes('vrijdag')) {
+      dayName = dayName || 'VRIJDAG';
+      day = day || '02';
+      if (!timeStr) timeStr = '19:00 - 23:00 UUR';
+    } else {
+      // Default Gent Friday if unspecified
+      dayName = dayName || 'VRIJDAG';
+      day = day || '02';
+      if (!timeStr) timeStr = '19:00 - 23:00 UUR';
+    }
+  } else if (cityKey === 'denhaag') {
+    month = month || 'NOV';
+    year = year || '2026';
+    if (titleLower.includes('zaterdag')) {
+      dayName = dayName || 'ZATERDAG';
+      day = day || '14';
+      if (!timeStr) timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
+    } else if (titleLower.includes('zondag')) {
+      dayName = dayName || 'ZONDAG';
+      day = day || '15';
+      if (!timeStr) timeStr = '13:00 - 17:00 UUR';
+    } else {
+      dayName = dayName || 'VRIJDAG';
+      day = day || '13';
+      if (!timeStr) timeStr = titleLower.includes('vip') ? '13:00 - 17:00 UUR' : '18:30 - 22:30 UUR';
+    }
+  } else if (cityKey === 'amsterdam') {
+    month = month || 'JAN';
+    year = year || '2027';
+    dayName = dayName || 'ZATERDAG';
+    day = day || '16';
+    if (!timeStr) timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
+  }
+
+  // Fallback defaults
+  dayName = dayName || 'VRIJDAG';
+  day = day || '02';
+  month = month || 'OKT';
+  if (!timeStr) timeStr = '13:00 - 17:00 UUR';
+  if (!timeStr.toUpperCase().includes('UUR')) timeStr += ' UUR';
+
+  return { dayName, day, month, year, timeStr };
+}
+
 export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint8Array> {
   const {
     attendeeName = 'Deon Draijer',
     cityName = 'gent',
     sessionTitle = 'VIP SESSIE \u2014 VRIJDAG',
-    timeStr = '13:30 - 17:30 UUR',
+    dateStr,
+    timeStr: initialTimeStr,
     itemNumber = '1/1',
   } = options;
 
@@ -197,26 +330,13 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
 
   const theme = FESTIVAL_THEMES[cityKey];
 
-  // Resolve dates per festival and session
-  const titleLower = sessionTitle.toLowerCase();
-  let month = theme.defaultMonth;
-  let day = theme.defaultDay;
-
-  if (cityKey === 'gent') {
-    month = 'OKT';
-    if (titleLower.includes('vrijdag')) day = '02';
-    else if (titleLower.includes('zondag')) day = '04';
-    else if (titleLower.includes('zaterdag')) day = '03';
-    else day = '02';
-  } else if (cityKey === 'denhaag') {
-    month = 'NOV';
-    if (titleLower.includes('vrijdag')) day = '13';
-    else if (titleLower.includes('zondag')) day = '15';
-    else if (titleLower.includes('zaterdag')) day = '14';
-  } else if (cityKey === 'amsterdam') {
-    month = 'JAN';
-    day = '16';
-  }
+  // Resolve dates & times per festival and session (with support for explicit dateStr or catalog session)
+  const dt = parseTicketDateTime(cityKey, sessionTitle, dateStr, initialTimeStr);
+  const month = dt.month;
+  const day = dt.day;
+  const dayName = dt.dayName;
+  const year = dt.year;
+  const timeStr = dt.timeStr;
 
   // Generate high-resolution cryptographic HMAC QR code PNG
   const qrDataUrl = await generateQrPngDataUrl({
@@ -617,14 +737,7 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
 
   // Schedule subtitle (10 pt HelveticaBold)
   const scheduleY = sessionY - 14;
-  const dayName = titleLower.includes('vrijdag')
-    ? 'VRIJDAG'
-    : titleLower.includes('zondag')
-    ? 'ZONDAG'
-    : titleLower.includes('zaterdag')
-    ? 'ZATERDAG'
-    : (cityKey === 'amsterdam' ? 'ZATERDAG' : 'VRIJDAG');
-  page.drawText(`${dayName} ${day} ${month} ${theme.year}  \u2022  ${timeStr.toUpperCase()}`, {
+  page.drawText(`${dayName} ${day} ${month} ${year}  \u2022  ${timeStr.toUpperCase()}`, {
     x: cardX + 20,
     y: scheduleY,
     size: 10,

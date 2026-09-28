@@ -1142,6 +1142,8 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                session: string;
                attendeeName: string;
                status: 'valid' | 'checked_in' | 'cancelled';
+               dateStr?: string;
+               timeStr?: string;
              }[] = [];
 
              let ticketIndex = 1;
@@ -1155,6 +1157,8 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                    session: it.title,
                    attendeeName: resolvedName,
                    status: p.status === 'paid' ? 'valid' : 'cancelled',
+                   dateStr: OrdersRepository.resolveSessionDateTime(festId, it.title, (it as any).date, (it as any).time).dateStr,
+                   timeStr: OrdersRepository.resolveSessionDateTime(festId, it.title, (it as any).date, (it as any).time).timeStr,
                  });
                  ticketIndex++;
                }

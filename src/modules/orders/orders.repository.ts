@@ -164,44 +164,78 @@ export class OrdersRepository {
     if (cityLower.includes('amsterdam')) cityName = 'Amsterdam';
     else if (cityLower.includes('denhaag') || cityLower.includes('haag')) cityName = 'Den Haag';
 
-    let dateStr = explicitDate;
-    if (!dateStr) {
-      if (cityName === 'Gent') {
-        if (titleLower.includes('zaterdag')) {
-          dateStr = 'Zaterdag 3 oktober 2026';
-        } else if (titleLower.includes('zondag')) {
-          dateStr = 'Zondag 4 oktober 2026';
-        } else {
-          dateStr = 'Vrijdag 2 oktober 2026';
+    let dateStr = explicitDate && explicitDate !== 'Festivaldag' ? explicitDate : '';
+    let timeStr = explicitTime && explicitTime !== 'Regulier' ? explicitTime.replace(/–/g, '-') : '';
+
+    if (cityName === 'Gent') {
+      if (titleLower.includes('cvh') || titleLower.includes('fettercairn') || titleLower.includes('bowmore') || titleLower.includes('bulleit')) {
+        dateStr = dateStr || 'Zaterdag 3 oktober 2026';
+        if (!timeStr) {
+          if (titleLower.includes('cvh')) timeStr = '14:00 - 14:45 UUR';
+          else if (titleLower.includes('fettercairn')) timeStr = '15:00 - 15:45 UUR';
+          else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:15 UUR';
+          else if (titleLower.includes('bulleit')) timeStr = '16:15 - 17:00 UUR';
         }
-      } else if (cityName === 'Amsterdam') {
-        dateStr = 'Zaterdag 16 januari 2027';
+      } else if (titleLower.includes('belgian owl') || titleLower.includes('glenfiddich') || titleLower.includes('balvenie') || titleLower.includes('suntory')) {
+        dateStr = dateStr || 'Zondag 4 oktober 2026';
+        if (!timeStr) {
+          if (titleLower.includes('belgian owl')) timeStr = '13:30 - 14:15 UUR';
+          else if (titleLower.includes('glenfiddich') || titleLower.includes('balvenie')) timeStr = '15:00 - 15:45 UUR';
+          else if (titleLower.includes('suntory')) timeStr = '16:30 - 17:15 UUR';
+        }
+      } else if (titleLower.includes('dada chapel')) {
+        if (titleLower.includes('vrijdag')) {
+          dateStr = dateStr || 'Vrijdag 2 oktober 2026';
+          if (!timeStr) timeStr = '20:00 - 20:45 UUR';
+        } else {
+          dateStr = dateStr || 'Zaterdag 3 oktober 2026';
+          if (!timeStr) timeStr = '13:45 - 14:30 UUR';
+        }
+      } else if (titleLower.includes('zaterdag')) {
+        dateStr = dateStr || 'Zaterdag 3 oktober 2026';
+        if (!timeStr) {
+          timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
+        }
+      } else if (titleLower.includes('zondag')) {
+        dateStr = dateStr || 'Zondag 4 oktober 2026';
+        if (!timeStr) timeStr = '13:00 - 17:00 UUR';
+      } else if (titleLower.includes('vrijdag')) {
+        dateStr = dateStr || 'Vrijdag 2 oktober 2026';
+        if (!timeStr) timeStr = '19:00 - 23:00 UUR';
       } else {
-        // Den Haag
-        if (titleLower.includes('zaterdag')) {
-          dateStr = 'Zaterdag 14 november 2026';
-        } else if (titleLower.includes('zondag')) {
-          dateStr = 'Zondag 15 november 2026';
-        } else {
-          dateStr = 'Vrijdag 13 november 2026';
-        }
+        dateStr = dateStr || 'Vrijdag 2 oktober 2026';
+        if (!timeStr) timeStr = '19:00 - 23:00 UUR';
+      }
+    } else if (cityName === 'Amsterdam') {
+      dateStr = dateStr || 'Zaterdag 16 januari 2027';
+      if (!timeStr) {
+        timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
+      }
+    } else {
+      // Den Haag
+      if (titleLower.includes('zaterdag')) {
+        dateStr = dateStr || 'Zaterdag 14 november 2026';
+        if (!timeStr) timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
+      } else if (titleLower.includes('zondag')) {
+        dateStr = dateStr || 'Zondag 15 november 2026';
+        if (!timeStr) timeStr = '13:00 - 17:00 UUR';
+      } else {
+        dateStr = dateStr || 'Vrijdag 13 november 2026';
+        if (!timeStr) timeStr = titleLower.includes('vip') ? '13:00 - 17:00 UUR' : '18:30 - 22:30 UUR';
       }
     }
 
-    let timeStr = explicitTime;
     if (!timeStr) {
       const timeMatch = sessionTitle.match(/\b\d{1,2}:\d{2}(?:\s*-\s*\d{1,2}:\d{2})?(?:\s*UUR)?/i);
       if (timeMatch) {
-        timeStr = timeMatch[0].toUpperCase();
+        timeStr = timeMatch[0].toUpperCase().replace(/–/g, '-');
         if (!timeStr.includes('UUR')) timeStr += ' UUR';
-      } else if (titleLower.includes('avond')) {
-        timeStr = cityName === 'Den Haag' ? '18:30 - 22:30 UUR' : '19:00 - 23:00 UUR';
-      } else if (titleLower.includes('vip')) {
-        timeStr = '13:00 - 17:00 UUR';
       } else {
         timeStr = '13:00 - 17:00 UUR';
       }
     }
+
+    if (!timeStr.toUpperCase().includes('UUR')) timeStr += ' UUR';
 
     return { dateStr, timeStr, cityName };
   }
@@ -394,28 +428,19 @@ export class OrdersRepository {
             attendeeName,
           });
 
+          // Infer exact festival date and time via intelligent session resolver
+          const resolved = OrdersRepository.resolveSessionDateTime(
+            cityName,
+            sessionTitle,
+            item.date,
+            item.timeslot || item.time
+          );
+          const inferredDate = resolved.dateStr;
+          const inferredTime = resolved.timeStr;
+
           const signature = generateTicketSignature(ticketCode, cityName, sessionTitle, attendeeName);
           const cleanCode = ticketCode.replace('#', '');
-          const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${cityName}&orderNumber=${cleanOrderNumber}&name=${encodeURIComponent(attendeeName)}&title=${encodeURIComponent(sessionTitle)}`;
-
-          // Infer exact festival date and time if generic or unspecified
-          let inferredDate = item.date;
-          let inferredTime = item.timeslot || item.time;
-          const sLower = sessionTitle.toLowerCase();
-
-          if (!inferredDate || inferredDate === 'Festivaldag') {
-            if (cityName === 'gent') {
-              inferredDate = sLower.includes('zaterdag') ? 'Zaterdag 3 oktober 2026' : sLower.includes('zondag') ? 'Zondag 4 oktober 2026' : 'Vrijdag 2 oktober 2026';
-            } else if (cityName === 'amsterdam') {
-              inferredDate = 'Zaterdag 16 januari 2027';
-            } else {
-              inferredDate = sLower.includes('zaterdag') ? 'Zaterdag 14 november 2026' : sLower.includes('zondag') ? 'Zondag 15 november 2026' : 'Vrijdag 13 november 2026';
-            }
-          }
-
-          if (!inferredTime || inferredTime === 'Regulier') {
-            inferredTime = sLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
-          }
+          const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${cityName}&orderNumber=${cleanOrderNumber}&name=${encodeURIComponent(attendeeName)}&title=${encodeURIComponent(sessionTitle)}&time=${encodeURIComponent(inferredTime)}&date=${encodeURIComponent(inferredDate)}`;
 
           const ticket: StoredIssuedTicket = {
             id: crypto.randomUUID(),

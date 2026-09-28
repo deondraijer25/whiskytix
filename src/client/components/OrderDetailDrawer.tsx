@@ -1,7 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar, Plus, Ticket, Tag, Check } from 'lucide-react';
 import { Order } from '../data/mockData';
 import { getFestivalCatalog, FestivalCatalogItem, formatEuro } from '../data/festivalCatalog';
+
+function formatPurchaseDateTime(dateStr?: string): string {
+  if (!dateStr) return 'Onbekend';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const datePart = d.toLocaleDateString('nl-NL', {
+      timeZone: 'Europe/Amsterdam',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    const timePart = d.toLocaleTimeString('nl-NL', {
+      timeZone: 'Europe/Amsterdam',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return `${datePart} om ${timePart} uur`;
+  } catch {
+    return dateStr;
+  }
+}
 
 interface OrderDetailDrawerProps {
   order: Order | null;
@@ -165,6 +187,27 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       effectiveTickets = expanded;
     }
   }
+
+  const summaryItems = useMemo(() => {
+    if (!order?.itemsSummary) return [];
+    return order.itemsSummary
+      .split(',')
+      .map((part) => {
+        const p = part.trim();
+        const m = p.match(/^(\d+)x\s*(.*)$/i);
+        if (m) {
+          return {
+            quantity: parseInt(m[1], 10) || 1,
+            title: m[2].trim(),
+          };
+        }
+        return {
+          quantity: 1,
+          title: p,
+        };
+      })
+      .filter((it) => Boolean(it.title));
+  }, [order?.itemsSummary]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -362,22 +405,45 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
               </div>
               <div>
                 <span className="text-[#4c5752] block font-semibold text-[11px]">Aankoopmoment:</span>
-                <span className="font-bold text-[#1D1C1A] flex items-center gap-1">
-                  <Calendar className={`w-3.5 h-3.5 ${theme.textPrimary}`} /> {order.createdAt}
+                <span className="font-bold text-[#1D1C1A] flex items-center gap-1.5" title={order.createdAt}>
+                  <Calendar className={`w-3.5 h-3.5 ${theme.textPrimary}`} /> {formatPurchaseDateTime(order.createdAt)}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Financiële Specificatie */}
-          <div className="bg-[#FCFAF7] border-2 border-[#c1d4ce] rounded-lg p-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce] mb-3">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-[#1D1C1A]">
+          {/* Besteloverzicht & Financiële Specificatie */}
+          <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 shadow-[2px_2px_0px_rgba(29,28,26,0.15)] space-y-3">
+            <div className="pb-3 border-b border-[#c1d4ce]">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-[#1D1C1A] block mb-2">
                 Besteloverzicht:
               </span>
-              <span className={`text-xs font-bold ${theme.textPrimary} text-right`}>{order.itemsSummary}</span>
+              {summaryItems.length === 0 ? (
+                <div className="text-xs text-[#4c5752] font-medium">Geen items gespecificeerd</div>
+              ) : (
+                <ul className="space-y-1.5">
+                  {summaryItems.map((item, idx) => {
+                    const isMc = item.title.toLowerCase().includes('masterclass');
+                    return (
+                      <li key={idx} className="flex items-center justify-between text-xs bg-[#FAF7F2] border border-[#c1d4ce] rounded px-2.5 py-1.5">
+                        <span className="font-semibold text-[#1D1C1A] flex items-center gap-2">
+                          <span className="font-mono font-extrabold text-[11px] bg-white border border-[#1D1C1A] px-1.5 py-0.5 rounded shadow-[1px_1px_0px_rgba(29,28,26,0.6)] text-[#006448]">
+                            {item.quantity}x
+                          </span>
+                          <span className="font-bold text-[#1D1C1A]">{item.title}</span>
+                        </span>
+                        <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded border tracking-wider ${
+                          isMc ? 'bg-[#EBF3FB] text-[#1E3A8A] border-[#BFDBFE]' : 'bg-[#d8e7e2] text-[#006448] border-[#8ba198]'
+                        }`}>
+                          {isMc ? 'Masterclass' : 'Entree'}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between pt-0.5">
               <span className="text-xs sm:text-sm font-extrabold text-[#1D1C1A]">Totaalbedrag (incl. BTW):</span>
               <span className={`text-base sm:text-lg font-extrabold ${theme.textPrimary}`}>
                 € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
@@ -468,7 +534,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                         <div className="pt-2 border-t border-[#c1d4ce]/70 flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <a
-                              href={`/api/tickets/${encodeURIComponent(t.code.replace('#', ''))}/pdf?city=${resolvedCityKey}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(t.session)}&orderNumber=${encodeURIComponent(order.orderNumber)}`}
+                              href={`/api/tickets/${encodeURIComponent(t.code.replace('#', ''))}/pdf?city=${resolvedCityKey}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(t.session)}&date=${encodeURIComponent(t.dateStr || '')}&time=${encodeURIComponent(t.timeStr || '')}&orderNumber=${encodeURIComponent(order.orderNumber)}`}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border-2 border-[#1D1C1A] bg-white hover:bg-[#FAF7F2] text-[#1D1C1A] text-xs font-extrabold shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer"
