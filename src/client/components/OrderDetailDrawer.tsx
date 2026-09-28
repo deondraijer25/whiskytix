@@ -644,7 +644,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
               {/* Modal Header */}
               <div className="flex items-center justify-between pb-3 border-b-2 border-[#1D1C1A] shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded bg-[#FAF7F2] border-2 border-[#1D1C1A] flex items-center justify-center text-[#006448] shrink-0 shadow-[2px_2px_0px_rgba(29,28,26,0.9)]">
+                  <div className={`w-9 h-9 rounded bg-[#FAF7F2] border-2 border-[#1D1C1A] flex items-center justify-center ${theme.textPrimary} shrink-0 shadow-[2px_2px_0px_rgba(29,28,26,0.9)]`}>
                     <Ticket className="w-5 h-5" />
                   </div>
                   <div>
@@ -670,11 +670,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                   </div>
                   <div>
                     <span className="text-[#4c5752] font-semibold">Festival: </span>
-                    <span className="font-bold text-[#006448] uppercase tracking-wider text-[11px] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">{order.cityName || resolvedCityKey}</span>
+                    <span className={`font-bold ${theme.textPrimary} uppercase tracking-wider text-[11px] ${theme.badgeBg} px-2 py-0.5 rounded border ${theme.badgeBorder}`}>{order.cityName || resolvedCityKey}</span>
                   </div>
                   <div>
                     <span className="text-[#4c5752] font-semibold">Tarief: </span>
-                    <span className="font-extrabold text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded text-[11px] border border-[#8ba198]">Kosteloos (€ 0,00)</span>
+                    <span className={`font-extrabold ${theme.textPrimary} ${theme.badgeBg} px-2 py-0.5 rounded text-[11px] border ${theme.badgeBorder}`}>Kosteloos (€ 0,00)</span>
                   </div>
                 </div>
 
@@ -863,7 +863,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                   <button
                     type="submit"
                     disabled={isSubmittingAddTicket || !selectedCatalogItem}
-                    className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-[#006448] text-white hover:bg-[#005039] text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className={`flex-1 py-2.5 rounded border-2 border-[#1D1C1A] ${theme.btnPrimary} text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50`}
                   >
                     <Ticket className="w-4 h-4" />
                     <span>{isSubmittingAddTicket ? 'Toevoegen...' : 'Ticket Toevoegen aan Bestelling'}</span>

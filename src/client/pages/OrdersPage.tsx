@@ -28,6 +28,8 @@ const CITY_THEMES: Record<string, {
   badgeText: string;
   badgeBorder: string;
   focusRing: string;
+  btnBg: string;
+  btnHover: string;
 }> = {
   gent: {
     primary: '#1E3A8A',
@@ -36,6 +38,8 @@ const CITY_THEMES: Record<string, {
     badgeText: 'text-[#1E3A8A]',
     badgeBorder: 'border-[#BFDBFE]',
     focusRing: 'focus:ring-[#1E3A8A]',
+    btnBg: 'bg-[#1E3A8A]',
+    btnHover: 'hover:bg-[#172554]',
   },
   denhaag: {
     primary: '#006448',
@@ -44,6 +48,8 @@ const CITY_THEMES: Record<string, {
     badgeText: 'text-[#006448]',
     badgeBorder: 'border-[#8ba198]',
     focusRing: 'focus:ring-[#006448]',
+    btnBg: 'bg-[#006448]',
+    btnHover: 'hover:bg-[#005039]',
   },
   amsterdam: {
     primary: '#8C0223',
@@ -52,6 +58,8 @@ const CITY_THEMES: Record<string, {
     badgeText: 'text-[#8C0223]',
     badgeBorder: 'border-[#F5B7C2]',
     focusRing: 'focus:ring-[#8C0223]',
+    btnBg: 'bg-[#8C0223]',
+    btnHover: 'hover:bg-[#70021c]',
   },
 };
 
@@ -246,7 +254,7 @@ export const OrdersPage: React.FC = () => {
               setGuestCatalogFilterTab('all');
               setShowCreateGuestModal(true);
             }}
-            className="px-3.5 py-2 rounded border-2 border-[#1D1C1A] bg-[#006448] text-white hover:bg-[#005039] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+            className={`px-3.5 py-2 rounded border-2 border-[#1D1C1A] ${theme.btnBg} text-white ${theme.btnHover} shadow-[2px_2px_0px_rgba(29,28,26,0.9)] text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shrink-0`}
             title="Maak handmatig een gastuitnodiging of comp bestelling aan"
           >
             <Plus className="w-4 h-4" />
@@ -473,7 +481,7 @@ export const OrdersPage: React.FC = () => {
             {/* Header */}
             <div className="p-4 sm:p-5 border-b-2 border-[#1D1C1A] flex items-center justify-between shrink-0 bg-[#FAF7F2]">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded bg-[#FAF7F2] border-2 border-[#1D1C1A] flex items-center justify-center text-[#006448] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]">
+                <div className={`w-9 h-9 rounded bg-[#FAF7F2] border-2 border-[#1D1C1A] flex items-center justify-center ${theme.textPrimary} shadow-[2px_2px_0px_rgba(29,28,26,0.9)]`}>
                   <Ticket className="w-5 h-5" />
                 </div>
                 <div>
@@ -782,7 +790,7 @@ export const OrdersPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmittingGuest || !selectedGuestCatalogItem}
-                  className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-[#006448] text-white hover:bg-[#005039] text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className={`flex-1 py-2.5 rounded border-2 border-[#1D1C1A] ${theme.btnBg} text-white ${theme.btnHover} text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50`}
                 >
                   <Ticket className="w-4 h-4" />
                   <span>{isSubmittingGuest ? 'Aanmaken...' : 'Gastuitnodiging Aanmaken'}</span>
