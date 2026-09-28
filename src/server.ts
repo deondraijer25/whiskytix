@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { checkDbConnection } from './db/index.js';
 import { generateTicketPdf } from './modules/tickets/pdf.service.js';
+import { generateQrSvg, generateQrPngDataUrl } from './modules/tickets/qr.service.js';
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
 import { startStockCleanupWorker } from './modules/orders/stock-cleanup.worker.js';
 import { UsersRepository } from './modules/auth/users.repository.js';
@@ -267,6 +268,76 @@ export async function buildServer(): Promise<FastifyInstance> {
       `inline; filename="E-Ticket-${cleanCode.replace('#', '')}.pdf"`
     );
     return reply.send(Buffer.from(pdfBytes));
+  });
+
+  // Official Cryptographic Vector SVG QR Code endpoint
+  server.get('/api/tickets/:ticketCode/qr.svg', async (request, reply) => {
+    const params = request.params as { ticketCode: string };
+    const query = (request.query || {}) as Record<string, string>;
+
+    const cleanCode = params.ticketCode ? decodeURIComponent(params.ticketCode) : 'WF-2026-84387-1';
+    const formattedCode = cleanCode.startsWith('#') ? cleanCode : `#${cleanCode}`;
+
+    const matched = await OrdersRepository.findTicket(cleanCode);
+    const order = matched?.order;
+    const ticket = matched?.ticket;
+
+    const resolvedCity = (query.city || ticket?.cityName || order?.festivalId || 'gent').toLowerCase();
+    const resolvedAttendeeName = query.name || ticket?.attendeeName || order?.customerName || 'Bezoeker';
+    const rawSessionTitle = query.title || ticket?.sessionTitle || (order?.items && order.items[0]?.title) || 'VIP SESSIE - VRIJDAG';
+    const cleanSessionTitle = rawSessionTitle.replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*-\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '').trim();
+
+    const svg = await generateQrSvg({
+      ticketCode: formattedCode,
+      cityName: resolvedCity,
+      sessionTitle: cleanSessionTitle,
+      attendeeName: resolvedAttendeeName,
+    });
+
+    reply.header('Content-Type', 'image/svg+xml; charset=utf-8');
+    reply.header('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');
+    reply.header('Access-Control-Allow-Origin', '*');
+    return reply.send(svg);
+  });
+
+  // Alias /qr to /qr.svg
+  server.get('/api/tickets/:ticketCode/qr', async (request, reply) => {
+    const params = request.params as { ticketCode: string };
+    const queryString = new URLSearchParams((request.query || {}) as Record<string, string>).toString();
+    return reply.redirect(`/api/tickets/${encodeURIComponent(params.ticketCode)}/qr.svg${queryString ? `?${queryString}` : ''}`);
+  });
+
+  // PNG QR Code endpoint
+  server.get('/api/tickets/:ticketCode/qr.png', async (request, reply) => {
+    const params = request.params as { ticketCode: string };
+    const query = (request.query || {}) as Record<string, string>;
+
+    const cleanCode = params.ticketCode ? decodeURIComponent(params.ticketCode) : 'WF-2026-84387-1';
+    const formattedCode = cleanCode.startsWith('#') ? cleanCode : `#${cleanCode}`;
+
+    const matched = await OrdersRepository.findTicket(cleanCode);
+    const order = matched?.order;
+    const ticket = matched?.ticket;
+
+    const resolvedCity = (query.city || ticket?.cityName || order?.festivalId || 'gent').toLowerCase();
+    const resolvedAttendeeName = query.name || ticket?.attendeeName || order?.customerName || 'Bezoeker';
+    const rawSessionTitle = query.title || ticket?.sessionTitle || (order?.items && order.items[0]?.title) || 'VIP SESSIE - VRIJDAG';
+    const cleanSessionTitle = rawSessionTitle.replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*-\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '').trim();
+
+    const dataUrl = await generateQrPngDataUrl({
+      ticketCode: formattedCode,
+      cityName: resolvedCity,
+      sessionTitle: cleanSessionTitle,
+      attendeeName: resolvedAttendeeName,
+    }, 400);
+
+    const base64Data = dataUrl.split(',')[1];
+    const imgBuffer = Buffer.from(base64Data, 'base64');
+
+    reply.header('Content-Type', 'image/png');
+    reply.header('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');
+    reply.header('Access-Control-Allow-Origin', '*');
+    return reply.send(imgBuffer);
   });
 
   // Direct redirect from /ticket to the PDF stream

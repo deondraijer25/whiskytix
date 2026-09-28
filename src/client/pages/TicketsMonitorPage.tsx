@@ -540,7 +540,13 @@ export const TicketsMonitorPage: React.FC = () => {
               </button>
             </div>
 
-            <QrCode className="w-8 h-8 text-[#006448] mx-auto mb-2" />
+            <div className="bg-white border-2 border-[#1D1C1A] p-2 rounded inline-block mx-auto mb-3 shadow-[2px_2px_0px_rgba(29,28,26,1)]">
+              <img
+                src={`/api/tickets/${encodeURIComponent(inspectQrTicket.ticketCode.replace('#', ''))}/qr.svg?city=${inspectQrTicket.cityName || 'gent'}&name=${encodeURIComponent(inspectQrTicket.attendeeName)}&title=${encodeURIComponent(inspectQrTicket.sessionTitle)}`}
+                alt="QR Code"
+                className="w-32 h-32 mx-auto"
+              />
+            </div>
             <h3 className="font-extrabold text-base text-[#1D1C1A]">{inspectQrTicket.ticketCode}</h3>
             <p className="text-xs text-[#4C5752] mb-3">{inspectQrTicket.sessionTitle}</p>
 
