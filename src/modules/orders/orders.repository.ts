@@ -36,6 +36,8 @@ export interface StoredIssuedTicket {
   pdfUrl: string;
   checkedInAt?: string | null;
   swappedToTicketId?: string;
+  swappedToTicketCode?: string;
+  replacedTicketCode?: string;
   swapReason?: string;
   swappedAt?: string;
   createdAt: string;
@@ -600,6 +602,7 @@ export class OrdersRepository {
 
     const newTicketId = crypto.randomUUID();
     oldTicket.swappedToTicketId = newTicketId;
+    oldTicket.swappedToTicketCode = newTicketCode;
 
     const qrPayload = buildQrPayload({
       ticketCode: newTicketCode,
@@ -626,10 +629,21 @@ export class OrdersRepository {
       dateStr: resolvedDateStr,
       timeStr: resolvedTimeStr,
       pdfUrl,
+      replacedTicketCode: oldTicket.ticketCode,
       createdAt: nowIso,
     };
 
     order.tickets.push(newTicket);
+
+    // Synchronize corresponding order item if found
+    if (Array.isArray(order.items)) {
+      const matchingItem = order.items.find((i) => i.title === oldSession);
+      if (matchingItem) {
+        matchingItem.title = params.newSessionTitle;
+        matchingItem.date = resolvedDateStr;
+        matchingItem.time = resolvedTimeStr;
+      }
+    }
 
     // Save state
     memoryOrders.set(order.orderNumber, order);

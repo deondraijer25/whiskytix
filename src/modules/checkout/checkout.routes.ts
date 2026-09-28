@@ -504,20 +504,22 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         const isCancelled = ticket.status === 'cancelled';
 
         if (isSwapped) {
+          const replacementCode = ticket.swappedToTicketCode || (order.tickets.find((nt) => nt.replacedTicketCode === ticket.ticketCode)?.ticketCode);
           ticketsHtml += `<div style="background:#F5F5F4;border:2px dashed #A8A29E;border-radius:12px;opacity:0.85;overflow:hidden;margin-bottom:1.25rem;">
   <div style="height:6px;background:#A8A29E;border-radius:10px 10px 0 0;"></div>
   <div style="padding:1.25rem;">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem;gap:0.75rem;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap;">
       <div>
         <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:1.05rem;font-weight:700;color:#78716C;margin:0;text-decoration:line-through;">${ticket.sessionTitle || 'Entreeticket'}</h3>
-        <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.8rem;color:#A8A29E;font-weight:600;margin:3px 0 0;">${ticket.dateStr || ''} • ${ticket.timeStr || ''}</p>
+        <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.8rem;color:#A8A29E;font-weight:600;margin:3px 0 0;">${ticket.dateStr || ''} &bull; ${ticket.timeStr || ''}</p>
       </div>
       <span style="display:inline-flex;align-items:center;gap:4px;background:#FEF3C7;color:#92400E;font-size:0.7rem;font-weight:800;padding:4px 10px;border-radius:6px;border:1px solid #FCD34D;text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;">
         Vervallen (Omgeruild)
       </span>
     </div>
-    <div style="background:#E7E5E4;border-radius:6px;padding:0.75rem 1rem;font-size:0.82rem;color:#57534E;font-weight:600;line-height:1.4;">
-      ℹ️ Dit ticket (${ticket.ticketCode}) is omgeruild voor een nieuwe sessie. De barcode is per direct gedeactiveerd aan de deur.
+    <div style="background:#E7E5E4;border-radius:6px;padding:0.75rem 1rem;font-size:0.82rem;color:#57534E;font-weight:600;line-height:1.4;display:flex;align-items:flex-start;gap:8px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#78716C" stroke-width="2.5" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>Dit ticket (${ticket.ticketCode}) is omgeruild voor ${replacementCode ? `ticket <strong>${replacementCode}</strong>` : 'een nieuwe sessie'}. De barcode is per direct gedeactiveerd aan de deur.</span>
     </div>
   </div>
 </div>`;
@@ -545,14 +547,20 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         const pdfUrl = `${apiBase}/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${encodeURIComponent(order.festivalId || 'gent')}&name=${encodeURIComponent(ticket.attendeeName || order.customerName || 'Bezoeker')}&title=${encodeURIComponent(ticket.sessionTitle || 'Entreeticket')}&time=${encodeURIComponent(ticket.timeStr || '13:00 - 17:00 UUR')}&date=${encodeURIComponent(ticket.dateStr || '')}&orderNumber=${encodeURIComponent(order.orderNumber || '')}`;
         const shareText = encodeURIComponent(`*${order.festivalId === 'gent' ? 'Whisky Festival Gent 2026' : order.festivalId === 'amsterdam' ? 'Amsterdam Whisky Festival 2026' : 'International Whisky Festival 2026'}*\nE-ticket: ${ticket.sessionTitle || 'Entreeticket'}\n\nKaarthouder: ${ticket.attendeeName || order.customerName}\nDatum: ${ticket.dateStr || ''}\nTijdslot: ${ticket.timeStr || ''}\nTicket Code: ${ticket.ticketCode}\nLocatie: ${city.venue}\n\nDownload je E-ticket (PDF):\n${pdfUrl}`);
         const isCheckedIn = ticket.status === 'checked_in';
+        const isReplacement = !!ticket.replacedTicketCode || ticket.ticketCode.includes('-R');
+        const isComp = !!ticket.swapReason && ticket.swapReason.includes('Handmatig');
 
         ticketsHtml += `<div style="background:#FCFAF7;border:2px solid #1D1C1A;border-radius:12px;box-shadow:3px 3px 0px rgba(29,28,26,0.85);overflow:hidden;margin-bottom:1.25rem;">
   <div style="height:6px;background:${city.gradient};border-radius:10px 10px 0 0;"></div>
   <div style="padding:1.5rem;">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem;gap:0.75rem;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem;gap:0.75rem;flex-wrap:wrap;">
       <div>
         <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:1.15rem;font-weight:800;color:#1D1C1A;margin:0;">${ticket.sessionTitle || 'Entreeticket'}</h3>
-        <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.85rem;color:${city.primary};font-weight:700;margin:4px 0 0;">${ticket.dateStr || ''} • ${ticket.timeStr || ''}</p>
+        <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.85rem;color:${city.primary};font-weight:700;margin:4px 0 0;">${ticket.dateStr || ''} &bull; ${ticket.timeStr || ''}</p>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+          ${isReplacement ? `<span style="font-size:0.72rem;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:4px;border:1px solid #FCD34D;">Vervangt ticket ${ticket.replacedTicketCode || 'vorig ticket'}</span>` : ''}
+          ${isComp ? `<span style="font-size:0.72rem;font-weight:700;background:#E0E9FF;color:#1E3A8A;padding:2px 8px;border-radius:4px;border:1px solid #93C5FD;">Cadeau / Toegevoegd ticket</span>` : ''}
+        </div>
       </div>
       <span style="display:inline-flex;align-items:center;gap:4px;background:${isCheckedIn ? '#DCFCE7' : city.primaryLight};color:${isCheckedIn ? '#166534' : city.primary};font-size:0.7rem;font-weight:800;padding:4px 10px;border-radius:6px;border:1px solid ${isCheckedIn ? '#86EFAC' : city.badgeBorder};text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -725,21 +733,57 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     const cityBadgeText = isGent ? '#1E3A8A' : isAmsterdam ? '#8C0223' : '#006448';
     const cityBadgeBorder = isGent ? '#93C5FD' : isAmsterdam ? '#FCA5A5' : '#A8DAB5';
 
-    const ticketsHtml = order.tickets.map((t, idx) => {
+    const activeTickets = order.tickets.filter((t) => t.status === 'valid' || t.status === 'checked_in');
+    const swappedTickets = order.tickets.filter((t) => t.status === 'swapped');
+    const cancelledTickets = order.tickets.filter((t) => t.status === 'cancelled');
+
+    const ticketCountText = activeTickets.length === 1
+      ? `1 geldig ticket${swappedTickets.length > 0 ? ` (${swappedTickets.length} omgeruild)` : ''}`
+      : `${activeTickets.length} geldige tickets${swappedTickets.length > 0 ? ` (${swappedTickets.length} omgeruild)` : ''}`;
+
+    const activeTicketsHtml = activeTickets.map((t) => {
       const cleanCode = t.ticketCode.replace('#', '');
-      const downloadPdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${order.festivalId}&orderNumber=${order.orderNumber.replace('#', '')}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(t.sessionTitle)}`;
+      const downloadPdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${order.festivalId}&orderNumber=${order.orderNumber.replace('#', '')}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(t.sessionTitle)}&date=${encodeURIComponent(t.dateStr || '')}&time=${encodeURIComponent(t.timeStr || '')}`;
+      const isCheckedIn = t.status === 'checked_in';
+      const isReplacement = !!t.replacedTicketCode || t.ticketCode.includes('-R');
+      const isComp = !!t.swapReason && t.swapReason.includes('Handmatig');
 
       return `
         <div class="ticket-row">
           <div class="ticket-left">
             <div class="ticket-code">${t.ticketCode}</div>
             <div class="ticket-name">${t.sessionTitle}</div>
-            <div class="ticket-meta">Kaarthouder: <strong>${t.attendeeName}</strong> &bull; Datum: <strong>${t.dateStr || 'Festivaldag'}</strong> &bull; <span class="status-pill">${t.status.toUpperCase()}</span></div>
+            <div class="ticket-meta">Kaarthouder: <strong>${t.attendeeName}</strong> &bull; Datum: <strong>${t.dateStr || 'Festivaldag'}</strong> &bull; Tijd: <strong>${t.timeStr || '13:00 - 17:00 UUR'}</strong></div>
+            <div style="margin-top:0.45rem; display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
+              <span class="status-pill ${isCheckedIn ? 'status-pill-checked' : ''}">${isCheckedIn ? 'INGECHECKT AAN DE DEUR' : 'GELDIG TOEGANGSBEWIJS'}</span>
+              ${isReplacement ? `<span class="badge-replacement">Vervangt ${t.replacedTicketCode || 'vorig ticket'}</span>` : ''}
+              ${isComp ? `<span class="badge-comp">Cadeau / Toegevoegd</span>` : ''}
+            </div>
           </div>
           <div class="ticket-right">
             <a href="${downloadPdfUrl}" target="_blank" class="btn-download-pdf">
-              📄 Download PDF E-Ticket &rarr;
+              Download PDF E-Ticket &rarr;
             </a>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const swappedTicketsHtml = swappedTickets.map((t) => {
+      const replacementCode = t.swappedToTicketCode || (order.tickets.find((nt) => nt.replacedTicketCode === t.ticketCode)?.ticketCode);
+      return `
+        <div class="ticket-row ticket-row-swapped">
+          <div class="ticket-left">
+            <div class="ticket-code ticket-code-swapped">${t.ticketCode}</div>
+            <div class="ticket-name ticket-name-swapped">${t.sessionTitle}</div>
+            <div class="ticket-meta">Kaarthouder: <strong>${t.attendeeName}</strong> &bull; Datum: <strong>${t.dateStr || 'Festivaldag'}</strong></div>
+            <div class="swapped-notice-box">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#78716C" stroke-width="2.5" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>Dit ticket is omgeruild voor ${replacementCode ? `ticket <strong>${replacementCode}</strong>` : 'een nieuwe sessie'}. De barcode is per direct gedeactiveerd bij de ingang.</span>
+            </div>
+          </div>
+          <div class="ticket-right">
+            <span class="badge-swapped-label">Vervallen (Omgeruild)</span>
           </div>
         </div>
       `;
@@ -769,11 +813,19 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     .meta-item-val { font-size: 1rem; font-weight: 800; color: #1D1C1A; }
     .section-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; }
     .ticket-row { background: #FFFFFF; border: 2px solid #1D1C1A; border-radius: 8px; box-shadow: 3px 3px 0px #1D1C1A; padding: 1.15rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    .ticket-row-swapped { background: #F5F5F4; border: 2px dashed #A8A29E; opacity: 0.85; box-shadow: none; }
     .ticket-left { flex: 1; min-width: 220px; }
     .ticket-code { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.85rem; font-weight: 800; color: ${cityBadgeText}; margin-bottom: 0.2rem; letter-spacing: 0.02em; }
+    .ticket-code-swapped { color: #78716C; text-decoration: line-through; }
     .ticket-name { font-size: 1.05rem; font-weight: 800; color: #1D1C1A; margin-bottom: 0.25rem; }
+    .ticket-name-swapped { color: #78716C; text-decoration: line-through; }
     .ticket-meta { font-size: 0.8rem; color: #4C5752; }
-    .status-pill { background: ${cityBadgeBg}; color: ${cityBadgeText}; font-weight: 800; padding: 0.15rem 0.45rem; border-radius: 4px; font-size: 0.72rem; border: 1px solid ${cityBadgeBorder}; }
+    .status-pill { background: ${cityBadgeBg}; color: ${cityBadgeText}; font-weight: 800; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; border: 1px solid ${cityBadgeBorder}; text-transform: uppercase; letter-spacing: 0.04em; }
+    .status-pill-checked { background: #DCFCE7; color: #166534; border-color: #86EFAC; }
+    .badge-replacement { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; font-size: 0.7rem; font-weight: 800; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .badge-comp { background: #E0E9FF; color: #1E3A8A; border: 1px solid #93C5FD; font-size: 0.7rem; font-weight: 800; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .badge-swapped-label { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; font-size: 0.7rem; font-weight: 800; padding: 0.3rem 0.65rem; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.05em; display: inline-block; }
+    .swapped-notice-box { margin-top: 0.5rem; background: #E7E5E4; border-radius: 6px; padding: 0.6rem 0.85rem; font-size: 0.78rem; color: #57534E; font-weight: 600; line-height: 1.4; display: flex; align-items: flex-start; gap: 0.4rem; }
     .btn-download-pdf { background: #CAAC8E; color: #1D1C1A; border: 2px solid #1D1C1A; padding: 0.75rem 1.15rem; border-radius: 6px; font-size: 0.85rem; font-weight: 800; text-decoration: none; box-shadow: 3px 3px 0px #1D1C1A; transition: all 0.1s; display: inline-flex; align-items: center; gap: 0.35rem; }
     .btn-download-pdf:hover { background: #BF9F7E; transform: translate(-1px, -1px); box-shadow: 4px 4px 0px #1D1C1A; }
     .btn-download-pdf:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0px #1D1C1A; }
@@ -810,21 +862,30 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         </div>
         <div>
           <div class="meta-item-label">Aantal Tickets</div>
-          <div class="meta-item-val">${order.tickets.length} ${order.tickets.length === 1 ? 'ticket' : 'tickets'}</div>
+          <div class="meta-item-val">${ticketCountText}</div>
         </div>
       </div>
 
       <div class="section-title">
-        <span>Jouw E-Tickets (${order.tickets.length})</span>
+        <span>Geldige E-Tickets (${activeTickets.length})</span>
       </div>
 
       <div class="tickets-container">
-        ${ticketsHtml || '<p style="color:#7A7268;">Geen tickets gevonden.</p>'}
+        ${activeTicketsHtml || '<p style="color:#7A7268;">Geen geldige tickets gevonden.</p>'}
       </div>
+
+      ${swappedTickets.length > 0 ? `
+        <div class="section-title" style="margin-top: 2rem; color: #78716C;">
+          <span>Omgeruilde Tickets (${swappedTickets.length})</span>
+        </div>
+        <div class="tickets-container">
+          ${swappedTicketsHtml}
+        </div>
+      ` : ''}
 
       <div class="actions-bar">
         <a href="/scan" class="btn-scanner">
-          📱 Test Ticket in Whiskytix Scanner &rarr;
+          Test Ticket in Whiskytix Scanner &rarr;
         </a>
       </div>
     </div>
