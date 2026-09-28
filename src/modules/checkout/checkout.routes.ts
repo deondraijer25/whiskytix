@@ -633,6 +633,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       }
     }
 
+    const allTickets = order.tickets || [];
+    const activeTickets = allTickets.filter((t) => t.status === 'valid' || t.status === 'checked_in');
+    const cancelledTickets = allTickets.filter((t) => t.status === 'cancelled');
+    const swappedTickets = allTickets.filter((t) => t.status === 'swapped');
+
     return reply.send({
       success: true,
       order: {
@@ -644,10 +649,46 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         discountCents: order.discountCents,
         status: order.status,
         items: order.items,
-        tickets: order.tickets,
+        itemsSummary: (order as any).itemsSummary,
+        tickets: allTickets,
+        activeTickets,
+        cancelledTickets,
+        swappedTickets,
         createdAt: order.createdAt,
       },
       ticketsHtml,
+    });
+  });
+
+  /**
+   * 4c. PUBLIC TICKET STATUS LOOKUP
+   * GET /api/tickets/:ticketCode/status
+   */
+  server.get('/api/tickets/:ticketCode/status', async (request, reply) => {
+    const params = request.params as { ticketCode: string };
+    const cleanCode = params.ticketCode ? decodeURIComponent(params.ticketCode) : '';
+    const match = await OrdersRepository.findTicket(cleanCode);
+    if (!match) {
+      return reply.status(404).send({ found: false, error: 'Ticket niet gevonden.' });
+    }
+    const { ticket, order } = match;
+    return reply.send({
+      found: true,
+      ticketCode: ticket.ticketCode,
+      status: ticket.status,
+      isValid: ticket.status === 'valid',
+      isCheckedIn: ticket.status === 'checked_in',
+      isCancelled: ticket.status === 'cancelled',
+      isSwapped: ticket.status === 'swapped',
+      swappedToTicketCode: ticket.swappedToTicketCode,
+      replacedTicketCode: ticket.replacedTicketCode,
+      swapReason: ticket.swapReason,
+      sessionTitle: ticket.sessionTitle,
+      dateStr: ticket.dateStr,
+      timeStr: ticket.timeStr,
+      attendeeName: ticket.attendeeName,
+      cityName: ticket.cityName,
+      orderNumber: order.orderNumber,
     });
   });
 
@@ -1368,6 +1409,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          success: true,
          message: 'Ticket succesvol geannuleerd.',
          ticket: result.ticket,
+         order: result.order,
        });
      } catch (err: any) {
        return reply.status(500).send({ success: false, error: err.message });

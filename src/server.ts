@@ -254,6 +254,7 @@ export async function buildServer(): Promise<FastifyInstance> {
       dateStr,
       timeStr,
       itemNumber,
+      ticketStatus: (query.status as any) || ticket?.status || 'valid',
     });
 
     reply.header('Content-Type', 'application/pdf');

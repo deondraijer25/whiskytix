@@ -13,6 +13,7 @@ export interface TicketPdfOptions {
   dateStr?: string;
   timeStr?: string;
   itemNumber?: string;
+  ticketStatus?: 'valid' | 'checked_in' | 'cancelled' | 'swapped';
 }
 
 interface FestivalTheme {
@@ -314,6 +315,7 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     dateStr,
     timeStr: initialTimeStr,
     itemNumber = '1/1',
+    ticketStatus = 'valid',
   } = options;
 
   // Sanitize order number and ticket code to avoid double ##
@@ -578,15 +580,43 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     height: qrImgSize,
   });
 
-  // SCAN BIJ DE DEUR (10 pt bold)
-  const labelScan = 'SCAN BIJ DE DEUR';
+  const isCancelled = ticketStatus === 'cancelled';
+  const isSwapped = ticketStatus === 'swapped';
+
+  if (isCancelled) {
+    // Red translucent box overlay on QR code with red X
+    page.drawRectangle({
+      x: qrBoxX,
+      y: qrBoxY,
+      width: qrBoxSize,
+      height: qrBoxSize,
+      color: rgb(0.9, 0.2, 0.2),
+      opacity: 0.25,
+    });
+    page.drawLine({
+      start: { x: qrBoxX + 12, y: qrBoxY + 12 },
+      end: { x: qrBoxX + qrBoxSize - 12, y: qrBoxY + qrBoxSize - 12 },
+      thickness: 3,
+      color: rgb(0.8, 0.1, 0.1),
+    });
+    page.drawLine({
+      start: { x: qrBoxX + 12, y: qrBoxY + qrBoxSize - 12 },
+      end: { x: qrBoxX + qrBoxSize - 12, y: qrBoxY + 12 },
+      thickness: 3,
+      color: rgb(0.8, 0.1, 0.1),
+    });
+  }
+
+  // Label: SCAN BIJ DE DEUR or status alert
+  const labelScan = isCancelled ? 'NIET GELDIG (GEANNULEERD)' : isSwapped ? 'VERVALLEN (OMGERUILD)' : 'SCAN BIJ DE DEUR';
+  const labelScanColor = isCancelled ? rgb(0.8, 0.1, 0.1) : isSwapped ? rgb(0.7, 0.4, 0.05) : colorPrimary;
   const labelScanW = fontHelveticaBold.widthOfTextAtSize(labelScan, 10);
   page.drawText(labelScan, {
     x: cardX + (cardW - labelScanW) / 2,
     y: cardY + cardH - 138,
     size: 10,
     font: fontHelveticaBold,
-    color: colorPrimary,
+    color: labelScanColor,
   });
 
   // Formatted Ticket Code in Charcoal (10 pt bold)
@@ -597,7 +627,7 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     y: cardY + cardH - 152,
     size: 10,
     font: fontHelveticaBold,
-    color: colorCharcoal,
+    color: isCancelled ? rgb(0.7, 0.2, 0.2) : colorCharcoal,
   });
 
   // --- DETAILS AREA (Bottom section of ticket card, height 188 pt) ---
@@ -677,42 +707,89 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
   });
 
   // Status Pill Badge (Top right of session row)
-  const pillW = 146;
+  const pillW = isCancelled ? 124 : isSwapped ? 154 : 146;
   const pillH = 22;
   const pillX = cardX + cardW - 20 - pillW;
   const pillY = dateBadgeY + dateBadgeSize - 22;
+
+  const pillBgColor = isCancelled
+    ? rgb(0.99, 0.92, 0.92)
+    : isSwapped
+    ? rgb(0.99, 0.96, 0.82)
+    : colorPillBg;
+  const pillBorderCol = isCancelled
+    ? rgb(0.95, 0.65, 0.65)
+    : isSwapped
+    ? rgb(0.98, 0.82, 0.35)
+    : colorPillBorder;
+  const pillTextCol = isCancelled
+    ? rgb(0.75, 0.12, 0.12)
+    : isSwapped
+    ? rgb(0.58, 0.28, 0.05)
+    : colorPrimary;
 
   page.drawRectangle({
     x: pillX,
     y: pillY,
     width: pillW,
     height: pillH,
-    color: colorPillBg,
-    borderColor: colorPillBorder,
+    color: pillBgColor,
+    borderColor: pillBorderCol,
     borderWidth: 1,
   });
 
-  // Vector checkmark inside status pill
-  page.drawLine({
-    start: { x: pillX + 11, y: pillY + 10 },
-    end: { x: pillX + 14, y: pillY + 7 },
-    thickness: 1.5,
-    color: colorPrimary,
-  });
-  page.drawLine({
-    start: { x: pillX + 14, y: pillY + 7 },
-    end: { x: pillX + 19, y: pillY + 15 },
-    thickness: 1.5,
-    color: colorPrimary,
-  });
+  if (isCancelled) {
+    // Vector X
+    page.drawLine({
+      start: { x: pillX + 11, y: pillY + 14 },
+      end: { x: pillX + 17, y: pillY + 8 },
+      thickness: 1.5,
+      color: pillTextCol,
+    });
+    page.drawLine({
+      start: { x: pillX + 11, y: pillY + 8 },
+      end: { x: pillX + 17, y: pillY + 14 },
+      thickness: 1.5,
+      color: pillTextCol,
+    });
+    page.drawText('GEANNULEERD', {
+      x: pillX + 24,
+      y: pillY + 7,
+      size: 8,
+      font: fontHelveticaBold,
+      color: pillTextCol,
+    });
+  } else if (isSwapped) {
+    page.drawText('VERVALLEN (OMGERUILD)', {
+      x: pillX + 12,
+      y: pillY + 7,
+      size: 8,
+      font: fontHelveticaBold,
+      color: pillTextCol,
+    });
+  } else {
+    // Vector checkmark inside status pill
+    page.drawLine({
+      start: { x: pillX + 11, y: pillY + 10 },
+      end: { x: pillX + 14, y: pillY + 7 },
+      thickness: 1.5,
+      color: colorPrimary,
+    });
+    page.drawLine({
+      start: { x: pillX + 14, y: pillY + 7 },
+      end: { x: pillX + 19, y: pillY + 15 },
+      thickness: 1.5,
+      color: colorPrimary,
+    });
 
-  page.drawText('GELDIG TOEGANGSBEWIJS', {
-    x: pillX + 25,
-    y: pillY + 7,
-    size: 8,
-    font: fontHelveticaBold,
-    color: colorPrimary,
-  });
+    page.drawText('GELDIG TOEGANGSBEWIJS', {
+      x: pillX + 25,
+      y: pillY + 7,
+      size: 8,
+      font: fontHelveticaBold,
+      color: colorPrimary,
+    });
+  }
 
   // 2. Divider line between Org and Session
   const dividerY = dateBadgeY - 10;

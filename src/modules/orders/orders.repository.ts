@@ -72,6 +72,7 @@ export interface StoredOrder {
   };
   items: StoredOrderItem[];
   tickets: StoredIssuedTicket[];
+  itemsSummary?: string;
 }
 
 import os from 'os';
@@ -565,6 +566,55 @@ export class OrdersRepository {
   }
 
   /**
+   * Rebuild order.items and itemsSummary based on currently active tickets (status valid or checked_in)
+   */
+  static rebuildOrderItemsAndSummary(order: StoredOrder) {
+    if (!order || !Array.isArray(order.tickets)) return;
+
+    const activeTickets = order.tickets.filter((t) => t.status === 'valid' || t.status === 'checked_in');
+
+    const countMap = new Map<string, { count: number; dateStr?: string; timeStr?: string; category: string }>();
+    for (const t of activeTickets) {
+      const title = t.sessionTitle || 'Entreeticket';
+      const existing = countMap.get(title);
+      const isMc = title.toLowerCase().includes('masterclass');
+      if (existing) {
+        existing.count += 1;
+      } else {
+        countMap.set(title, {
+          count: 1,
+          dateStr: t.dateStr,
+          timeStr: t.timeStr,
+          category: isMc ? 'masterclass' : 'entree',
+        });
+      }
+    }
+
+    const newItems: StoredOrderItem[] = [];
+    countMap.forEach((val, title) => {
+      newItems.push({
+        id: crypto.randomUUID(),
+        orderId: order.id,
+        ticketTypeId: `${order.festivalId}-${val.category}`,
+        title,
+        quantity: val.count,
+        unitPriceCents: 0,
+        category: val.category,
+        date: val.dateStr,
+        time: val.timeStr,
+      });
+    });
+
+    order.items = newItems;
+
+    const summaryParts: string[] = [];
+    countMap.forEach((val, title) => {
+      summaryParts.push(`${val.count}x ${title}`);
+    });
+    order.itemsSummary = summaryParts.join(', ');
+  }
+
+  /**
    * Inruilen / Wijzigen van een ticket (Ticket Swap Engine)
    * 1. Merkt oud ticket als 'swapped' met reden
    * 2. Genereert nieuw ticket met frisse cryptografische HMAC QR-code
@@ -670,6 +720,9 @@ export class OrdersRepository {
       }
     }
 
+    // Rebuild order.items & itemsSummary to match active tickets
+    this.rebuildOrderItemsAndSummary(order);
+
     // Save state
     memoryOrders.set(order.orderNumber, order);
     memoryOrders.set(order.id, order);
@@ -743,6 +796,7 @@ export class OrdersRepository {
     success: boolean;
     error?: string;
     ticket?: StoredIssuedTicket;
+    order?: StoredOrder;
   }> {
     const match = await this.findTicket(ticketCode);
     if (!match) {
@@ -752,6 +806,9 @@ export class OrdersRepository {
     const { order, ticket } = match;
     ticket.status = 'cancelled';
     ticket.swapReason = reason;
+
+    // Rebuild order.items & itemsSummary so cancelled tickets are removed from active order totals
+    this.rebuildOrderItemsAndSummary(order);
 
     memoryOrders.set(order.orderNumber, order);
     memoryOrders.set(order.id, order);
@@ -768,7 +825,7 @@ export class OrdersRepository {
       console.warn('Could not update cancelled ticket in DB:', e.message);
     }
 
-    return { success: true, ticket };
+    return { success: true, ticket, order };
   }
 
   /**
@@ -865,6 +922,9 @@ export class OrdersRepository {
       order.status = 'paid';
       order.paidAt = nowIso;
     }
+
+    // Rebuild order.items & itemsSummary to match active tickets
+    this.rebuildOrderItemsAndSummary(order);
 
     // Persist
     memoryOrders.set(order.orderNumber, order);
