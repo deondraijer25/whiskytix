@@ -307,3 +307,7 @@ export const FESTIVAL_CATALOG: FestivalCatalogItem[] = [
 export function getFestivalCatalog(city: 'gent' | 'denhaag' | 'amsterdam'): FestivalCatalogItem[] {
   return FESTIVAL_CATALOG.filter((item) => item.city === city);
 }
+
+export function formatEuro(amount: number): string {
+  return `€ ${amount.toFixed(2).replace('.', ',')}`;
+}
