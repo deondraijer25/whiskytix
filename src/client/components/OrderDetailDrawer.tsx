@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar, Plus, Gift } from 'lucide-react';
+import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar, Plus, Gift, Tag, Check } from 'lucide-react';
 import { Order } from '../data/mockData';
+import { getFestivalCatalog, FestivalCatalogItem } from '../data/festivalCatalog';
 
 interface OrderDetailDrawerProps {
   order: Order | null;
@@ -67,13 +68,12 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [localTickets, setLocalTickets] = useState<any[] | null>(null);
 
-  // Add comp / gift ticket modal states
+  // Add comp / gift ticket modal states (using official catalog)
   const [showAddTicketModal, setShowAddTicketModal] = useState<boolean>(false);
-  const [addSession, setAddSession] = useState<string>('Vrijdagavond Entree (19:00 - 23:00)');
-  const [isCustomSession, setIsCustomSession] = useState<boolean>(false);
-  const [customSessionTitle, setCustomSessionTitle] = useState<string>('');
+  const [selectedCatalogItem, setSelectedCatalogItem] = useState<FestivalCatalogItem | null>(null);
+  const [catalogFilterTab, setCatalogFilterTab] = useState<'all' | 'entree' | 'masterclass'>('all');
   const [addAttendeeName, setAddAttendeeName] = useState<string>('');
-  const [addReason, setAddReason] = useState<string>('Cadeau van organisatie');
+  const [addReason, setAddReason] = useState<string>('VIP / Zakenrelatie');
   const [isSubmittingAddTicket, setIsSubmittingAddTicket] = useState<boolean>(false);
 
   if (!order) return null;
@@ -239,9 +239,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
   const handleAddTicketSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const finalSession = isCustomSession ? customSessionTitle.trim() : addSession;
-    if (!finalSession) {
-      showToast('⚠️ Vul een geldige sessie of masterclass in.');
+    if (!selectedCatalogItem) {
+      showToast('⚠️ Selecteer een ticket of masterclass uit de lijst.');
       return;
     }
     setIsSubmittingAddTicket(true);
@@ -250,19 +249,19 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionTitle: finalSession,
+          sessionTitle: selectedCatalogItem.title,
           attendeeName: addAttendeeName.trim() || order.customerName,
-          reason: addReason.trim() || 'Cadeau van organisatie',
+          reason: addReason.trim() || 'VIP / Zakenrelatie',
           cityName: order.cityName || resolvedCityKey,
+          dateStr: selectedCatalogItem.dateStr,
+          timeStr: selectedCatalogItem.timeStr,
         }),
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast(`🎁 Ticket "${finalSession}" succesvol toegevoegd aan bestelling!`);
+        showToast(`🎁 Ticket "${selectedCatalogItem.title}" succesvol toegevoegd aan bestelling!`);
         setShowAddTicketModal(false);
-        setIsCustomSession(false);
-        setCustomSessionTitle('');
         const newTicket = data.ticket;
         const updated = [...effectiveTickets, {
           code: newTicket.ticketCode,
@@ -496,9 +495,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
               <button
                 type="button"
                 onClick={() => {
+                  const items = getFestivalCatalog(resolvedCityKey as any);
+                  setSelectedCatalogItem(items[0] || null);
+                  setCatalogFilterTab('all');
                   setAddAttendeeName(order.customerName);
-                  setAddSession(availableSessions[0] || 'Vrijdagavond Entree (19:00 - 23:00)');
-                  setAddReason('Cadeau / Relatiegeschenk van organisatie');
+                  setAddReason('VIP / Zakenrelatie');
                   setShowAddTicketModal(true);
                 }}
                 className="w-full py-2.5 px-3 rounded border-2 border-dashed border-[#006448] bg-[#FAF7F2] hover:bg-[#d8e7e2]/60 text-[#006448] text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[2px_2px_0px_rgba(0,100,72,0.15)] hover:shadow-[2px_2px_0px_rgba(29,28,26,0.8)]"
@@ -638,115 +639,198 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
         {/* Modal: Ticket of Masterclass toevoegen (€0,- comp / cadeau) */}
         {showAddTicketModal && (
-          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-[#FAF7F2] border-3 border-[#1D1C1A] rounded-lg shadow-[6px_6px_0px_rgba(29,28,26,0.9)] max-w-md w-full p-5 sm:p-6 animate-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between pb-3 border-b-2 border-[#1D1C1A] mb-4">
+          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-[#FCFAF7] border-3 border-[#1D1C1A] rounded-lg shadow-[6px_6px_0px_rgba(29,28,26,0.9)] max-w-2xl w-full p-5 sm:p-6 animate-in zoom-in-95 duration-150 my-6 flex flex-col max-h-[92vh]">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-3 border-b-2 border-[#1D1C1A] shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded bg-[#006448] border border-[#1D1C1A] flex items-center justify-center text-white">
-                    <Gift className="w-4 h-4 text-[#FAF7F2]" />
+                  <div className="w-9 h-9 rounded bg-[#006448] border border-[#1D1C1A] flex items-center justify-center text-white shrink-0">
+                    <Gift className="w-5 h-5 text-[#FAF7F2]" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-extrabold text-[#1D1C1A]">Ticket / Masterclass Toevoegen</h3>
-                    <p className="text-[11px] text-[#4c5752]">€0,- Cadeau of vrijkaart voor {order.customerName}</p>
+                    <h3 className="text-base font-extrabold text-[#1D1C1A]">Ticket / Masterclass Toevoegen</h3>
+                    <p className="text-xs text-[#4c5752]">Kies een officieel ticket of masterclass als cadeau (€0,-) voor {order.customerName}</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowAddTicketModal(false)}
-                  className="p-1 text-gray-500 hover:text-black rounded cursor-pointer"
+                  className="p-1.5 text-gray-500 hover:text-black rounded cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleAddTicketSubmit} className="space-y-4">
-                <div className="p-3 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg text-xs space-y-1.5 shadow-[2px_2px_0px_rgba(29,28,26,0.5)]">
-                  <div className="flex justify-between">
-                    <span className="text-[#4c5752] font-semibold">Bestelling:</span>
+              <form onSubmit={handleAddTicketSubmit} className="flex-1 overflow-y-auto pr-1 mt-4 space-y-4">
+                {/* Bestelling Info Bar */}
+                <div className="p-3 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg text-xs flex flex-wrap items-center justify-between gap-2 shadow-[2px_2px_0px_rgba(29,28,26,0.3)]">
+                  <div>
+                    <span className="text-[#4c5752] font-semibold">Bestelling: </span>
                     <strong className="font-sans font-bold text-[#1D1C1A]">{order.orderNumber}</strong>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#4c5752] font-semibold">Festival:</span>
-                    <span className="font-bold text-[#006448]">{order.cityName || resolvedCityKey}</span>
+                  <div>
+                    <span className="text-[#4c5752] font-semibold">Festival: </span>
+                    <span className="font-bold text-[#006448] uppercase tracking-wider text-[11px] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">{order.cityName || resolvedCityKey}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#4c5752] font-semibold">Prijs:</span>
-                    <span className="font-extrabold text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded text-[10px] border border-[#8ba198]">€ 0,00 (Kosteloos)</span>
+                  <div>
+                    <span className="text-[#4c5752] font-semibold">Kosten: </span>
+                    <span className="font-extrabold text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded text-[11px] border border-[#8ba198]">€ 0,00 (Vrijkaart / Comp)</span>
                   </div>
                 </div>
 
+                {/* Filter Tabs */}
                 <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
-                    Sessie of Masterclass:
-                  </label>
-                  {!isCustomSession ? (
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-black uppercase tracking-wider text-[#1D1C1A]">
+                      Selecteer Officieel Ticket of Masterclass:
+                    </label>
+                    <span className="text-[11px] text-[#4c5752] font-semibold">
+                      Uitsluitend officiële programma-items
+                    </span>
+                  </div>
+
+                  <div className="flex gap-1.5 mb-2.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setCatalogFilterTab('all')}
+                      className={`px-3 py-1.5 rounded text-xs font-extrabold border-2 transition-all cursor-pointer ${
+                        catalogFilterTab === 'all'
+                          ? 'border-[#1D1C1A] bg-[#006448] text-white shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                          : 'border-[#c1d4ce] bg-white text-[#1D1C1A] hover:bg-[#FAF7F2]'
+                      }`}
+                    >
+                      Alle Programma-items
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogFilterTab('entree')}
+                      className={`px-3 py-1.5 rounded text-xs font-extrabold border-2 transition-all cursor-pointer ${
+                        catalogFilterTab === 'entree'
+                          ? 'border-[#1D1C1A] bg-[#006448] text-white shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                          : 'border-[#c1d4ce] bg-white text-[#1D1C1A] hover:bg-[#FAF7F2]'
+                      }`}
+                    >
+                      🎟️ Entreetickets
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogFilterTab('masterclass')}
+                      className={`px-3 py-1.5 rounded text-xs font-extrabold border-2 transition-all cursor-pointer ${
+                        catalogFilterTab === 'masterclass'
+                          ? 'border-[#1D1C1A] bg-[#006448] text-white shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                          : 'border-[#c1d4ce] bg-white text-[#1D1C1A] hover:bg-[#FAF7F2]'
+                      }`}
+                    >
+                      🥃 Masterclasses & Tastings
+                    </button>
+                  </div>
+
+                  {/* Scrollable list of visual selection cards */}
+                  <div className="max-h-64 overflow-y-auto space-y-2 p-1 border-2 border-[#1D1C1A] rounded-lg bg-white">
+                    {getFestivalCatalog(resolvedCityKey as any)
+                      .filter((item) => catalogFilterTab === 'all' || item.category === catalogFilterTab || (catalogFilterTab === 'entree' && item.category === 'special'))
+                      .map((item) => {
+                        const isSelected = selectedCatalogItem?.id === item.id;
+                        const isMc = item.category === 'masterclass';
+
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => setSelectedCatalogItem(item)}
+                            className={`p-3 rounded-lg border-2 transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                              isSelected
+                                ? 'border-[#006448] bg-[#d8e7e2]/45 shadow-[2px_2px_0px_rgba(0,100,72,0.8)]'
+                                : 'border-[#c1d4ce] bg-[#FCFAF7] hover:bg-white hover:border-[#1D1C1A]'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                                isSelected ? 'border-[#006448] bg-[#006448] text-white' : 'border-gray-400 bg-white'
+                              }`}>
+                                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                                    isMc
+                                      ? 'bg-[#e4d5c4] text-[#1D1C1A] border-[#caac8e]'
+                                      : 'bg-[#d8e7e2] text-[#006448] border-[#8ba198]'
+                                  }`}>
+                                    {isMc ? '🥃 Masterclass' : '🎟️ Entreeticket'}
+                                  </span>
+                                  <h4 className="font-extrabold text-sm text-[#1D1C1A] leading-snug">
+                                    {item.title}
+                                  </h4>
+                                </div>
+
+                                <div className="flex items-center gap-3 text-xs text-[#4c5752] flex-wrap font-medium">
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="w-3.5 h-3.5 text-[#006448]" />
+                                    {item.dateStr}
+                                  </span>
+                                  <span className="flex items-center gap-1 font-semibold text-[#1D1C1A]">
+                                    <Clock className="w-3.5 h-3.5 text-[#006448]" />
+                                    {item.timeStr}
+                                  </span>
+                                  {item.location && (
+                                    <span className="text-[#7A7268] text-[11px] truncate">
+                                      • {item.location}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className="line-through text-gray-400 text-xs block font-semibold">
+                                € {item.originalPriceEur.toFixed(2).replace('.', ',')}
+                              </span>
+                              <span className="inline-block mt-0.5 text-[11px] font-black text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
+                                € 0,00 Comp
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Form fields: Attendee & Reason in 2 columns */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
+                      Naam op Ticket:
+                    </label>
+                    <input
+                      type="text"
+                      value={addAttendeeName}
+                      onChange={(e) => setAddAttendeeName(e.target.value)}
+                      placeholder="Naam van de bezoeker"
+                      className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
+                    />
+                    <p className="text-[10px] text-[#4c5752] mt-1">Standaard de naam van de hoofdkoper.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
+                      Type Gast / Reden:
+                    </label>
                     <select
-                      value={addSession}
-                      onChange={(e) => {
-                        if (e.target.value === '__custom__') {
-                          setIsCustomSession(true);
-                          setCustomSessionTitle('');
-                        } else {
-                          setAddSession(e.target.value);
-                        }
-                      }}
+                      value={addReason}
+                      onChange={(e) => setAddReason(e.target.value)}
                       className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
                     >
-                      {availableSessions.map((sess) => (
-                        <option key={sess} value={sess}>
-                          {sess}
-                        </option>
-                      ))}
-                      <option value="__custom__">➕ Aangepaste Masterclass / Sessie intypen...</option>
+                      <option value="VIP / Zakenrelatie">VIP / Zakenrelatie</option>
+                      <option value="Cadeau van organisatie">Cadeau van organisatie</option>
+                      <option value="Spreker / Masterclass Host">Spreker / Masterclass Host</option>
+                      <option value="Pers & Media">Pers & Media</option>
+                      <option value="Organisatie & Crew">Organisatie & Crew</option>
+                      <option value="Vrijkaart / Winactie">Vrijkaart / Winactie</option>
                     </select>
-                  ) : (
-                    <div className="space-y-1.5">
-                      <input
-                        type="text"
-                        value={customSessionTitle}
-                        onChange={(e) => setCustomSessionTitle(e.target.value)}
-                        placeholder="Bijv. Exclusieve Masterclass Springbank 21yo"
-                        autoFocus
-                        className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setIsCustomSession(false)}
-                        className="text-[11px] font-bold text-[#006448] hover:underline cursor-pointer"
-                      >
-                        ← Terug naar lijst met standaardsessies
-                      </button>
-                    </div>
-                  )}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
-                    Naam op Ticket:
-                  </label>
-                  <input
-                    type="text"
-                    value={addAttendeeName}
-                    onChange={(e) => setAddAttendeeName(e.target.value)}
-                    placeholder="Naam van de bezoeker / gast"
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-medium text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  />
-                  <p className="text-[10px] text-[#4c5752] mt-1">Standaard de naam van de hoofdkoper als dit leeg blijft.</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
-                    Reden / Type Cadeau:
-                  </label>
-                  <input
-                    type="text"
-                    value={addReason}
-                    onChange={(e) => setAddReason(e.target.value)}
-                    placeholder="Bijv. Cadeau van organisatie, Zakenrelatie VIP, Spreker"
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-medium text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  />
-                </div>
-
-                <div className="p-3 bg-[#FCFAF7] border border-[#c1d4ce] rounded text-[11px] text-[#4c5752] space-y-1">
+                <div className="p-3 bg-[#FAF7F2] border border-[#c1d4ce] rounded text-[11px] text-[#4c5752] space-y-1">
                   <div className="font-bold text-[#1D1C1A] flex items-center gap-1">
                     <CheckCircle className="w-3.5 h-3.5 text-[#006448]" />
                     Direct beschikbaar & scanbaar:
@@ -756,7 +840,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                   <div>• Voorzien van een officiële HMAC-SHA256 QR-code voor de ingangscontrole.</div>
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-2 pb-1 shrink-0">
                   <button
                     type="button"
                     onClick={() => setShowAddTicketModal(false)}
@@ -766,10 +850,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                   </button>
                   <button
                     type="submit"
-                    disabled={isSubmittingAddTicket}
+                    disabled={isSubmittingAddTicket || !selectedCatalogItem}
                     className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-[#006448] text-white hover:bg-[#005039] text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    {isSubmittingAddTicket ? 'Toevoegen...' : '🎁 Ticket Toevoegen'}
+                    {isSubmittingAddTicket ? 'Toevoegen...' : '🎁 Ticket Toevoegen (€0,-)'}
                   </button>
                 </div>
               </form>
