@@ -250,7 +250,7 @@ export const OrdersPage: React.FC = () => {
             title="Maak handmatig een gastuitnodiging of comp bestelling aan"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Nieuwe Gastuitnodiging</span>
+            <span>Nieuwe Gastuitnodiging</span>
           </button>
 
           <button
