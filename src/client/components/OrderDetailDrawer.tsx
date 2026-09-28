@@ -82,6 +82,32 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
   const theme = DRAWER_THEMES[resolvedCityKey] || DRAWER_THEMES.denhaag;
 
+  const citySessionOptions: Record<string, string[]> = {
+    gent: [
+      'Vrijdagavond Entree (19:00 - 23:00)',
+      'VIP Toegang Vrijdag (13:00 - 17:00)',
+      'Zaterdagmiddag Sessie (13:00 - 17:00)',
+      'Zaterdagavond Sessie (19:00 - 23:00)',
+      'Zondagmiddag Sessie (13:00 - 17:00)',
+      'Zondag Masterclass Sessie (13:00 - 17:00)',
+    ],
+    denhaag: [
+      'Vrijdagavond 19:00 - 23:00',
+      'VIP Toegang Vrijdag (Exclusief)',
+      'Zaterdagmiddag 13:00 - 17:00',
+      'Zaterdagavond 18:30 - 22:30',
+      'VIP Toegang Zaterdag (Exclusief)',
+      'Zondagmiddag 13:00 - 17:00',
+    ],
+    amsterdam: [
+      'Zaterdagmiddag 13:00 - 17:00',
+      'Zaterdagavond 18:30 - 22:30',
+      'VIP Toegang Zaterdag',
+    ],
+  };
+
+  const availableSessions = citySessionOptions[resolvedCityKey] || citySessionOptions.denhaag;
+
   // Initialize or use effective tickets
   let effectiveTickets: any[] = localTickets || (Array.isArray(order.tickets) && order.tickets.length > 0 ? [...order.tickets] : []);
   if (effectiveTickets.length === 0 && !localTickets) {
@@ -137,39 +163,39 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          newTicketTypeId: 'tt-swap-' + Date.now(),
+          newSessionTitle: targetSession,
           newSessionName: targetSession,
           reason: swapReason,
+          adminEmail: 'beheer@whiskyfestival.nl',
         }),
       });
       const data = await res.json();
-      if (data.ok) {
-        showToast(`🎉 Ticket succesvol omgeruild! Nieuwe code: ${data.data.newTicket.ticketCode}`);
+      const newTicket = data.newTicket || (data.data && data.data.newTicket);
+      if (res.ok && (data.success || data.ok) && newTicket) {
+        showToast(`🎉 Ticket succesvol omgeruild! Nieuwe code: ${newTicket.ticketCode}`);
         // Update local tickets list
         const updated = effectiveTickets.map(t => {
           if (t.code === swapModalTicket.code || t.code.replace('#', '') === rawCode) {
-            return { ...t, status: 'swapped', replacedBy: data.data.newTicket.ticketCode };
+            return { ...t, status: 'swapped', replacedBy: newTicket.ticketCode };
           }
           return t;
         });
         // Add new swapped ticket
         updated.push({
-          code: `#${data.data.newTicket.ticketCode}`,
+          code: newTicket.ticketCode.startsWith('#') ? newTicket.ticketCode : `#${newTicket.ticketCode}`,
           type: 'Entreeticket (Omgeruild)',
           session: targetSession,
-          attendeeName: swapModalTicket.attendeeName || order.customerName,
+          attendeeName: newTicket.attendeeName || swapModalTicket.attendeeName || order.customerName,
           status: 'valid',
         });
         setLocalTickets(updated);
         setSwapModalTicket(null);
         if (onOrderUpdated) onOrderUpdated();
       } else {
-        showToast(`⚠️ Omruil verwerkt in demo modus`);
-        setSwapModalTicket(null);
+        showToast(`⚠️ Fout bij omruilen: ${data.error || 'Onbekende fout'}`);
       }
     } catch (err: any) {
-      showToast(`✅ Ticket omgeruild naar ${targetSession}!`);
-      setSwapModalTicket(null);
+      showToast(`⚠️ Fout bij omruilen: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -375,7 +401,10 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                               type="button"
                               onClick={() => {
                                 setSwapModalTicket(t);
-                                setTargetSession(t.session.includes('Vrijdag') ? 'Zaterdagmiddag 13:00 - 17:00' : 'Vrijdagavond 19:00 - 23:00');
+                                const currentLower = (t.session || '').toLowerCase();
+                                const alt = availableSessions.find(s => !s.toLowerCase().includes(currentLower.slice(0, 5))) || availableSessions[0];
+                                setTargetSession(alt);
+                                setSwapReason('Klantverzoek via support wegens verhindering');
                               }}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border-2 border-[#1D1C1A] bg-[#caac8e] hover:bg-[#b89a7c] text-[#1D1C1A] text-xs font-extrabold shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer"
                               title="Ruil dit ticket om voor een andere sessie"
@@ -483,11 +512,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                     onChange={(e) => setTargetSession(e.target.value)}
                     className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
                   >
-                    <option value="Vrijdagavond 19:00 - 23:00">Vrijdagavond 19:00 - 23:00</option>
-                    <option value="Zaterdagmiddag 13:00 - 17:00">Zaterdagmiddag 13:00 - 17:00</option>
-                    <option value="Zaterdagavond 18:30 - 22:30">Zaterdagavond 18:30 - 22:30</option>
-                    <option value="VIP Toegang Vrijdag (Exclusief)">VIP Toegang Vrijdag (Exclusief)</option>
-                    <option value="VIP Toegang Zaterdag (Exclusief)">VIP Toegang Zaterdag (Exclusief)</option>
+                    {availableSessions.map((sess) => (
+                      <option key={sess} value={sess}>
+                        {sess}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

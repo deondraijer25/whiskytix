@@ -471,9 +471,51 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     if (order.status === 'paid' && order.tickets && order.tickets.length > 0) {
       for (const ticket of order.tickets) {
         const cleanCode = (ticket.ticketCode || '').replace('#', '');
-        const pdfUrl = `${apiBase}/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${encodeURIComponent(order.festivalId || 'gent')}&name=${encodeURIComponent(ticket.attendeeName || order.customerName || 'Bezoeker')}&title=${encodeURIComponent(ticket.sessionTitle || 'Entreeticket')}&time=${encodeURIComponent(ticket.timeStr || '13:00 - 17:00 UUR')}&orderNumber=${encodeURIComponent(order.orderNumber || '')}`;
-        const shareText = encodeURIComponent(`*${order.festivalId === 'gent' ? 'Whisky Festival Gent 2026' : order.festivalId === 'amsterdam' ? 'Amsterdam Whisky Festival 2026' : 'International Whisky Festival 2026'}*\nE-ticket: ${ticket.sessionTitle || 'Entreeticket'}\n\nKaarthouder: ${ticket.attendeeName || order.customerName}\nTijdslot: ${ticket.timeStr || ''}\nTicket Code: ${ticket.ticketCode}\nLocatie: ${city.venue}\n\nDownload je E-ticket (PDF):\n${pdfUrl}`);
-        const mailSubject = encodeURIComponent(`E-ticket: ${ticket.sessionTitle || 'Entreeticket'}`);
+        const isSwapped = ticket.status === 'swapped';
+        const isCancelled = ticket.status === 'cancelled';
+
+        if (isSwapped) {
+          ticketsHtml += `<div style="background:#F5F5F4;border:2px dashed #A8A29E;border-radius:12px;opacity:0.85;overflow:hidden;margin-bottom:1.25rem;">
+  <div style="height:6px;background:#A8A29E;border-radius:10px 10px 0 0;"></div>
+  <div style="padding:1.25rem;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem;gap:0.75rem;">
+      <div>
+        <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:1.05rem;font-weight:700;color:#78716C;margin:0;text-decoration:line-through;">${ticket.sessionTitle || 'Entreeticket'}</h3>
+        <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.8rem;color:#A8A29E;font-weight:600;margin:3px 0 0;">${ticket.dateStr || ''} • ${ticket.timeStr || ''}</p>
+      </div>
+      <span style="display:inline-flex;align-items:center;gap:4px;background:#FEF3C7;color:#92400E;font-size:0.7rem;font-weight:800;padding:4px 10px;border-radius:6px;border:1px solid #FCD34D;text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;">
+        Vervallen (Omgeruild)
+      </span>
+    </div>
+    <div style="background:#E7E5E4;border-radius:6px;padding:0.75rem 1rem;font-size:0.82rem;color:#57534E;font-weight:600;line-height:1.4;">
+      ℹ️ Dit ticket (${ticket.ticketCode}) is omgeruild voor een nieuwe sessie. De barcode is per direct gedeactiveerd aan de deur.
+    </div>
+  </div>
+</div>`;
+          continue;
+        }
+
+        if (isCancelled) {
+          ticketsHtml += `<div style="background:#FEF2F2;border:2px dashed #FCA5A5;border-radius:12px;opacity:0.75;overflow:hidden;margin-bottom:1.25rem;">
+  <div style="height:6px;background:#EF4444;border-radius:10px 10px 0 0;"></div>
+  <div style="padding:1.25rem;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.75rem;">
+      <div>
+        <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:1.05rem;font-weight:700;color:#991B1B;margin:0;text-decoration:line-through;">${ticket.sessionTitle || 'Entreeticket'}</h3>
+        <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.8rem;color:#DC2626;font-weight:600;margin:3px 0 0;">Geannuleerd toegangsbewijs</p>
+      </div>
+      <span style="display:inline-flex;align-items:center;background:#FEE2E2;color:#991B1B;font-size:0.7rem;font-weight:800;padding:4px 10px;border-radius:6px;border:1px solid #FCA5A5;text-transform:uppercase;">
+        Geannuleerd
+      </span>
+    </div>
+  </div>
+</div>`;
+          continue;
+        }
+
+        const pdfUrl = `${apiBase}/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${encodeURIComponent(order.festivalId || 'gent')}&name=${encodeURIComponent(ticket.attendeeName || order.customerName || 'Bezoeker')}&title=${encodeURIComponent(ticket.sessionTitle || 'Entreeticket')}&time=${encodeURIComponent(ticket.timeStr || '13:00 - 17:00 UUR')}&date=${encodeURIComponent(ticket.dateStr || '')}&orderNumber=${encodeURIComponent(order.orderNumber || '')}`;
+        const shareText = encodeURIComponent(`*${order.festivalId === 'gent' ? 'Whisky Festival Gent 2026' : order.festivalId === 'amsterdam' ? 'Amsterdam Whisky Festival 2026' : 'International Whisky Festival 2026'}*\nE-ticket: ${ticket.sessionTitle || 'Entreeticket'}\n\nKaarthouder: ${ticket.attendeeName || order.customerName}\nDatum: ${ticket.dateStr || ''}\nTijdslot: ${ticket.timeStr || ''}\nTicket Code: ${ticket.ticketCode}\nLocatie: ${city.venue}\n\nDownload je E-ticket (PDF):\n${pdfUrl}`);
+        const isCheckedIn = ticket.status === 'checked_in';
 
         ticketsHtml += `<div style="background:#FCFAF7;border:2px solid #1D1C1A;border-radius:12px;box-shadow:3px 3px 0px rgba(29,28,26,0.85);overflow:hidden;margin-bottom:1.25rem;">
   <div style="height:6px;background:${city.gradient};border-radius:10px 10px 0 0;"></div>
@@ -483,9 +525,9 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:1.15rem;font-weight:800;color:#1D1C1A;margin:0;">${ticket.sessionTitle || 'Entreeticket'}</h3>
         <p style="font-family:'Plus Jakarta Sans',sans-serif;font-size:0.85rem;color:${city.primary};font-weight:700;margin:4px 0 0;">${ticket.dateStr || ''} • ${ticket.timeStr || ''}</p>
       </div>
-      <span style="display:inline-flex;align-items:center;gap:4px;background:${city.primaryLight};color:${city.primary};font-size:0.7rem;font-weight:800;padding:4px 10px;border-radius:6px;border:1px solid ${city.badgeBorder};text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;">
+      <span style="display:inline-flex;align-items:center;gap:4px;background:${isCheckedIn ? '#DCFCE7' : city.primaryLight};color:${isCheckedIn ? '#166534' : city.primary};font-size:0.7rem;font-weight:800;padding:4px 10px;border-radius:6px;border:1px solid ${isCheckedIn ? '#86EFAC' : city.badgeBorder};text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        Geldig Toegangsbewijs
+        ${isCheckedIn ? 'Ingecheckt aan de Deur' : 'Geldig Toegangsbewijs'}
       </span>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:1rem;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;margin-bottom:1rem;">
@@ -1083,7 +1125,8 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
      try {
        const params = request.params as { ticketCode: string };
        const body = (request.body || {}) as {
-         newSessionTitle: string;
+         newSessionTitle?: string;
+         newSessionName?: string;
          newDateStr?: string;
          newTimeStr?: string;
          reason?: string;
@@ -1091,8 +1134,10 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          adminEmail?: string;
        };
 
-       if (!body.newSessionTitle) {
-         return reply.status(400).send({ success: false, error: 'Nieuwe sessietitel is verplicht.' });
+       const targetTitle = (body.newSessionTitle || body.newSessionName || '').trim();
+
+       if (!targetTitle) {
+         return reply.status(400).send({ success: false, ok: false, error: 'Nieuwe sessietitel is verplicht.' });
        }
 
        const host = request.headers.host || 'localhost:4000';
@@ -1101,7 +1146,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
        const result = await OrdersRepository.swapTicket({
          ticketCode: decodeURIComponent(params.ticketCode),
-         newSessionTitle: body.newSessionTitle,
+         newSessionTitle: targetTitle,
          newDateStr: body.newDateStr,
          newTimeStr: body.newTimeStr,
          reason: body.reason || 'Klantverzoek via admin',
@@ -1111,19 +1156,24 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
        });
 
        if (!result.success) {
-         return reply.status(400).send({ success: false, error: result.error });
+         return reply.status(400).send({ success: false, ok: false, error: result.error });
        }
 
        return reply.send({
          success: true,
-         message: `Ticket succesvol omgeruild naar ${body.newSessionTitle}!`,
+         ok: true,
+         message: `Ticket succesvol omgeruild naar ${targetTitle}!`,
          oldTicket: result.oldTicket,
          newTicket: result.newTicket,
+         data: {
+           oldTicket: result.oldTicket,
+           newTicket: result.newTicket,
+         },
          order: result.order,
        });
      } catch (err: any) {
        server.log.error(err);
-       return reply.status(500).send({ success: false, error: err.message });
+       return reply.status(500).send({ success: false, ok: false, error: err.message });
      }
    });
 

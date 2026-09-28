@@ -516,7 +516,46 @@ export class OrdersRepository {
     oldTicket.swapReason = `Omgeruild naar "${params.newSessionTitle}" door ${params.adminEmail}: ${params.reason}`;
     oldTicket.swappedAt = nowIso;
 
-    // 2. Generate new ticket code (e.g. #WF-2026-84387-1-R1)
+    // 2. Resolve city-specific date and time if not provided
+    const cityLower = (oldTicket.cityName || order.festivalId || 'gent').toLowerCase();
+    const titleLower = params.newSessionTitle.toLowerCase();
+
+    let resolvedDateStr = params.newDateStr;
+    if (!resolvedDateStr) {
+      if (cityLower.includes('gent')) {
+        if (titleLower.includes('zaterdag')) {
+          resolvedDateStr = 'Zaterdag 3 oktober 2026';
+        } else if (titleLower.includes('zondag')) {
+          resolvedDateStr = 'Zondag 4 oktober 2026';
+        } else {
+          resolvedDateStr = 'Vrijdag 2 oktober 2026';
+        }
+      } else if (cityLower.includes('amsterdam')) {
+        resolvedDateStr = 'Zaterdag 16 januari 2027';
+      } else {
+        // Den Haag
+        if (titleLower.includes('zaterdag')) {
+          resolvedDateStr = 'Zaterdag 14 november 2026';
+        } else if (titleLower.includes('zondag')) {
+          resolvedDateStr = 'Zondag 15 november 2026';
+        } else {
+          resolvedDateStr = 'Vrijdag 13 november 2026';
+        }
+      }
+    }
+
+    let resolvedTimeStr = params.newTimeStr;
+    if (!resolvedTimeStr) {
+      if (titleLower.includes('avond')) {
+        resolvedTimeStr = cityLower.includes('denhaag') ? '18:30 - 22:30 UUR' : '19:00 - 23:00 UUR';
+      } else if (titleLower.includes('vip')) {
+        resolvedTimeStr = '13:00 - 17:00 UUR';
+      } else {
+        resolvedTimeStr = '13:00 - 17:00 UUR';
+      }
+    }
+
+    // 3. Generate new ticket code (e.g. #WF-2026-84387-1-R1)
     const baseCode = oldTicket.ticketCode.split('-R')[0];
     const swapVersion = (order.tickets.filter((t) => t.ticketCode.startsWith(baseCode)).length);
     const newTicketCode = `${baseCode}-R${swapVersion}`;
@@ -534,7 +573,7 @@ export class OrdersRepository {
     const signature = generateTicketSignature(newTicketCode, oldTicket.cityName, params.newSessionTitle, oldTicket.attendeeName);
     const cleanCode = newTicketCode.replace('#', '');
     const cleanOrderNumber = order.orderNumber.replace('#', '');
-    const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${oldTicket.cityName}&orderNumber=${cleanOrderNumber}&name=${encodeURIComponent(oldTicket.attendeeName)}&title=${encodeURIComponent(params.newSessionTitle)}`;
+    const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${encodeURIComponent(oldTicket.cityName)}&orderNumber=${encodeURIComponent(cleanOrderNumber)}&name=${encodeURIComponent(oldTicket.attendeeName)}&title=${encodeURIComponent(params.newSessionTitle)}&date=${encodeURIComponent(resolvedDateStr)}&time=${encodeURIComponent(resolvedTimeStr)}`;
 
     const newTicket: StoredIssuedTicket = {
       id: newTicketId,
@@ -546,8 +585,8 @@ export class OrdersRepository {
       status: 'valid',
       sessionTitle: params.newSessionTitle,
       cityName: oldTicket.cityName,
-      dateStr: params.newDateStr || oldTicket.dateStr,
-      timeStr: params.newTimeStr || oldTicket.timeStr,
+      dateStr: resolvedDateStr,
+      timeStr: resolvedTimeStr,
       pdfUrl,
       createdAt: nowIso,
     };
