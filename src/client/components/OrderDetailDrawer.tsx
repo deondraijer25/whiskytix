@@ -125,23 +125,44 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
   // Initialize or use effective tickets
   let effectiveTickets: any[] = localTickets || (Array.isArray(order.tickets) && order.tickets.length > 0 ? [...order.tickets] : []);
-  if (effectiveTickets.length === 0 && !localTickets) {
+
+  // Helper to parse comma-separated itemsSummary into individual tickets
+  const parseSummaryIntoTickets = (summary: string) => {
     const cleanNum = (order.orderNumber || 'WF').replace('#', '');
-    let count = 1;
-    const qtyMatch = (order.itemsSummary || '').match(/^(\d+)x/);
-    if (qtyMatch) {
-      count = parseInt(qtyMatch[1], 10);
-    } else if (order.totalCents === 25950) {
-      count = 6;
+    const parts = (summary || '').split(',').map((p: string) => p.trim()).filter(Boolean);
+    const parsed: { code: string; type: string; session: string; attendeeName: string; status: 'valid' | 'cancelled' | 'checked_in' }[] = [];
+    let ticketIndex = 1;
+
+    for (const part of parts) {
+      const qMatch = part.match(/^(\d+)x\s*(.*)$/i);
+      const qty = qMatch ? parseInt(qMatch[1], 10) || 1 : 1;
+      const title = qMatch ? qMatch[2].trim() || 'Entreeticket' : part;
+      const isMc = title.toLowerCase().includes('masterclass');
+
+      for (let q = 0; q < qty; q++) {
+        parsed.push({
+          code: `#${cleanNum}-${ticketIndex}`,
+          type: isMc ? 'Masterclass' : 'Entreeticket',
+          session: title,
+          attendeeName: order.customerName,
+          status: order.status === 'paid' ? 'valid' : 'cancelled',
+        });
+        ticketIndex++;
+      }
     }
-    for (let i = 1; i <= count; i++) {
-      effectiveTickets.push({
-        code: `#${cleanNum}-${i}`,
-        type: 'Entreeticket',
-        session: (order.itemsSummary || 'Festival Entreeticket').replace(/^\d+x\s*/, ''),
-        attendeeName: order.customerName,
-        status: order.status === 'paid' ? 'valid' : 'cancelled',
-      });
+    return parsed;
+  };
+
+  const hasMashedSingleTicket = effectiveTickets.length === 1 && (
+    (effectiveTickets[0].session && (effectiveTickets[0].session.includes(',') || effectiveTickets[0].session.includes('1x'))) ||
+    (order.itemsSummary && order.itemsSummary.includes(','))
+  );
+
+  if ((effectiveTickets.length === 0 || hasMashedSingleTicket) && !localTickets) {
+    const summary = order.itemsSummary || (effectiveTickets[0] ? effectiveTickets[0].session : '');
+    const expanded = parseSummaryIntoTickets(summary);
+    if (expanded.length > 0) {
+      effectiveTickets = expanded;
     }
   }
 

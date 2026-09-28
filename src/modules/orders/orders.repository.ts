@@ -1138,3 +1138,33 @@ export class OrdersRepository {
     return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 }
+
+/**
+ * Parses comma-separated itemsSummary string into structured items with quantities and clean titles
+ * Example: "1x Entreeticket Zondagmiddag, 1x Masterclass • Dada Chapel Distillery, 1x Masterclass • The House of Suntory"
+ */
+export function parseItemsSummary(summary?: string): Array<{ quantity: number; title: string }> {
+  if (!summary || !summary.trim()) {
+    return [{ quantity: 1, title: 'Festival Entreeticket' }];
+  }
+
+  const parts = summary.split(',').map((p) => p.trim()).filter(Boolean);
+  const items: Array<{ quantity: number; title: string }> = [];
+
+  for (const part of parts) {
+    const qtyMatch = part.match(/^(\d+)x\s*(.*)$/i);
+    if (qtyMatch) {
+      items.push({
+        quantity: parseInt(qtyMatch[1], 10) || 1,
+        title: qtyMatch[2].trim() || 'Festival Entreeticket',
+      });
+    } else {
+      items.push({
+        quantity: 1,
+        title: part,
+      });
+    }
+  }
+
+  return items.length > 0 ? items : [{ quantity: 1, title: summary.trim() }];
+}

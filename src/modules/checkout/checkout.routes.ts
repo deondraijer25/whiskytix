@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
-import { OrdersRepository, StoredOrderItem } from '../orders/orders.repository.js';
+import { OrdersRepository, StoredOrderItem, parseItemsSummary } from '../orders/orders.repository.js';
 import { MollieService, sandboxPayments } from '../payments/mollie.service.js';
 import { verifyQrPayload } from '../tickets/qr.service.js';
 
@@ -150,6 +150,15 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           customerEmail,
           customerPhone: customerPhone || '',
           itemsSummary: orderItems.map((i) => `${i.quantity}x ${i.title}`).join(', '),
+          itemsJson: JSON.stringify(orderItems.map((i) => ({
+            id: i.id,
+            title: i.title,
+            qty: i.quantity,
+            priceCents: i.unitPriceCents,
+            cat: i.category,
+            d: i.date,
+            tm: i.time,
+          }))).slice(0, 850),
         },
       });
 
@@ -420,9 +429,40 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           const valEur = parseFloat(matchedPayment.amountValue || '0');
           const amountCents = Math.round(valEur * 100);
           const itemsSummary = meta.itemsSummary || 'Festival Entreetickets';
-          const qtyMatch = itemsSummary.match(/^(\d+)x\s*/);
-          const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
-          const itemTitle = itemsSummary.replace(/^\d+x\s*/, '').trim() || 'Entreeticket';
+          const parsedItems = meta.itemsJson
+            ? (() => {
+                try {
+                  const arr = JSON.parse(meta.itemsJson);
+                  if (Array.isArray(arr) && arr.length > 0) {
+                    return arr.map((x: any) => ({
+                      quantity: Number(x.qty || x.q || 1),
+                      title: x.title || x.t || 'Entreeticket',
+                      category: x.cat || x.category || 'entree',
+                      date: x.d || x.date,
+                      time: x.tm || x.time,
+                    }));
+                  }
+                } catch {}
+                return null;
+              })()
+            : null;
+          const effectiveItems = parsedItems || parseItemsSummary(itemsSummary);
+          const totalQty = effectiveItems.reduce((acc: number, it: any) => acc + it.quantity, 0) || 1;
+
+          const reconstructedItems: StoredOrderItem[] = effectiveItems.map((pi: any) => {
+            const isMc = pi.title.toLowerCase().includes('masterclass');
+            return {
+              id: crypto.randomUUID(),
+              orderId: meta.orderId || matchedPayment.id,
+              ticketTypeId: `${festivalId}-${isMc ? 'masterclass' : (pi.category || 'entree')}`,
+              title: pi.title,
+              quantity: pi.quantity,
+              unitPriceCents: Math.round(amountCents / totalQty),
+              category: isMc ? 'masterclass' : (pi.category || 'entree'),
+              date: pi.date,
+              time: pi.time,
+            };
+          });
 
           const reconstructedOrder = await OrdersRepository.createOrder({
             id: meta.orderId || matchedPayment.id,
@@ -438,14 +478,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
             molliePaymentId: matchedPayment.id,
             createdAt: matchedPayment.paidAt || matchedPayment.createdAt || new Date().toISOString(),
             expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-            items: [{
-              id: crypto.randomUUID(),
-              orderId: meta.orderId || matchedPayment.id,
-              ticketTypeId: `${festivalId}-reconstructed`,
-              title: itemTitle,
-              quantity: qty,
-              unitPriceCents: Math.round(amountCents / qty),
-            }],
+            items: reconstructedItems,
           });
 
           if (matchedPayment.status === 'paid') {
@@ -653,9 +686,40 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
           // Parse items from metadata summary
           const itemsSummary = meta.itemsSummary || 'Festival Entreetickets';
-          const qtyMatch = itemsSummary.match(/^(\d+)x\s*/);
-          const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
-          const itemTitle = itemsSummary.replace(/^\d+x\s*/, '').trim() || 'Entreeticket';
+          const parsedItems = meta.itemsJson
+            ? (() => {
+                try {
+                  const arr = JSON.parse(meta.itemsJson);
+                  if (Array.isArray(arr) && arr.length > 0) {
+                    return arr.map((x: any) => ({
+                      quantity: Number(x.qty || x.q || 1),
+                      title: x.title || x.t || 'Entreeticket',
+                      category: x.cat || x.category || 'entree',
+                      date: x.d || x.date,
+                      time: x.tm || x.time,
+                    }));
+                  }
+                } catch {}
+                return null;
+              })()
+            : null;
+          const effectiveItems = parsedItems || parseItemsSummary(itemsSummary);
+          const totalQty = effectiveItems.reduce((acc: number, it: any) => acc + it.quantity, 0) || 1;
+
+          const reconstructedItems: StoredOrderItem[] = effectiveItems.map((pi: any) => {
+            const isMc = pi.title.toLowerCase().includes('masterclass');
+            return {
+              id: crypto.randomUUID(),
+              orderId: meta.orderId || matchedPayment.id,
+              ticketTypeId: `${festivalId}-${isMc ? 'masterclass' : (pi.category || 'entree')}`,
+              title: pi.title,
+              quantity: pi.quantity,
+              unitPriceCents: Math.round(amountCents / totalQty),
+              category: isMc ? 'masterclass' : (pi.category || 'entree'),
+              date: pi.date,
+              time: pi.time,
+            };
+          });
 
           // Create the order in memory for this session
           const reconstructedOrder = await OrdersRepository.createOrder({
@@ -672,14 +736,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
             molliePaymentId: matchedPayment.id,
             createdAt: matchedPayment.paidAt || matchedPayment.createdAt || new Date().toISOString(),
             expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-            items: [{
-              id: crypto.randomUUID(),
-              orderId: meta.orderId || matchedPayment.id,
-              ticketTypeId: `${festivalId}-reconstructed`,
-              title: itemTitle,
-              quantity: qty,
-              unitPriceCents: Math.round(amountCents / qty),
-            }],
+            items: reconstructedItems,
           });
 
           // Now mark it paid to generate tickets
@@ -1060,14 +1117,25 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
              const resolvedName = p.metadata?.customerName || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'Deon Draijer' : 'Klant (' + (p.method ? p.method.toUpperCase() : 'iDEAL') + ')');
              const resolvedEmail = p.metadata?.customerEmail || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'deondraijer@gmail.com' : 'deondraijer@gmail.com');
 
-             let ticketCount = 1;
-             const qtyMatch = cleanSummary.match(/^(\d+)x/);
-             if (qtyMatch) {
-               ticketCount = parseInt(qtyMatch[1], 10);
-             } else if (amountCents === 25950) {
-               ticketCount = 6;
-             }
+             const parsedItems = p.metadata?.itemsJson
+               ? (() => {
+                   try {
+                     const arr = JSON.parse(p.metadata.itemsJson);
+                     if (Array.isArray(arr) && arr.length > 0) {
+                       return arr.map((x: any) => ({
+                         quantity: Number(x.qty || x.q || 1),
+                         title: x.title || x.t || 'Entreeticket',
+                         category: x.cat || x.category || 'entree',
+                         date: x.d || x.date,
+                         time: x.tm || x.time,
+                       }));
+                     }
+                   } catch {}
+                   return null;
+                 })()
+               : null;
 
+             const effectiveItems = parsedItems || parseItemsSummary(cleanSummary);
              const tickets: {
                code: string;
                type: string;
@@ -1075,14 +1143,21 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                attendeeName: string;
                status: 'valid' | 'checked_in' | 'cancelled';
              }[] = [];
-             for (let tIdx = 1; tIdx <= ticketCount; tIdx++) {
-               tickets.push({
-                 code: `#${cleanNum}-${tIdx}`,
-                 type: 'Entreeticket',
-                 session: cleanSummary.replace(/^\d+x\s*/, ''),
-                 attendeeName: resolvedName,
-                 status: p.status === 'paid' ? 'valid' : 'cancelled',
-               });
+
+             let ticketIndex = 1;
+             for (const it of effectiveItems) {
+               const isMc = it.title.toLowerCase().includes('masterclass');
+               const typeLabel = isMc ? 'Masterclass' : 'Entreeticket';
+               for (let q = 0; q < it.quantity; q++) {
+                 tickets.push({
+                   code: `#${cleanNum}-${ticketIndex}`,
+                   type: typeLabel,
+                   session: it.title,
+                   attendeeName: resolvedName,
+                   status: p.status === 'paid' ? 'valid' : 'cancelled',
+                 });
+                 ticketIndex++;
+               }
              }
 
              formattedOrders.unshift({
