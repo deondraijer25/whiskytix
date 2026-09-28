@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar, Plus, Ticket, Tag, Check } from 'lucide-react';
+import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar, Plus, Ticket, Tag, Check, Search } from 'lucide-react';
 import { Order } from '../data/mockData';
 import { getFestivalCatalog, FestivalCatalogItem, formatEuro } from '../data/festivalCatalog';
 
@@ -88,6 +88,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const [selectedSwapItemId, setSelectedSwapItemId] = useState<string>('');
   const [targetSession, setTargetSession] = useState<string>('');
   const [swapReason, setSwapReason] = useState<string>('Klantverzoek via support');
+  const [swapCategoryFilter, setSwapCategoryFilter] = useState<'all' | 'entree' | 'masterclass' | 'special'>('all');
+  const [swapSearchQuery, setSwapSearchQuery] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [localTickets, setLocalTickets] = useState<any[] | null>(null);
 
@@ -202,6 +204,22 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const entrees = useMemo(() => catalog.filter((i) => i.category === 'entree'), [catalog]);
   const masterclasses = useMemo(() => catalog.filter((i) => i.category === 'masterclass'), [catalog]);
   const specials = useMemo(() => catalog.filter((i) => i.category === 'special'), [catalog]);
+
+  const filteredSwapCatalogItems = useMemo(() => {
+    return catalog.filter((item) => {
+      if (swapCategoryFilter !== 'all' && item.category !== swapCategoryFilter) {
+        return false;
+      }
+      if (swapSearchQuery.trim()) {
+        const q = swapSearchQuery.toLowerCase().trim();
+        const matchTitle = item.title.toLowerCase().includes(q);
+        const matchDate = item.dateStr.toLowerCase().includes(q);
+        const matchTime = item.timeStr.toLowerCase().includes(q);
+        return matchTitle || matchDate || matchTime;
+      }
+      return true;
+    });
+  }, [catalog, swapCategoryFilter, swapSearchQuery]);
 
   if (!order) return null;
 
@@ -655,97 +673,258 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
         {/* Inline Omruil Modal */}
         {swapModalTicket && (
-          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-[#FAF7F2] border-3 border-[#1D1C1A] rounded-lg shadow-2xl max-w-md w-full p-5 sm:p-6 animate-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between pb-3 border-b-2 border-[#1D1C1A] mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded bg-[#caac8e] border border-[#1D1C1A] flex items-center justify-center">
-                    <RefreshCw className="w-4 h-4 text-[#1D1C1A]" />
+          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-[#FCFAF7] border-3 border-[#1D1C1A] rounded-lg shadow-[6px_6px_0px_rgba(29,28,26,0.9)] max-w-2xl w-full p-5 sm:p-6 animate-in zoom-in-95 duration-150 my-6 flex flex-col max-h-[92vh]">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b-2 border-[#1D1C1A] shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded bg-[#FAF7F2] border-2 border-[#1D1C1A] flex items-center justify-center text-[#1D1C1A] shrink-0 shadow-[2px_2px_0px_rgba(29,28,26,0.9)]">
+                    <RefreshCw className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-extrabold text-[#1D1C1A]">Ticket Inruilen / Wijzigen</h3>
-                    <p className="text-[11px] text-[#4c5752]">Directe heruitgifte met nieuwe QR-code</p>
+                    <h3 className="text-base font-extrabold text-[#1D1C1A]">Ticket Inruilen / Wijzigen</h3>
+                    <p className="text-xs text-[#4c5752]">Directe heruitgifte van een nieuwe sessie met unieke QR-code</p>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setSwapModalTicket(null)}
-                  className="p-1 text-gray-500 hover:text-black rounded"
+                  className="p-1.5 text-gray-500 hover:text-black rounded cursor-pointer"
+                  title="Sluiten"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleSwapSubmit} className="space-y-4">
-                <div className="p-3 bg-[#e8e2d9] border border-[#1D1C1A] rounded text-xs space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Huidig Ticket:</span>
-                    <span className="font-mono font-bold text-[#006448]">{swapModalTicket.code}</span>
+              <form onSubmit={handleSwapSubmit} className="flex-1 overflow-y-auto pr-1 mt-4 space-y-4 text-xs font-sans">
+                {/* 1. Vergelijkingsbalk: Huidig Ticket vs Nieuwe Keuze */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg shadow-[2px_2px_0px_rgba(29,28,26,0.15)] text-xs">
+                  {/* Links: Huidig ticket */}
+                  <div className="space-y-1 sm:border-r sm:border-[#c1d4ce] sm:pr-3">
+                    <div className="text-[10px] font-bold text-[#4c5752] uppercase tracking-wider">
+                      Huidig Ticket (Vervalt direct):
+                    </div>
+                    <div className="font-mono font-bold text-red-800 text-xs flex items-center gap-1.5">
+                      <span>{swapModalTicket.code}</span>
+                      <span className="text-[9px] font-sans font-extrabold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-900 border border-red-200">
+                        Wordt Gedeactiveerd
+                      </span>
+                    </div>
+                    <div className="font-extrabold text-[#1D1C1A] text-sm leading-tight">
+                      {swapModalTicket.session}
+                    </div>
+                    <div className="text-[11px] text-[#4c5752]">
+                      Kaarthouder: <strong className="text-[#1D1C1A]">{swapModalTicket.attendeeName}</strong>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Huidige Sessie:</span>
-                    <span className="font-bold text-[#1D1C1A]">{swapModalTicket.session}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Naam Bezoeker:</span>
-                    <span className="font-bold text-[#1D1C1A]">{swapModalTicket.attendeeName}</span>
+
+                  {/* Rechts: Nieuw gekozen sessie */}
+                  <div className="space-y-1 sm:pl-1">
+                    <div className="text-[10px] font-bold text-[#4c5752] uppercase tracking-wider">
+                      Nieuwe Keuze (Nieuwe Barcode):
+                    </div>
+                    {selectedSwapItem ? (
+                      <>
+                        <div className="text-xs flex items-center gap-1.5">
+                          <span className="font-mono font-black text-[#006448]">Nieuwe QR-code</span>
+                          {selectedSwapItem.isSoldOut ? (
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-[#FAF0E6] text-[#8C3A00] border border-[#E0B896]">
+                              Directie Vrijstelling
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-[#d8e7e2] text-[#006448] border border-[#8ba198]">
+                              Beschikbaar
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-extrabold text-[#1D1C1A] text-sm leading-tight">
+                          {selectedSwapItem.title}
+                        </div>
+                        <div className="text-[11px] text-[#4c5752]">
+                          {selectedSwapItem.dateStr} • {selectedSwapItem.timeStr}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-gray-400 italic text-xs pt-1">
+                        Selecteer hieronder de gewenste sessie
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
-                    Nieuwe Sessie / Tickettype:
-                  </label>
-                  <select
-                    value={selectedSwapItemId}
-                    onChange={(e) => {
-                      const newId = e.target.value;
-                      setSelectedSwapItemId(newId);
-                      const found = catalog.find((i) => i.id === newId);
-                      if (found) {
-                        setTargetSession(found.title);
-                      }
-                    }}
-                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
-                  >
-                    {entrees.length > 0 && (
-                      <optgroup label="── Festival Entreetickets ──">
-                        {entrees.map((sess) => (
-                          <option key={sess.id} value={sess.id}>
-                            {sess.dateStr} • {sess.timeStr} — {sess.title}{sess.isSoldOut ? ' [Uitverkocht — Directie Vrijstelling]' : ''}
-                          </option>
-                        ))}
-                      </optgroup>
+                {/* 2. Zoekbalk & Categorie Tabs */}
+                <div className="space-y-2 pt-1 border-t border-[#c1d4ce]">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <label className="text-xs font-extrabold uppercase text-[#1D1C1A]">
+                      Kies Vervangende Sessie of Masterclass: <span className="text-red-600">*</span>
+                    </label>
+
+                    {/* Filter Tabs */}
+                    <div className="flex flex-wrap gap-1 bg-[#FAF7F2] p-1 border-2 border-[#1D1C1A] rounded">
+                      <button
+                        type="button"
+                        onClick={() => setSwapCategoryFilter('all')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer ${
+                          swapCategoryFilter === 'all'
+                            ? 'bg-[#006448] text-white shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
+                            : 'text-[#4c5752] hover:text-[#1D1C1A]'
+                        }`}
+                      >
+                        Alle ({catalog.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSwapCategoryFilter('entree')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer ${
+                          swapCategoryFilter === 'entree'
+                            ? 'bg-[#006448] text-white shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
+                            : 'text-[#4c5752] hover:text-[#1D1C1A]'
+                        }`}
+                      >
+                        Entrees ({entrees.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSwapCategoryFilter('masterclass')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer ${
+                          swapCategoryFilter === 'masterclass'
+                            ? 'bg-[#006448] text-white shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
+                            : 'text-[#4c5752] hover:text-[#1D1C1A]'
+                        }`}
+                      >
+                        Masterclasses ({masterclasses.length})
+                      </button>
+                      {specials.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSwapCategoryFilter('special')}
+                          className={`px-2.5 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer ${
+                            swapCategoryFilter === 'special'
+                              ? 'bg-[#006448] text-white shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
+                              : 'text-[#4c5752] hover:text-[#1D1C1A]'
+                          }`}
+                        >
+                          Specials ({specials.length})
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Zoekbalk */}
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-[#8ba198] absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={swapSearchQuery}
+                      onChange={(e) => setSwapSearchQuery(e.target.value)}
+                      placeholder="Zoek op titel, dag of tijd (bijv. 'CVH', 'Zaterdag', 'Dada')..."
+                      className="w-full pl-9 pr-8 py-2 bg-white border-2 border-[#1D1C1A] rounded text-xs font-semibold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
+                    />
+                    {swapSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSwapSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+                        title="Wissen"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     )}
-                    {masterclasses.length > 0 && (
-                      <optgroup label="── Exclusieve Masterclasses ──">
-                        {masterclasses.map((sess) => (
-                          <option key={sess.id} value={sess.id}>
-                            {sess.dateStr} • {sess.timeStr} — {sess.title}{sess.isSoldOut ? ' [Uitverkocht — Directie Vrijstelling]' : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {specials.length > 0 && (
-                      <optgroup label="── Specials, Rondleidingen & Tours ──">
-                        {specials.map((sess) => (
-                          <option key={sess.id} value={sess.id}>
-                            {sess.dateStr} • {sess.timeStr} — {sess.title}{sess.isSoldOut ? ' [Uitverkocht — Directie Vrijstelling]' : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
+                  </div>
                 </div>
 
+                {/* 3. Scrollbare Kaartenlijst (GEEN lelijke select dropdown meer!) */}
+                <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                  {filteredSwapCatalogItems.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-[#4c5752] font-semibold bg-white rounded border border-[#c1d4ce]">
+                      Geen sessies of masterclasses gevonden voor "{swapSearchQuery}".
+                    </div>
+                  ) : (
+                    filteredSwapCatalogItems.map((item) => {
+                      const isSelected = selectedSwapItemId === item.id || (!selectedSwapItemId && targetSession === item.title);
+                      const isSoldOut = !!item.isSoldOut;
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            setSelectedSwapItemId(item.id);
+                            setTargetSession(item.title);
+                          }}
+                          className={`p-2.5 rounded-lg border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            isSelected
+                              ? 'bg-[#FAF7F2] border-[#006448] shadow-[2px_2px_0px_rgba(0,100,72,0.8)] ring-1 ring-[#006448]'
+                              : 'bg-white border-[#c1d4ce] hover:border-[#1D1C1A]'
+                          }`}
+                        >
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+                                  item.category === 'masterclass'
+                                    ? 'bg-[#e4d5c4] text-[#543b20] border-[#caac8e]'
+                                    : item.category === 'special'
+                                    ? 'bg-[#eedccb] text-[#6d4c1d] border-[#caac8e]'
+                                    : 'bg-[#d8e7e2] text-[#006448] border-[#8ba198]'
+                                }`}
+                              >
+                                {item.category === 'masterclass'
+                                  ? 'MASTERCLASS'
+                                  : item.category === 'special'
+                                  ? 'SPECIAL'
+                                  : 'ENTREETICKET'}
+                              </span>
+
+                              {isSoldOut ? (
+                                <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#FAF0E6] text-[#8C3A00] border border-[#E0B896]">
+                                  Uitverkocht — Directie Vrijstelling
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#d8e7e2] text-[#006448] border border-[#8ba198]">
+                                  Beschikbaar
+                                </span>
+                              )}
+
+                              <div className="flex items-center gap-1 text-[11px] text-[#4c5752] font-semibold">
+                                <Calendar className="w-3 h-3 text-[#006448]" />
+                                <span>{item.dateStr}</span>
+                                <span className="text-[#8ba198]">•</span>
+                                <Clock className="w-3 h-3 text-[#006448]" />
+                                <span>{item.timeStr}</span>
+                              </div>
+                            </div>
+
+                            <div className="text-xs font-extrabold text-[#1D1C1A] leading-tight">
+                              {item.title}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 flex items-center gap-2">
+                            {isSelected ? (
+                              <div className="w-6 h-6 rounded-full bg-[#006448] text-white flex items-center justify-center shadow-xs">
+                                <Check className="w-3.5 h-3.5" />
+                              </div>
+                            ) : (
+                              <div className="w-6 h-6 rounded-full border-2 border-[#c1d4ce]" />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* 4. Directie Vrijstelling Alert */}
                 {selectedSwapItem?.isSoldOut && (
                   <div className="p-2.5 bg-[#FAF0E6] border border-[#E0B896] rounded text-xs text-[#8C3A00]">
                     <strong>Directie Vrijstelling:</strong> Deze sessie is uitverkocht voor publiek en wordt omgeruild via de directiereserve.
                   </div>
                 )}
 
+                {/* 5. Reden van Wijziging */}
                 <div>
-                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
-                    Reden van Wijziging:
+                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1">
+                    Reden van Wijziging (voor administratie):
                   </label>
                   <input
                     type="text"
@@ -756,14 +935,16 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                   />
                 </div>
 
+                {/* 6. Waarschuwing Invalidering oude barcode */}
                 <div className="p-2.5 bg-[#FAF7F2] border border-[#c1d4ce] rounded text-[11px] text-[#4c5752] flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                   <div>
-                    <strong className="text-[#1D1C1A]">Let op:</strong> De oude QR-code ({swapModalTicket.code}) wordt per direct <strong>geïnvalideerd</strong> aan de deur. De bezoeker ontvangt een nieuwe PDF met een verse QR-code.
+                    <strong className="text-[#1D1C1A]">Directe Invalidering:</strong> De oude QR-code ({swapModalTicket.code}) wordt per direct <strong>geïnvalideerd</strong> aan de deur. De bezoeker ontvangt een nieuw ticket met een verse QR-code.
                   </div>
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                {/* 7. Actieknoppen */}
+                <div className="flex gap-2 pt-2 border-t border-[#c1d4ce] shrink-0">
                   <button
                     type="button"
                     onClick={() => setSwapModalTicket(null)}
@@ -777,7 +958,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                     className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-[#caac8e] hover:bg-[#b89b7d] text-[#1D1C1A] text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
-                    <span>{isProcessing ? 'Omruilen Verwerken...' : 'Bevestig Omruiling'}</span>
+                    <span>{isProcessing ? 'Omruilen Verwerken...' : 'Omruiling Definitief Bevestigen'}</span>
                   </button>
                 </div>
               </form>
