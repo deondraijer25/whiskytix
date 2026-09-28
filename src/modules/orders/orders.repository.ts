@@ -57,6 +57,17 @@ export interface StoredOrder {
   createdAt: string;
   paidAt?: string | null;
   expiresAt: string;
+  shippingAddress?: {
+    street: string;
+    zip: string;
+    city: string;
+    country: string;
+  };
+  ageVerification?: {
+    birthDate: string;
+    idCheckAcknowledged: boolean;
+    verifiedAt: string;
+  };
   items: StoredOrderItem[];
   tickets: StoredIssuedTicket[];
 }

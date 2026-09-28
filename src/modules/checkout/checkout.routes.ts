@@ -20,6 +20,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         items = [],
         discountCents = 0,
         shippingAddress,
+        ageVerification,
       } = body || {};
 
       if (!customerEmail) {
@@ -63,6 +64,28 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         };
       });
 
+      // Server-side Age Verification enforcement for alcohol shipping
+      if (hasShipping) {
+        if (!ageVerification || !ageVerification.birthDate || !ageVerification.idCheckAcknowledged) {
+          return reply.status(400).send({
+            error: 'Leeftijdsverificatie (geboortedatum en akkoord met ID-controle bij bezorging) is verplicht voor verzending van festivalbottelingen.'
+          });
+        }
+        const birthDate = new Date(ageVerification.birthDate);
+        if (isNaN(birthDate.getTime())) {
+          return reply.status(400).send({ error: 'Ongeldige geboortedatum opgegeven.' });
+        }
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+        }
+        if (age < 18) {
+          return reply.status(400).send({ error: 'U dient minimaal 18 jaar oud te zijn om alcoholische festivalbottelingen te laten bezorgen.' });
+        }
+      }
+
       // Tiered service fee calculation: 1 item -> €1.75, 2-5 items -> €3.50, 5+ items -> €4.50
       let feeCents = 0;
       if (totalQty === 1) {
@@ -91,6 +114,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         status: 'pending',
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min stock hold TTL
+        shippingAddress: hasShipping ? shippingAddress : undefined,
+        ageVerification: hasShipping && ageVerification ? {
+          birthDate: String(ageVerification.birthDate),
+          idCheckAcknowledged: Boolean(ageVerification.idCheckAcknowledged),
+          verifiedAt: new Date().toISOString()
+        } : undefined,
         items: orderItems,
       });
 
