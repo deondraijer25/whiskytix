@@ -872,7 +872,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                       .filter((item) => catalogFilterTab === 'all' || item.category === catalogFilterTab || (catalogFilterTab === 'entree' && item.category === 'special'))
                       .map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.dateStr} • {item.timeStr} — {item.title} (Normale waarde: {formatEuro(item.originalPriceEur)}){item.isSoldOut ? ' [⚡ UITVERKOCHT — Directie Vrijstelling]' : ''}
+                          {item.dateStr} • {item.timeStr} — {item.title} (Normale waarde: {formatEuro(item.originalPriceEur)}){item.isSoldOut ? ' [UITVERKOCHT — Directie Vrijstelling]' : ''}
                         </option>
                       ))}
                   </select>
@@ -898,8 +898,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                               : 'ENTREETICKET'}
                           </span>
                           {selectedCatalogItem.isSoldOut && (
-                            <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border bg-indigo-100 text-indigo-900 border-indigo-300">
-                              ⚡ Uitverkocht (Eigenaar Vrijstelling)
+                            <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border bg-[#FAF0E6] text-[#8C3A00] border-[#E0B896]">
+                              Uitverkocht — Directie Vrijstelling
                             </span>
                           )}
                           <div className="flex items-center gap-1 text-[11px] text-[#4c5752] font-semibold">

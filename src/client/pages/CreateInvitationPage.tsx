@@ -12,7 +12,6 @@ import {
   Mail,
   Phone,
   AlertCircle,
-  Sparkles,
   Search,
   X,
 } from 'lucide-react';
@@ -521,13 +520,12 @@ export const CreateInvitationPage: React.FC = () => {
                             </span>
 
                             {isSoldOut ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300">
-                                <Sparkles className="w-3 h-3 text-indigo-700" />
+                              <span className="inline-flex items-center text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-[#FAF0E6] text-[#8C3A00] border border-[#E0B896]">
                                 Uitverkocht — Directie Vrijstelling
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-[#d8e7e2] text-[#006448] border border-[#8ba198]">
+                                <CheckCircle2 className="w-3 h-3 text-[#006448]" />
                                 Beschikbaar
                               </span>
                             )}
@@ -561,11 +559,8 @@ export const CreateInvitationPage: React.FC = () => {
               </div>
 
               {selectedItem?.isSoldOut && (
-                <div className="p-2.5 bg-indigo-50 border border-indigo-700 rounded text-xs text-indigo-950 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-indigo-700 shrink-0" />
-                  <div>
-                    <strong>Directie Vrijstelling:</strong> Deze sessie is uitverkocht voor publiek en wordt toegekend via het directiecontingent.
-                  </div>
+                <div className="p-2.5 bg-[#FAF0E6] border border-[#E0B896] rounded text-xs text-[#8C3A00]">
+                  <strong>Directie Vrijstelling:</strong> Deze sessie is uitverkocht voor publiek en wordt toegekend via het directiecontingent.
                 </div>
               )}
             </div>
