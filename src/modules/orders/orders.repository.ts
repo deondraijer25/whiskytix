@@ -135,6 +135,19 @@ export class OrdersRepository {
   }
 
   /**
+   * Register or sync an order that was created from Mollie/external source
+   */
+  static registerSyncedOrder(order: StoredOrder) {
+    if (!order || !order.orderNumber) return;
+    const existing = memoryOrders.get(order.orderNumber) || memoryOrders.get(order.id);
+    if (!existing) {
+      memoryOrders.set(order.orderNumber, order);
+      memoryOrders.set(order.id, order);
+      saveLocalStore();
+    }
+  }
+
+  /**
    * Clears all stored orders
    */
   static clearOrders() {
