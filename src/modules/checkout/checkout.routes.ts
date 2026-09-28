@@ -1074,22 +1074,38 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     * 8. GET ALL ORDERS LIST (FOR ADMIN COCKPIT & FESTIVAL HUBS)
     * GET /api/orders and GET /api/admin/orders
     */
+   interface FormattedOrderTicket {
+     code: string;
+     type: string;
+     session: string;
+     attendeeName: string;
+     status: 'valid' | 'checked_in' | 'cancelled' | 'swapped';
+     replacedBy?: string;
+     swappedToTicketCode?: string;
+     dateStr?: string;
+     timeStr?: string;
+   }
+
    const getSyncedOrders = async (query: { city?: string; festivalId?: string; env?: string }) => {
      const allOrders = OrdersRepository.listOrders() || [];
      
      const formattedOrders = allOrders.map((o) => {
        const city = o.festivalId || 'gent';
        const cityName = city === 'gent' ? 'Gent' : city === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
-       const summary = Array.isArray(o.items) && o.items.length > 0 
+       const summary = o.itemsSummary || (Array.isArray(o.items) && o.items.length > 0 
          ? o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ')
-         : 'Tickets & Toegang';
+         : 'Tickets & Toegang');
 
-       let tickets = Array.isArray(o.tickets) ? o.tickets.map((t) => ({
+       let tickets: FormattedOrderTicket[] = Array.isArray(o.tickets) ? o.tickets.map((t) => ({
          code: t.ticketCode,
-         type: t.sessionTitle || 'Toegangsbewijs',
+         type: t.sessionTitle?.toLowerCase().includes('masterclass') ? 'Masterclass' : 'Entreeticket',
          session: t.sessionTitle,
          attendeeName: t.attendeeName,
          status: t.status,
+         replacedBy: t.swappedToTicketCode ? t.swappedToTicketCode.replace(/^#+/, '') : (t as any).replacedBy ? String((t as any).replacedBy).replace(/^#+/, '') : undefined,
+         swappedToTicketCode: t.swappedToTicketCode,
+         dateStr: t.dateStr,
+         timeStr: t.timeStr,
        })) : [];
 
        if (tickets.length === 0) {
@@ -1177,15 +1193,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                : null;
 
              const effectiveItems = parsedItems || parseItemsSummary(cleanSummary);
-             const tickets: {
-               code: string;
-               type: string;
-               session: string;
-               attendeeName: string;
-               status: 'valid' | 'checked_in' | 'cancelled';
-               dateStr?: string;
-               timeStr?: string;
-             }[] = [];
+             const tickets: FormattedOrderTicket[] = [];
 
              let ticketIndex = 1;
              for (const it of effectiveItems) {

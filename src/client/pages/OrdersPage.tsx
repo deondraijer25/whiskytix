@@ -90,16 +90,25 @@ export const OrdersPage: React.FC = () => {
         const data = await res.json();
         if (data && Array.isArray(data.orders)) {
           setOrders(data.orders);
-          if (openOrderParam) {
-            const found = data.orders.find(
-              (o: Order) =>
-                o.orderNumber === openOrderParam ||
-                o.orderNumber.replace('#', '') === openOrderParam.replace('#', '')
-            );
-            if (found) {
-              setSelectedOrder(found);
+          setSelectedOrder((prev) => {
+            if (prev) {
+              const fresh = data.orders.find(
+                (o: Order) =>
+                  o.orderNumber === prev.orderNumber ||
+                  o.orderNumber.replace('#', '') === prev.orderNumber.replace('#', '')
+              );
+              return fresh || prev;
             }
-          }
+            if (openOrderParam) {
+              const found = data.orders.find(
+                (o: Order) =>
+                  o.orderNumber === openOrderParam ||
+                  o.orderNumber.replace('#', '') === openOrderParam.replace('#', '')
+              );
+              return found || null;
+            }
+            return null;
+          });
         } else {
           setOrders([]);
         }

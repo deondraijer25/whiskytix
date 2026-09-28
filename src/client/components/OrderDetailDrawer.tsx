@@ -90,6 +90,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [localTickets, setLocalTickets] = useState<any[] | null>(null);
 
+  // Reset local overrides when order changes or updates
+  useEffect(() => {
+    setLocalTickets(null);
+  }, [order?.orderNumber, order?.tickets]);
+
   // Add comp / gift ticket modal states (using official catalog)
   const [showAddTicketModal, setShowAddTicketModal] = useState<boolean>(false);
   const [selectedCatalogItem, setSelectedCatalogItem] = useState<FestivalCatalogItem | null>(null);
@@ -98,7 +103,63 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const [addReason, setAddReason] = useState<string>('VIP / Zakenrelatie');
   const [isSubmittingAddTicket, setIsSubmittingAddTicket] = useState<boolean>(false);
 
+  // Compute live effective tickets
+  const effectiveTickets: any[] = useMemo(() => {
+    if (!order) return [];
+    if (localTickets) return localTickets;
+    let base = Array.isArray(order.tickets) && order.tickets.length > 0 ? [...order.tickets] : [];
+
+    const hasMashedSingleTicket =
+      base.length === 1 &&
+      ((base[0].session && (base[0].session.includes(',') || base[0].session.includes('1x'))) ||
+        (order.itemsSummary && order.itemsSummary.includes(',')));
+
+    if (base.length === 0 || hasMashedSingleTicket) {
+      const summary = order.itemsSummary || (base[0] ? base[0].session : '');
+      const cleanNum = (order.orderNumber || 'WF').replace('#', '');
+      const parts = (summary || '').split(',').map((p: string) => p.trim()).filter(Boolean);
+      const parsed: any[] = [];
+      let ticketIndex = 1;
+
+      for (const part of parts) {
+        const qMatch = part.match(/^(\d+)x\s*(.*)$/i);
+        const qty = qMatch ? parseInt(qMatch[1], 10) || 1 : 1;
+        const title = qMatch ? qMatch[2].trim() || 'Entreeticket' : part;
+        const isMc = title.toLowerCase().includes('masterclass');
+
+        for (let q = 0; q < qty; q++) {
+          parsed.push({
+            code: `#${cleanNum}-${ticketIndex}`,
+            type: isMc ? 'Masterclass' : 'Entreeticket',
+            session: title,
+            attendeeName: order.customerName,
+            status: order.status === 'paid' ? 'valid' : 'cancelled',
+          });
+          ticketIndex++;
+        }
+      }
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
+    return base;
+  }, [order, localTickets]);
+
+  // Compute dynamic items summary derived from live active tickets
   const summaryItems = useMemo(() => {
+    const active = effectiveTickets.filter((t: any) => t.status === 'valid' || t.status === 'checked_in');
+    if (active.length > 0) {
+      const counts: Record<string, number> = {};
+      for (const t of active) {
+        const title = t.session || t.sessionTitle || t.type || 'Toegangsticket';
+        counts[title] = (counts[title] || 0) + 1;
+      }
+      return Object.entries(counts).map(([title, quantity]) => ({
+        quantity,
+        title,
+      }));
+    }
+
     if (!order?.itemsSummary) return [];
     return order.itemsSummary
       .split(',')
@@ -117,7 +178,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
         };
       })
       .filter((it) => Boolean(it.title));
-  }, [order?.itemsSummary]);
+  }, [effectiveTickets, order?.itemsSummary]);
 
   if (!order) return null;
 
@@ -166,49 +227,6 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
   const availableSessions = citySessionOptions[resolvedCityKey] || citySessionOptions.denhaag;
 
-  // Initialize or use effective tickets
-  let effectiveTickets: any[] = localTickets || (Array.isArray(order.tickets) && order.tickets.length > 0 ? [...order.tickets] : []);
-
-  // Helper to parse comma-separated itemsSummary into individual tickets
-  const parseSummaryIntoTickets = (summary: string) => {
-    const cleanNum = (order.orderNumber || 'WF').replace('#', '');
-    const parts = (summary || '').split(',').map((p: string) => p.trim()).filter(Boolean);
-    const parsed: { code: string; type: string; session: string; attendeeName: string; status: 'valid' | 'cancelled' | 'checked_in' }[] = [];
-    let ticketIndex = 1;
-
-    for (const part of parts) {
-      const qMatch = part.match(/^(\d+)x\s*(.*)$/i);
-      const qty = qMatch ? parseInt(qMatch[1], 10) || 1 : 1;
-      const title = qMatch ? qMatch[2].trim() || 'Entreeticket' : part;
-      const isMc = title.toLowerCase().includes('masterclass');
-
-      for (let q = 0; q < qty; q++) {
-        parsed.push({
-          code: `#${cleanNum}-${ticketIndex}`,
-          type: isMc ? 'Masterclass' : 'Entreeticket',
-          session: title,
-          attendeeName: order.customerName,
-          status: order.status === 'paid' ? 'valid' : 'cancelled',
-        });
-        ticketIndex++;
-      }
-    }
-    return parsed;
-  };
-
-  const hasMashedSingleTicket = effectiveTickets.length === 1 && (
-    (effectiveTickets[0].session && (effectiveTickets[0].session.includes(',') || effectiveTickets[0].session.includes('1x'))) ||
-    (order.itemsSummary && order.itemsSummary.includes(','))
-  );
-
-  if ((effectiveTickets.length === 0 || hasMashedSingleTicket) && !localTickets) {
-    const summary = order.itemsSummary || (effectiveTickets[0] ? effectiveTickets[0].session : '');
-    const expanded = parseSummaryIntoTickets(summary);
-    if (expanded.length > 0) {
-      effectiveTickets = expanded;
-    }
-  }
-
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
@@ -252,20 +270,30 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       const newTicket = data.newTicket || (data.data && data.data.newTicket);
       if (res.ok && (data.success || data.ok) && newTicket) {
         showToast(`🎉 Ticket succesvol omgeruild! Nieuwe code: ${newTicket.ticketCode}`);
+        const cleanNewCode = newTicket.ticketCode.startsWith('#') ? newTicket.ticketCode : `#${newTicket.ticketCode}`;
+        const newCodeWithoutHash = cleanNewCode.replace(/^#+/, '');
         // Update local tickets list
         const updated = effectiveTickets.map(t => {
           if (t.code === swapModalTicket.code || t.code.replace('#', '') === rawCode) {
-            return { ...t, status: 'swapped', replacedBy: newTicket.ticketCode };
+            return {
+              ...t,
+              status: 'swapped',
+              replacedBy: newCodeWithoutHash,
+              swappedToTicketCode: cleanNewCode,
+            };
           }
           return t;
         });
+        const isMc = targetSession.toLowerCase().includes('masterclass');
         // Add new swapped ticket
         updated.push({
-          code: newTicket.ticketCode.startsWith('#') ? newTicket.ticketCode : `#${newTicket.ticketCode}`,
-          type: 'Entreeticket (Omgeruild)',
+          code: cleanNewCode,
+          type: isMc ? 'Masterclass' : 'Entreeticket',
           session: targetSession,
           attendeeName: newTicket.attendeeName || swapModalTicket.attendeeName || order.customerName,
           status: 'valid',
+          dateStr: newTicket.dateStr,
+          timeStr: newTicket.timeStr,
         });
         setLocalTickets(updated);
         setSwapModalTicket(null);
@@ -521,10 +549,18 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
                       {/* Middle: Session details */}
                       <div className="text-[11px] text-[#4c5752] font-semibold">
-                        {t.type} • {t.session}
-                        {isSwapped && t.replacedBy && (
+                        {(() => {
+                          const session = t.session || '';
+                          const type = t.type || '';
+                          const isRedundant =
+                            !type ||
+                            session.toLowerCase().startsWith(type.toLowerCase()) ||
+                            type.toLowerCase() === session.toLowerCase();
+                          return isRedundant ? session : `${type} • ${session}`;
+                        })()}
+                        {isSwapped && (t.replacedBy || t.swappedToTicketCode) && (
                           <div className="text-[10px] text-amber-800 font-bold flex items-center gap-1 mt-0.5">
-                            <span>↳ Vervangen door ticket #{t.replacedBy}</span>
+                            <span>↳ Vervangen door ticket #{String(t.replacedBy || t.swappedToTicketCode).replace(/^#+/, '')}</span>
                           </div>
                         )}
                       </div>
