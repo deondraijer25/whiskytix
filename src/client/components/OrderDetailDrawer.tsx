@@ -85,7 +85,8 @@ const DRAWER_THEMES: Record<string, {
 export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cityId, onClose, onOrderUpdated }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [swapModalTicket, setSwapModalTicket] = useState<any | null>(null);
-  const [targetSession, setTargetSession] = useState<string>('Vrijdagavond 19:00 - 23:00');
+  const [selectedSwapItemId, setSelectedSwapItemId] = useState<string>('');
+  const [targetSession, setTargetSession] = useState<string>('');
   const [swapReason, setSwapReason] = useState<string>('Klantverzoek via support');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [localTickets, setLocalTickets] = useState<any[] | null>(null);
@@ -195,37 +196,14 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
   const theme = DRAWER_THEMES[resolvedCityKey] || DRAWER_THEMES.denhaag;
 
-  const citySessionOptions: Record<string, string[]> = {
-    gent: [
-      'Vrijdagavond Entree (19:00 - 23:00)',
-      'VIP Toegang Vrijdag (13:00 - 17:00)',
-      'Zaterdagmiddag Sessie (13:00 - 17:00)',
-      'Zaterdagavond Sessie (19:00 - 23:00)',
-      'Zondagmiddag Sessie (13:00 - 17:00)',
-      'Masterclass: Glenfarclas Vintage Tasting - Vrijdag',
-      'Masterclass: Macallan Rare Cask - Zaterdag',
-      'Masterclass: Peat & Smoke Experience - Zondag',
-    ],
-    denhaag: [
-      'Vrijdagavond 19:00 - 23:00',
-      'VIP Toegang Vrijdag (Exclusief)',
-      'Zaterdagmiddag 13:00 - 17:00',
-      'Zaterdagavond 18:30 - 22:30',
-      'VIP Toegang Zaterdag (Exclusief)',
-      'Zondagmiddag 13:00 - 17:00',
-      'Masterclass: Glenfarclas Vintage Tasting',
-      'Masterclass: Islay Peat Exploration',
-      'Masterclass: Sherry Cask Secrets',
-    ],
-    amsterdam: [
-      'Zaterdagmiddag 13:00 - 17:00',
-      'Zaterdagavond 18:30 - 22:30',
-      'VIP Toegang Zaterdag',
-      'Masterclass: Vintage & Rare Whiskies',
-    ],
-  };
+  const catalog = useMemo(() => getFestivalCatalog(resolvedCityKey as any), [resolvedCityKey]);
+  const selectedSwapItem = useMemo(() => {
+    return catalog.find((i) => i.id === selectedSwapItemId) || catalog.find((i) => i.title === targetSession) || catalog[0] || null;
+  }, [catalog, selectedSwapItemId, targetSession]);
 
-  const availableSessions = citySessionOptions[resolvedCityKey] || citySessionOptions.denhaag;
+  const entrees = useMemo(() => catalog.filter((i) => i.category === 'entree'), [catalog]);
+  const masterclasses = useMemo(() => catalog.filter((i) => i.category === 'masterclass'), [catalog]);
+  const specials = useMemo(() => catalog.filter((i) => i.category === 'special'), [catalog]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -255,13 +233,18 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
     if (!swapModalTicket) return;
     setIsProcessing(true);
     const rawCode = swapModalTicket.code.replace('#', '');
+    const chosenTitle = selectedSwapItem?.title || targetSession;
+    const chosenDateStr = selectedSwapItem?.dateStr;
+    const chosenTimeStr = selectedSwapItem?.timeStr;
     try {
       const res = await fetch(`/api/admin/tickets/${encodeURIComponent(rawCode)}/swap`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          newSessionTitle: targetSession,
-          newSessionName: targetSession,
+          newSessionTitle: chosenTitle,
+          newSessionName: chosenTitle,
+          newDateStr: chosenDateStr,
+          newTimeStr: chosenTimeStr,
           reason: swapReason,
           adminEmail: 'beheer@whiskyfestival.nl',
         }),
@@ -269,7 +252,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       const data = await res.json();
       const newTicket = data.newTicket || (data.data && data.data.newTicket);
       if (res.ok && (data.success || data.ok) && newTicket) {
-        showToast(`🎉 Ticket succesvol omgeruild! Nieuwe code: ${newTicket.ticketCode}`);
+        showToast(`Ticket succesvol omgeruild! Nieuwe code: ${newTicket.ticketCode}`);
         const cleanNewCode = newTicket.ticketCode.startsWith('#') ? newTicket.ticketCode : `#${newTicket.ticketCode}`;
         const newCodeWithoutHash = cleanNewCode.replace(/^#+/, '');
         // Update local tickets list
@@ -284,25 +267,25 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
           }
           return t;
         });
-        const isMc = targetSession.toLowerCase().includes('masterclass');
+        const isMc = chosenTitle.toLowerCase().includes('masterclass');
         // Add new swapped ticket
         updated.push({
           code: cleanNewCode,
           type: isMc ? 'Masterclass' : 'Entreeticket',
-          session: targetSession,
+          session: chosenTitle,
           attendeeName: newTicket.attendeeName || swapModalTicket.attendeeName || order.customerName,
           status: 'valid',
-          dateStr: newTicket.dateStr,
-          timeStr: newTicket.timeStr,
+          dateStr: newTicket.dateStr || chosenDateStr,
+          timeStr: newTicket.timeStr || chosenTimeStr,
         });
         setLocalTickets(updated);
         setSwapModalTicket(null);
         if (onOrderUpdated) onOrderUpdated();
       } else {
-        showToast(`⚠️ Fout bij omruilen: ${data.error || 'Onbekende fout'}`);
+        showToast(`Fout bij omruilen: ${data.error || 'Onbekende fout'}`);
       }
     } catch (err: any) {
-      showToast(`⚠️ Fout bij omruilen: ${err.message}`);
+      showToast(`Fout bij omruilen: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -585,8 +568,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                               onClick={() => {
                                 setSwapModalTicket(t);
                                 const currentLower = (t.session || '').toLowerCase();
-                                const alt = availableSessions.find(s => !s.toLowerCase().includes(currentLower.slice(0, 5))) || availableSessions[0];
-                                setTargetSession(alt);
+                                const altItem = catalog.find((i) => !i.title.toLowerCase().includes(currentLower.slice(0, 8))) || catalog[0];
+                                if (altItem) {
+                                  setSelectedSwapItemId(altItem.id);
+                                  setTargetSession(altItem.title);
+                                }
                                 setSwapReason('Klantverzoek via support wegens verhindering');
                               }}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border-2 border-[#1D1C1A] bg-[#caac8e] hover:bg-[#b89a7c] text-[#1D1C1A] text-xs font-extrabold shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer"
@@ -710,17 +696,52 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                     Nieuwe Sessie / Tickettype:
                   </label>
                   <select
-                    value={targetSession}
-                    onChange={(e) => setTargetSession(e.target.value)}
+                    value={selectedSwapItemId}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setSelectedSwapItemId(newId);
+                      const found = catalog.find((i) => i.id === newId);
+                      if (found) {
+                        setTargetSession(found.title);
+                      }
+                    }}
                     className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
                   >
-                    {availableSessions.map((sess) => (
-                      <option key={sess} value={sess}>
-                        {sess}
-                      </option>
-                    ))}
+                    {entrees.length > 0 && (
+                      <optgroup label="── Festival Entreetickets ──">
+                        {entrees.map((sess) => (
+                          <option key={sess.id} value={sess.id}>
+                            {sess.dateStr} • {sess.timeStr} — {sess.title}{sess.isSoldOut ? ' [Uitverkocht — Directie Vrijstelling]' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {masterclasses.length > 0 && (
+                      <optgroup label="── Exclusieve Masterclasses ──">
+                        {masterclasses.map((sess) => (
+                          <option key={sess.id} value={sess.id}>
+                            {sess.dateStr} • {sess.timeStr} — {sess.title}{sess.isSoldOut ? ' [Uitverkocht — Directie Vrijstelling]' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {specials.length > 0 && (
+                      <optgroup label="── Specials, Rondleidingen & Tours ──">
+                        {specials.map((sess) => (
+                          <option key={sess.id} value={sess.id}>
+                            {sess.dateStr} • {sess.timeStr} — {sess.title}{sess.isSoldOut ? ' [Uitverkocht — Directie Vrijstelling]' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
+
+                {selectedSwapItem?.isSoldOut && (
+                  <div className="p-2.5 bg-[#FAF0E6] border border-[#E0B896] rounded text-xs text-[#8C3A00]">
+                    <strong>Directie Vrijstelling:</strong> Deze sessie is uitverkocht voor publiek en wordt omgeruild via de directiereserve.
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
@@ -735,24 +756,28 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                   />
                 </div>
 
-                <div className="p-3 bg-amber-50 border border-amber-300 rounded text-[11px] text-amber-900">
-                  ⚠️ <strong>Let op:</strong> De oude QR-code ({swapModalTicket.code}) wordt per direct <strong>geïnvalideerd</strong> aan de deur. De bezoeker ontvangt een nieuwe PDF met een verse QR-code.
+                <div className="p-2.5 bg-[#FAF7F2] border border-[#c1d4ce] rounded text-[11px] text-[#4c5752] flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-[#1D1C1A]">Let op:</strong> De oude QR-code ({swapModalTicket.code}) wordt per direct <strong>geïnvalideerd</strong> aan de deur. De bezoeker ontvangt een nieuwe PDF met een verse QR-code.
+                  </div>
                 </div>
 
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => setSwapModalTicket(null)}
-                    className="flex-1 py-2 rounded border border-gray-400 text-xs font-bold text-gray-700 hover:bg-gray-100"
+                    className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-white text-xs font-extrabold text-[#1D1C1A] hover:bg-gray-100 shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer"
                   >
                     Annuleren
                   </button>
                   <button
                     type="submit"
-                    disabled={isProcessing}
-                    className="flex-1 btn-letterpress-gold py-2 rounded text-xs font-extrabold flex items-center justify-center gap-1.5"
+                    disabled={isProcessing || !selectedSwapItem}
+                    className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-[#caac8e] hover:bg-[#b89b7d] text-[#1D1C1A] text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
                   >
-                    {isProcessing ? 'Verwerken...' : '🔄 Bevestig Omruiling'}
+                    <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
+                    <span>{isProcessing ? 'Omruilen Verwerken...' : 'Bevestig Omruiling'}</span>
                   </button>
                 </div>
               </form>
