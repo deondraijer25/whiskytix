@@ -136,6 +136,64 @@ export class OrdersRepository {
   }
 
   /**
+   * Intelligente datum & tijd bepaling op basis van festivalstad en sessietitel
+   */
+  static resolveSessionDateTime(
+    cityNameOrFestivalId: string,
+    sessionTitle: string,
+    explicitDate?: string,
+    explicitTime?: string
+  ): { dateStr: string; timeStr: string; cityName: string } {
+    const cityLower = (cityNameOrFestivalId || 'gent').toLowerCase();
+    const titleLower = sessionTitle.toLowerCase();
+
+    let cityName = 'Gent';
+    if (cityLower.includes('amsterdam')) cityName = 'Amsterdam';
+    else if (cityLower.includes('denhaag') || cityLower.includes('haag')) cityName = 'Den Haag';
+
+    let dateStr = explicitDate;
+    if (!dateStr) {
+      if (cityName === 'Gent') {
+        if (titleLower.includes('zaterdag')) {
+          dateStr = 'Zaterdag 3 oktober 2026';
+        } else if (titleLower.includes('zondag')) {
+          dateStr = 'Zondag 4 oktober 2026';
+        } else {
+          dateStr = 'Vrijdag 2 oktober 2026';
+        }
+      } else if (cityName === 'Amsterdam') {
+        dateStr = 'Zaterdag 16 januari 2027';
+      } else {
+        // Den Haag
+        if (titleLower.includes('zaterdag')) {
+          dateStr = 'Zaterdag 14 november 2026';
+        } else if (titleLower.includes('zondag')) {
+          dateStr = 'Zondag 15 november 2026';
+        } else {
+          dateStr = 'Vrijdag 13 november 2026';
+        }
+      }
+    }
+
+    let timeStr = explicitTime;
+    if (!timeStr) {
+      const timeMatch = sessionTitle.match(/\b\d{1,2}:\d{2}(?:\s*-\s*\d{1,2}:\d{2})?(?:\s*UUR)?/i);
+      if (timeMatch) {
+        timeStr = timeMatch[0].toUpperCase();
+        if (!timeStr.includes('UUR')) timeStr += ' UUR';
+      } else if (titleLower.includes('avond')) {
+        timeStr = cityName === 'Den Haag' ? '18:30 - 22:30 UUR' : '19:00 - 23:00 UUR';
+      } else if (titleLower.includes('vip')) {
+        timeStr = '13:00 - 17:00 UUR';
+      } else {
+        timeStr = '13:00 - 17:00 UUR';
+      }
+    }
+
+    return { dateStr, timeStr, cityName };
+  }
+
+  /**
    * Save a newly created order
    */
   static async createOrder(order: Omit<StoredOrder, 'tickets'>): Promise<StoredOrder> {
@@ -517,43 +575,12 @@ export class OrdersRepository {
     oldTicket.swappedAt = nowIso;
 
     // 2. Resolve city-specific date and time if not provided
-    const cityLower = (oldTicket.cityName || order.festivalId || 'gent').toLowerCase();
-    const titleLower = params.newSessionTitle.toLowerCase();
-
-    let resolvedDateStr = params.newDateStr;
-    if (!resolvedDateStr) {
-      if (cityLower.includes('gent')) {
-        if (titleLower.includes('zaterdag')) {
-          resolvedDateStr = 'Zaterdag 3 oktober 2026';
-        } else if (titleLower.includes('zondag')) {
-          resolvedDateStr = 'Zondag 4 oktober 2026';
-        } else {
-          resolvedDateStr = 'Vrijdag 2 oktober 2026';
-        }
-      } else if (cityLower.includes('amsterdam')) {
-        resolvedDateStr = 'Zaterdag 16 januari 2027';
-      } else {
-        // Den Haag
-        if (titleLower.includes('zaterdag')) {
-          resolvedDateStr = 'Zaterdag 14 november 2026';
-        } else if (titleLower.includes('zondag')) {
-          resolvedDateStr = 'Zondag 15 november 2026';
-        } else {
-          resolvedDateStr = 'Vrijdag 13 november 2026';
-        }
-      }
-    }
-
-    let resolvedTimeStr = params.newTimeStr;
-    if (!resolvedTimeStr) {
-      if (titleLower.includes('avond')) {
-        resolvedTimeStr = cityLower.includes('denhaag') ? '18:30 - 22:30 UUR' : '19:00 - 23:00 UUR';
-      } else if (titleLower.includes('vip')) {
-        resolvedTimeStr = '13:00 - 17:00 UUR';
-      } else {
-        resolvedTimeStr = '13:00 - 17:00 UUR';
-      }
-    }
+    const { dateStr: resolvedDateStr, timeStr: resolvedTimeStr } = OrdersRepository.resolveSessionDateTime(
+      oldTicket.cityName || order.festivalId || 'gent',
+      params.newSessionTitle,
+      params.newDateStr,
+      params.newTimeStr
+    );
 
     // 3. Generate new ticket code (e.g. #WF-2026-84387-1-R1)
     const baseCode = oldTicket.ticketCode.split('-R')[0];
@@ -692,6 +719,313 @@ export class OrdersRepository {
     }
 
     return { success: true, ticket };
+  }
+
+  /**
+   * Handmatig een ticket of masterclass toevoegen aan een bestaande bestelling (€0,- cadeau / relatiegeschenk)
+   */
+  static async addTicketToOrder(params: {
+    orderNumber: string;
+    sessionTitle: string;
+    attendeeName?: string;
+    cityName?: string;
+    dateStr?: string;
+    timeStr?: string;
+    reason?: string;
+    adminEmail?: string;
+    publicBaseUrl?: string;
+  }): Promise<{
+    success: boolean;
+    error?: string;
+    ticket?: StoredIssuedTicket;
+    order?: StoredOrder;
+  }> {
+    const order = await this.findOrder(params.orderNumber);
+    if (!order) {
+      return { success: false, error: 'Bestelling niet gevonden in het systeem.' };
+    }
+
+    const { dateStr, timeStr, cityName } = OrdersRepository.resolveSessionDateTime(
+      params.cityName || order.festivalId || 'gent',
+      params.sessionTitle,
+      params.dateStr,
+      params.timeStr
+    );
+
+    const ticketIndex = (order.tickets?.length || 0) + 1;
+    const cleanOrderNumber = order.orderNumber.replace('#', '');
+    const ticketCode = `#${cleanOrderNumber}-${ticketIndex}`;
+    const attendeeName = params.attendeeName?.trim() || order.customerName;
+
+    const qrPayload = buildQrPayload({
+      ticketCode,
+      cityName,
+      sessionTitle: params.sessionTitle,
+      attendeeName,
+    });
+
+    const signature = generateTicketSignature(ticketCode, cityName, params.sessionTitle, attendeeName);
+    const cleanCode = ticketCode.replace('#', '');
+    const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${encodeURIComponent(cityName)}&orderNumber=${encodeURIComponent(cleanOrderNumber)}&name=${encodeURIComponent(attendeeName)}&title=${encodeURIComponent(params.sessionTitle)}&date=${encodeURIComponent(dateStr)}&time=${encodeURIComponent(timeStr)}`;
+
+    const nowIso = new Date().toISOString();
+    const newTicket: StoredIssuedTicket = {
+      id: crypto.randomUUID(),
+      orderId: order.id,
+      ticketCode,
+      qrPayload,
+      qrPayloadHash: signature,
+      attendeeName,
+      status: 'valid',
+      sessionTitle: params.sessionTitle,
+      cityName,
+      dateStr,
+      timeStr,
+      pdfUrl,
+      swapReason: params.reason ? `Handmatig toegevoegd: ${params.reason}` : 'Handmatig toegevoegd (€0,- Cadeau / Comp)',
+      createdAt: nowIso,
+    };
+
+    if (!Array.isArray(order.tickets)) {
+      order.tickets = [];
+    }
+    order.tickets.push(newTicket);
+
+    // Also add to order.items so order summaries & emails show the added ticket
+    const isMasterclass = params.sessionTitle.toLowerCase().includes('masterclass');
+    const newItem: StoredOrderItem = {
+      id: crypto.randomUUID(),
+      orderId: order.id,
+      ticketTypeId: `comp-${Date.now()}`,
+      title: params.sessionTitle,
+      quantity: 1,
+      unitPriceCents: 0,
+      category: isMasterclass ? 'masterclass' : 'entree',
+      date: dateStr,
+      time: timeStr,
+      delivery: params.reason ? `Cadeau: ${params.reason}` : 'Handmatig Cadeau (€0,-)',
+    };
+    if (!Array.isArray(order.items)) {
+      order.items = [];
+    }
+    order.items.push(newItem);
+
+    // Ensure order is marked paid
+    if (order.status !== 'paid') {
+      order.status = 'paid';
+      order.paidAt = nowIso;
+    }
+
+    // Persist
+    memoryOrders.set(order.orderNumber, order);
+    memoryOrders.set(order.id, order);
+    saveLocalStore();
+
+    // Persist to DB if connected
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        await db.insert(schema.issuedTickets).values({
+          id: newTicket.id,
+          orderItemId: newItem.id,
+          orderId: order.id,
+          ticketCode: newTicket.ticketCode,
+          qrPayloadHash: newTicket.qrPayloadHash,
+          attendeeName: newTicket.attendeeName,
+          status: newTicket.status,
+          pdfUrl: newTicket.pdfUrl,
+          createdAt: new Date(nowIso),
+        }).onConflictDoNothing();
+      }
+    } catch (e: any) {
+      console.warn('Could not insert manually added ticket in DB:', e.message);
+    }
+
+    // Sync tag update to GHL in background
+    const baseUrl = params.publicBaseUrl || 'https://whiskytix-r1qq.vercel.app';
+    GhlSyncService.syncTicketSwap({
+      customerEmail: order.customerEmail,
+      orderNumber: order.orderNumber,
+      oldSessionTitle: 'Handmatige Toevoeging',
+      newSessionTitle: params.sessionTitle,
+      newDownloadUrl: `${baseUrl}${pdfUrl}`,
+    }).catch((err) => {
+      console.warn('GHL ticket add sync error:', err.message);
+    });
+
+    return { success: true, ticket: newTicket, order };
+  }
+
+  /**
+   * Volledig nieuwe bestelling / gastuitnodiging aanmaken (€0,- comp order)
+   */
+  static async createManualOrder(params: {
+    customerName: string;
+    customerEmail: string;
+    customerPhone?: string;
+    city: 'gent' | 'denhaag' | 'amsterdam';
+    sessionTitle: string;
+    quantity: number;
+    reason: string;
+    notes?: string;
+    adminEmail?: string;
+    dateStr?: string;
+    timeStr?: string;
+    publicBaseUrl?: string;
+  }): Promise<{
+    success: boolean;
+    error?: string;
+    order?: StoredOrder;
+  }> {
+    if (!params.customerName?.trim() || !params.customerEmail?.trim()) {
+      return { success: false, error: 'Klantnaam en e-mailadres zijn verplicht.' };
+    }
+    if (!params.sessionTitle?.trim()) {
+      return { success: false, error: 'Sessie of masterclass titel is verplicht.' };
+    }
+
+    const city = (params.city || 'gent') as 'gent' | 'denhaag' | 'amsterdam';
+    const { dateStr, timeStr, cityName } = OrdersRepository.resolveSessionDateTime(
+      city,
+      params.sessionTitle,
+      params.dateStr,
+      params.timeStr
+    );
+
+    const randomDigits = Math.floor(10000 + Math.random() * 90000);
+    const orderNumber = `#WF-2026-COMP-${randomDigits}`;
+    const orderId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    const qty = Math.max(1, Math.min(Number(params.quantity) || 1, 50));
+    const isMasterclass = params.sessionTitle.toLowerCase().includes('masterclass');
+
+    const orderItem: StoredOrderItem = {
+      id: crypto.randomUUID(),
+      orderId,
+      ticketTypeId: `comp-${city}-${Date.now()}`,
+      title: params.sessionTitle,
+      quantity: qty,
+      unitPriceCents: 0,
+      category: isMasterclass ? 'masterclass' : 'entree',
+      date: dateStr,
+      time: timeStr,
+      delivery: params.reason ? `Uitnodiging: ${params.reason}` : 'Gastuitnodiging (€0,-)',
+    };
+
+    const tickets: StoredIssuedTicket[] = [];
+    const cleanOrderNumber = orderNumber.replace('#', '');
+
+    for (let i = 1; i <= qty; i++) {
+      const ticketCode = `${orderNumber}-${i}`;
+      const attendeeName = qty > 1 ? `${params.customerName.trim()} (Gast ${i})` : params.customerName.trim();
+
+      const qrPayload = buildQrPayload({
+        ticketCode,
+        cityName,
+        sessionTitle: params.sessionTitle,
+        attendeeName,
+      });
+
+      const signature = generateTicketSignature(ticketCode, cityName, params.sessionTitle, attendeeName);
+      const cleanCode = ticketCode.replace('#', '');
+      const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${encodeURIComponent(cityName)}&orderNumber=${encodeURIComponent(cleanOrderNumber)}&name=${encodeURIComponent(attendeeName)}&title=${encodeURIComponent(params.sessionTitle)}&date=${encodeURIComponent(dateStr)}&time=${encodeURIComponent(timeStr)}`;
+
+      tickets.push({
+        id: crypto.randomUUID(),
+        orderId,
+        ticketCode,
+        qrPayload,
+        qrPayloadHash: signature,
+        attendeeName,
+        status: 'valid',
+        sessionTitle: params.sessionTitle,
+        cityName,
+        dateStr,
+        timeStr,
+        pdfUrl,
+        swapReason: `Handmatige uitnodiging: ${params.reason || 'VIP / Gast'}`,
+        createdAt: nowIso,
+      });
+    }
+
+    const order: StoredOrder = {
+      id: orderId,
+      orderNumber,
+      festivalId: city,
+      customerName: params.customerName.trim(),
+      customerEmail: params.customerEmail.trim().toLowerCase(),
+      customerPhone: params.customerPhone?.trim() || undefined,
+      subtotalCents: 0,
+      discountCents: 0,
+      totalCents: 0,
+      status: 'paid',
+      paymentMethod: `comp:${(params.reason || 'gastuitnodiging').toLowerCase()}`,
+      createdAt: nowIso,
+      paidAt: nowIso,
+      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      items: [orderItem],
+      tickets,
+    };
+
+    // Save locally
+    memoryOrders.set(order.orderNumber, order);
+    memoryOrders.set(order.id, order);
+    saveLocalStore();
+
+    // Persist to DB if connected
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        await db.insert(schema.orders).values({
+          id: order.id,
+          orderNumber: order.orderNumber,
+          festivalId: order.festivalId,
+          customerName: order.customerName,
+          customerEmail: order.customerEmail,
+          customerPhone: order.customerPhone || null,
+          subtotalCents: 0,
+          discountCents: 0,
+          totalCents: 0,
+          status: 'paid',
+          paymentMethod: order.paymentMethod,
+          createdAt: new Date(nowIso),
+          expiresAt: new Date(order.expiresAt),
+        }).onConflictDoNothing();
+
+        await db.insert(schema.orderItems).values({
+          id: orderItem.id,
+          orderId: order.id,
+          ticketTypeId: orderItem.ticketTypeId,
+          quantity: orderItem.quantity,
+          unitPriceCents: 0,
+          metadata: JSON.stringify({
+            title: orderItem.title,
+            category: orderItem.category,
+            date: orderItem.date,
+            time: orderItem.time,
+            delivery: orderItem.delivery,
+          }),
+        }).onConflictDoNothing();
+
+        for (const t of tickets) {
+          await db.insert(schema.issuedTickets).values({
+            id: t.id,
+            orderItemId: orderItem.id,
+            orderId: order.id,
+            ticketCode: t.ticketCode,
+            qrPayloadHash: t.qrPayloadHash,
+            attendeeName: t.attendeeName,
+            status: t.status,
+            pdfUrl: t.pdfUrl,
+            createdAt: new Date(nowIso),
+          }).onConflictDoNothing();
+        }
+      }
+    } catch (e: any) {
+      console.warn('Could not insert manual comp order in DB:', e.message);
+    }
+
+    return { success: true, order };
   }
 
   /**

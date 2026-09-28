@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar } from 'lucide-react';
+import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar, Plus, Gift } from 'lucide-react';
 import { Order } from '../data/mockData';
 
 interface OrderDetailDrawerProps {
@@ -67,6 +67,15 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [localTickets, setLocalTickets] = useState<any[] | null>(null);
 
+  // Add comp / gift ticket modal states
+  const [showAddTicketModal, setShowAddTicketModal] = useState<boolean>(false);
+  const [addSession, setAddSession] = useState<string>('Vrijdagavond Entree (19:00 - 23:00)');
+  const [isCustomSession, setIsCustomSession] = useState<boolean>(false);
+  const [customSessionTitle, setCustomSessionTitle] = useState<string>('');
+  const [addAttendeeName, setAddAttendeeName] = useState<string>('');
+  const [addReason, setAddReason] = useState<string>('Cadeau van organisatie');
+  const [isSubmittingAddTicket, setIsSubmittingAddTicket] = useState<boolean>(false);
+
   if (!order) return null;
 
   // Resolve dynamic city theme
@@ -89,7 +98,9 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       'Zaterdagmiddag Sessie (13:00 - 17:00)',
       'Zaterdagavond Sessie (19:00 - 23:00)',
       'Zondagmiddag Sessie (13:00 - 17:00)',
-      'Zondag Masterclass Sessie (13:00 - 17:00)',
+      'Masterclass: Glenfarclas Vintage Tasting - Vrijdag',
+      'Masterclass: Macallan Rare Cask - Zaterdag',
+      'Masterclass: Peat & Smoke Experience - Zondag',
     ],
     denhaag: [
       'Vrijdagavond 19:00 - 23:00',
@@ -98,11 +109,15 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       'Zaterdagavond 18:30 - 22:30',
       'VIP Toegang Zaterdag (Exclusief)',
       'Zondagmiddag 13:00 - 17:00',
+      'Masterclass: Glenfarclas Vintage Tasting',
+      'Masterclass: Islay Peat Exploration',
+      'Masterclass: Sherry Cask Secrets',
     ],
     amsterdam: [
       'Zaterdagmiddag 13:00 - 17:00',
       'Zaterdagavond 18:30 - 22:30',
       'VIP Toegang Zaterdag',
+      'Masterclass: Vintage & Rare Whiskies',
     ],
   };
 
@@ -220,6 +235,52 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
     setLocalTickets(updated);
     showToast(`🚫 Ticket ${ticket.code} is geannuleerd en QR is ongeldig gemaakt.`);
     if (onOrderUpdated) onOrderUpdated();
+  };
+
+  const handleAddTicketSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const finalSession = isCustomSession ? customSessionTitle.trim() : addSession;
+    if (!finalSession) {
+      showToast('⚠️ Vul een geldige sessie of masterclass in.');
+      return;
+    }
+    setIsSubmittingAddTicket(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${encodeURIComponent(order.orderNumber)}/add-ticket`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionTitle: finalSession,
+          attendeeName: addAttendeeName.trim() || order.customerName,
+          reason: addReason.trim() || 'Cadeau van organisatie',
+          cityName: order.cityName || resolvedCityKey,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`🎁 Ticket "${finalSession}" succesvol toegevoegd aan bestelling!`);
+        setShowAddTicketModal(false);
+        setIsCustomSession(false);
+        setCustomSessionTitle('');
+        const newTicket = data.ticket;
+        const updated = [...effectiveTickets, {
+          code: newTicket.ticketCode,
+          type: newTicket.sessionTitle.toLowerCase().includes('masterclass') ? 'Masterclass' : 'Entreeticket',
+          session: newTicket.sessionTitle,
+          attendeeName: newTicket.attendeeName,
+          status: 'valid',
+        }];
+        setLocalTickets(updated);
+        if (onOrderUpdated) onOrderUpdated();
+      } else {
+        showToast(`⚠️ Fout bij toevoegen: ${data.error || 'Onbekende fout'}`);
+      }
+    } catch (err: any) {
+      showToast(`⚠️ Fout bij toevoegen: ${err.message}`);
+    } finally {
+      setIsSubmittingAddTicket(false);
+    }
   };
 
   return (
@@ -429,6 +490,23 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                 })}
               </div>
             )}
+
+            {/* Quick Action: Add Comp / Gift Ticket directly to this order */}
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddAttendeeName(order.customerName);
+                  setAddSession(availableSessions[0] || 'Vrijdagavond Entree (19:00 - 23:00)');
+                  setAddReason('Cadeau / Relatiegeschenk van organisatie');
+                  setShowAddTicketModal(true);
+                }}
+                className="w-full py-2.5 px-3 rounded border-2 border-dashed border-[#006448] bg-[#FAF7F2] hover:bg-[#d8e7e2]/60 text-[#006448] text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[2px_2px_0px_rgba(0,100,72,0.15)] hover:shadow-[2px_2px_0px_rgba(29,28,26,0.8)]"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Ticket / Masterclass Toevoegen (€0,- Cadeau / Comp)</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -551,6 +629,147 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                     className="flex-1 btn-letterpress-gold py-2 rounded text-xs font-extrabold flex items-center justify-center gap-1.5"
                   >
                     {isProcessing ? 'Verwerken...' : '🔄 Bevestig Omruiling'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Ticket of Masterclass toevoegen (€0,- comp / cadeau) */}
+        {showAddTicketModal && (
+          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-[#FAF7F2] border-3 border-[#1D1C1A] rounded-lg shadow-[6px_6px_0px_rgba(29,28,26,0.9)] max-w-md w-full p-5 sm:p-6 animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between pb-3 border-b-2 border-[#1D1C1A] mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded bg-[#006448] border border-[#1D1C1A] flex items-center justify-center text-white">
+                    <Gift className="w-4 h-4 text-[#FAF7F2]" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-[#1D1C1A]">Ticket / Masterclass Toevoegen</h3>
+                    <p className="text-[11px] text-[#4c5752]">€0,- Cadeau of vrijkaart voor {order.customerName}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAddTicketModal(false)}
+                  className="p-1 text-gray-500 hover:text-black rounded cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddTicketSubmit} className="space-y-4">
+                <div className="p-3 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg text-xs space-y-1.5 shadow-[2px_2px_0px_rgba(29,28,26,0.5)]">
+                  <div className="flex justify-between">
+                    <span className="text-[#4c5752] font-semibold">Bestelling:</span>
+                    <strong className="font-sans font-bold text-[#1D1C1A]">{order.orderNumber}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#4c5752] font-semibold">Festival:</span>
+                    <span className="font-bold text-[#006448]">{order.cityName || resolvedCityKey}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#4c5752] font-semibold">Prijs:</span>
+                    <span className="font-extrabold text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded text-[10px] border border-[#8ba198]">€ 0,00 (Kosteloos)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
+                    Sessie of Masterclass:
+                  </label>
+                  {!isCustomSession ? (
+                    <select
+                      value={addSession}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setIsCustomSession(true);
+                          setCustomSessionTitle('');
+                        } else {
+                          setAddSession(e.target.value);
+                        }
+                      }}
+                      className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
+                    >
+                      {availableSessions.map((sess) => (
+                        <option key={sess} value={sess}>
+                          {sess}
+                        </option>
+                      ))}
+                      <option value="__custom__">➕ Aangepaste Masterclass / Sessie intypen...</option>
+                    </select>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        value={customSessionTitle}
+                        onChange={(e) => setCustomSessionTitle(e.target.value)}
+                        placeholder="Bijv. Exclusieve Masterclass Springbank 21yo"
+                        autoFocus
+                        className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomSession(false)}
+                        className="text-[11px] font-bold text-[#006448] hover:underline cursor-pointer"
+                      >
+                        ← Terug naar lijst met standaardsessies
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
+                    Naam op Ticket:
+                  </label>
+                  <input
+                    type="text"
+                    value={addAttendeeName}
+                    onChange={(e) => setAddAttendeeName(e.target.value)}
+                    placeholder="Naam van de bezoeker / gast"
+                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-medium text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
+                  />
+                  <p className="text-[10px] text-[#4c5752] mt-1">Standaard de naam van de hoofdkoper als dit leeg blijft.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase text-[#1D1C1A] mb-1.5">
+                    Reden / Type Cadeau:
+                  </label>
+                  <input
+                    type="text"
+                    value={addReason}
+                    onChange={(e) => setAddReason(e.target.value)}
+                    placeholder="Bijv. Cadeau van organisatie, Zakenrelatie VIP, Spreker"
+                    className="w-full p-2.5 bg-white border-2 border-[#1D1C1A] rounded text-xs font-medium text-[#1D1C1A] focus:outline-none focus:ring-2 focus:ring-[#006448]"
+                  />
+                </div>
+
+                <div className="p-3 bg-[#FCFAF7] border border-[#c1d4ce] rounded text-[11px] text-[#4c5752] space-y-1">
+                  <div className="font-bold text-[#1D1C1A] flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5 text-[#006448]" />
+                    Direct beschikbaar & scanbaar:
+                  </div>
+                  <div>• Het ticket wordt direct toegevoegd aan bestelling <strong>{order.orderNumber}</strong>.</div>
+                  <div>• De bezoeker ziet dit ticket direct in zijn/haar online portaal.</div>
+                  <div>• Voorzien van een officiële HMAC-SHA256 QR-code voor de ingangscontrole.</div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddTicketModal(false)}
+                    className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-white text-xs font-extrabold text-[#1D1C1A] hover:bg-gray-100 shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer"
+                  >
+                    Annuleren
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingAddTicket}
+                    className="flex-1 py-2.5 rounded border-2 border-[#1D1C1A] bg-[#006448] text-white hover:bg-[#005039] text-xs font-black shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmittingAddTicket ? 'Toevoegen...' : '🎁 Ticket Toevoegen'}
                   </button>
                 </div>
               </form>

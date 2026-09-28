@@ -1204,4 +1204,124 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
        return reply.status(500).send({ success: false, error: err.message });
      }
    });
+
+   /**
+    * 12. TICKET OF MASTERCLASS HANDMATIG TOEVOEGEN AAN BESTELLING (€0,- CADEAU / COMP)
+    * POST /api/admin/orders/:orderNumber/add-ticket
+    */
+   server.post('/api/admin/orders/:orderNumber/add-ticket', async (request, reply) => {
+     try {
+       const params = request.params as { orderNumber: string };
+       const body = (request.body || {}) as {
+         sessionTitle?: string;
+         attendeeName?: string;
+         cityName?: string;
+         dateStr?: string;
+         timeStr?: string;
+         reason?: string;
+         adminEmail?: string;
+       };
+
+       const sessionTitle = (body.sessionTitle || '').trim();
+       if (!sessionTitle) {
+         return reply.status(400).send({ success: false, ok: false, error: 'Sessie- of masterclass titel is verplicht.' });
+       }
+
+       const host = request.headers.host || 'localhost:4000';
+       const protocol = request.protocol || 'http';
+       const publicBaseUrl = `${protocol}://${host}`;
+
+       const result = await OrdersRepository.addTicketToOrder({
+         orderNumber: decodeURIComponent(params.orderNumber),
+         sessionTitle,
+         attendeeName: body.attendeeName,
+         cityName: body.cityName,
+         dateStr: body.dateStr,
+         timeStr: body.timeStr,
+         reason: body.reason || 'Cadeau / Relatiegeschenk via beheerder',
+         adminEmail: body.adminEmail || 'beheer@whiskyfestival.nl',
+         publicBaseUrl,
+       });
+
+       if (!result.success) {
+         return reply.status(400).send({ success: false, ok: false, error: result.error });
+       }
+
+       return reply.send({
+         success: true,
+         ok: true,
+         message: `Ticket "${sessionTitle}" succesvol toegevoegd aan bestelling!`,
+         ticket: result.ticket,
+         order: result.order,
+       });
+     } catch (err: any) {
+       server.log.error(err);
+       return reply.status(500).send({ success: false, ok: false, error: err.message });
+     }
+   });
+
+   /**
+    * 13. NIEUWE GASTUITNODIGING / COMP BESTELLING AANMAKEN
+    * POST /api/admin/orders/create-manual
+    */
+   server.post('/api/admin/orders/create-manual', async (request, reply) => {
+     try {
+       const body = (request.body || {}) as {
+         customerName?: string;
+         customerEmail?: string;
+         customerPhone?: string;
+         city?: 'gent' | 'denhaag' | 'amsterdam';
+         sessionTitle?: string;
+         quantity?: number;
+         reason?: string;
+         notes?: string;
+         adminEmail?: string;
+         dateStr?: string;
+         timeStr?: string;
+       };
+
+       if (!body.customerName?.trim()) {
+         return reply.status(400).send({ success: false, ok: false, error: 'Naam van de gast is verplicht.' });
+       }
+       if (!body.customerEmail?.trim()) {
+         return reply.status(400).send({ success: false, ok: false, error: 'E-mailadres van de gast is verplicht.' });
+       }
+       if (!body.sessionTitle?.trim()) {
+         return reply.status(400).send({ success: false, ok: false, error: 'Sessie- of masterclass titel is verplicht.' });
+       }
+
+       const host = request.headers.host || 'localhost:4000';
+       const protocol = request.protocol || 'http';
+       const publicBaseUrl = `${protocol}://${host}`;
+
+       const result = await OrdersRepository.createManualOrder({
+         customerName: body.customerName.trim(),
+         customerEmail: body.customerEmail.trim(),
+         customerPhone: body.customerPhone?.trim(),
+         city: body.city || 'gent',
+         sessionTitle: body.sessionTitle.trim(),
+         quantity: body.quantity || 1,
+         reason: body.reason || 'VIP / Gast',
+         notes: body.notes,
+         adminEmail: body.adminEmail || 'beheer@whiskyfestival.nl',
+         dateStr: body.dateStr,
+         timeStr: body.timeStr,
+         publicBaseUrl,
+       });
+
+       if (!result.success || !result.order) {
+         return reply.status(400).send({ success: false, ok: false, error: result.error });
+       }
+
+       return reply.send({
+         success: true,
+         ok: true,
+         message: `Gastuitnodiging ${result.order.orderNumber} (${result.order.tickets.length}x tickets) succesvol aangemaakt!`,
+         order: result.order,
+       });
+     } catch (err: any) {
+       server.log.error(err);
+       return reply.status(500).send({ success: false, ok: false, error: err.message });
+     }
+   });
  }

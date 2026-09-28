@@ -32,10 +32,11 @@ export function generateTicketSignature(ticketCode: string, cityName: string, se
  * Format: WT1:<ticketCode>:<city>:<session>:<attendeeName>:<10-char-hmac>
  */
 export function buildQrPayload(data: QrTicketData): string {
-  const sig = generateTicketSignature(data.ticketCode, data.cityName, data.sessionTitle, data.attendeeName);
   const cleanCode = data.ticketCode.replace(/^#/, '');
   const cleanName = data.attendeeName.replace(/[:|]/g, ' ');
   const cleanSession = data.sessionTitle.replace(/[:|]/g, ' ');
+  const fullCode = `#${cleanCode}`;
+  const sig = generateTicketSignature(fullCode, data.cityName, cleanSession, cleanName);
   return `WT1:${cleanCode}:${data.cityName}:${cleanSession}:${cleanName}:${sig}`;
 }
 
