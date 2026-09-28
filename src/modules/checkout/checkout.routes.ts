@@ -1228,6 +1228,56 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                environment: p.environment || targetMode,
                tickets,
              });
+              // Also persist into OrdersRepository so tickets can be swapped, cancelled, or added
+              try {
+                const storedTickets: any[] = tickets.map((t) => ({
+                  id: crypto.randomUUID(),
+                  orderId: p.id,
+                  ticketCode: t.code,
+                  qrPayload: "WT1:" + t.code.replace('#', '') + ":" + festId + ":" + t.session + ":" + t.attendeeName,
+                  qrPayloadHash: t.code.replace('#', '').substring(0, 10),
+                  attendeeName: t.attendeeName,
+                  status: t.status,
+                  sessionTitle: t.session,
+                  cityName,
+                  dateStr: t.dateStr || '',
+                  timeStr: t.timeStr || '',
+                  pdfUrl: "/api/tickets/" + t.code.replace('#', '') + "/pdf?city=" + festId,
+                  createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
+                }));
+
+                const storedOrder: any = {
+                  id: p.id,
+                  orderNumber: metaOrderNumber,
+                  festivalId: festId,
+                  customerName: resolvedName,
+                  customerEmail: resolvedEmail,
+                  customerPhone: p.metadata?.customerPhone || undefined,
+                  subtotalCents: amountCents,
+                  discountCents: 0,
+                  totalCents: amountCents,
+                  status: p.status === 'paid' ? 'paid' : (p.status as any),
+                  molliePaymentId: p.id,
+                  paymentMethod: p.method || 'ideal',
+                  createdAt: p.createdAt || new Date().toISOString(),
+                  paidAt: p.paidAt || null,
+                  expiresAt: new Date(Date.now() + 86400000).toISOString(),
+                  items: effectiveItems.map((it) => ({
+                    id: crypto.randomUUID(),
+                    orderId: p.id,
+                    ticketTypeId: festId + "-" + ((it as any).category || 'entree'),
+                    title: it.title,
+                    quantity: it.quantity,
+                    unitPriceCents: 0,
+                    category: (it as any).category || 'entree',
+                    date: (it as any).date,
+                    time: (it as any).time,
+                  })),
+                  tickets: storedTickets,
+                  itemsSummary: cleanSummary,
+                };
+                OrdersRepository.registerSyncedOrder(storedOrder);
+              } catch (_) {}
            } else if (p.status === 'paid' && existing.status !== 'paid') {
              existing.status = 'paid';
            }
@@ -1362,6 +1412,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
        const protocol = request.protocol || 'http';
        const publicBaseUrl = `${protocol}://${host}`;
 
+        const checkTicket = await OrdersRepository.findTicket(decodeURIComponent(params.ticketCode));
+        if (!checkTicket) {
+          await getSyncedOrders({});
+        }
+
        const result = await OrdersRepository.swapTicket({
          ticketCode: decodeURIComponent(params.ticketCode),
          newSessionTitle: targetTitle,
@@ -1403,6 +1458,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
      try {
        const params = request.params as { ticketCode: string };
        const body = (request.body || {}) as { reason?: string };
+
+        const checkCancelTicket = await OrdersRepository.findTicket(decodeURIComponent(params.ticketCode));
+        if (!checkCancelTicket) {
+          await getSyncedOrders({});
+        }
 
        const result = await OrdersRepository.cancelTicket(
          decodeURIComponent(params.ticketCode),
@@ -1449,6 +1509,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
        const host = request.headers.host || 'localhost:4000';
        const protocol = request.protocol || 'http';
        const publicBaseUrl = `${protocol}://${host}`;
+
+        const checkOrder = await OrdersRepository.findOrder(decodeURIComponent(params.orderNumber));
+        if (!checkOrder) {
+          await getSyncedOrders({});
+        }
 
        const result = await OrdersRepository.addTicketToOrder({
          orderNumber: decodeURIComponent(params.orderNumber),
