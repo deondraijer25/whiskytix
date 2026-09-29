@@ -184,7 +184,7 @@ export class OrdersRepository {
     // Only if dateStr is missing, deduce from title and festival city
     if (!dateStr) {
       if (cityName === 'Gent') {
-        if (titleLower.includes('zondag')) {
+        if (titleLower.includes('bowmore') || titleLower.includes('zondag')) {
           dateStr = 'Zondag 4 oktober 2026';
         } else if (titleLower.includes('vrijdag')) {
           dateStr = 'Vrijdag 2 oktober 2026';
@@ -215,7 +215,7 @@ export class OrdersRepository {
         else if (titleLower.includes('laphroaig')) timeStr = '13:30 - 14:15 UUR';
         else if (titleLower.includes('cvh')) timeStr = '12:15 - 13:00 UUR';
         else if (titleLower.includes('fettercairn')) timeStr = '15:00 - 15:45 UUR';
-        else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:15 UUR';
+        else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:30 UUR';
         else if (titleLower.includes('suntory')) timeStr = '15:00 - 15:45 UUR';
         else if (titleLower.includes('boot')) timeStr = '12:00 - 13:00 UUR';
         else if (titleLower.includes('botteling')) timeStr = 'Hele dag';
