@@ -11,6 +11,8 @@ import {
   Info
 } from 'lucide-react';
 import { INITIAL_FESTIVALS } from '../data/mockData';
+import { useEnvironment } from '../context/EnvironmentContext';
+import { MollieEnvToggle } from '../components/MollieEnvToggle';
 
 interface ScannedTicket {
   ticketCode: string;
@@ -24,10 +26,11 @@ interface ScannedTicket {
 
 export const DoorMonitorPage: React.FC = () => {
   const { cityId = 'denhaag' } = useParams<{ cityId?: string }>();
-  const activeFestival = INITIAL_FESTIVALS.find((f) => f.id === cityId) || INITIAL_FESTIVALS[0];
+  const activeFestival = INITIAL_FESTIVALS.find((f: any) => f.id === cityId) || INITIAL_FESTIVALS[0];
 
   const isPrelaunch = activeFestival.id === 'denhaag' || activeFestival.id === 'amsterdam';
 
+  const { env: mollieEnv } = useEnvironment();
   const [tickets, setTickets] = useState<ScannedTicket[]>([]);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -36,10 +39,11 @@ export const DoorMonitorPage: React.FC = () => {
   // Maximum venue capacity per city
   const maxCapacity = activeFestival.id === 'amsterdam' ? 950 : activeFestival.id === 'gent' ? 800 : 1250;
 
-  const fetchDoorData = async () => {
+  const fetchDoorData = async (targetEnv?: 'test' | 'live') => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/tickets');
+      const activeEnv = targetEnv || mollieEnv;
+      const res = await fetch(`/api/admin/tickets?env=${activeEnv}`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.tickets)) {
@@ -54,10 +58,10 @@ export const DoorMonitorPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchDoorData();
-    const interval = setInterval(fetchDoorData, 10000);
+    fetchDoorData(mollieEnv);
+    const interval = setInterval(() => fetchDoorData(mollieEnv), 10000);
     return () => clearInterval(interval);
-  }, [activeFestival.id]);
+  }, [activeFestival.id, mollieEnv]);
 
   // Filter tickets belonging to this festival
   const festivalTickets = isPrelaunch
@@ -160,6 +164,15 @@ export const DoorMonitorPage: React.FC = () => {
                 {isPrelaunch ? 'STANDBY' : 'LIVE VERBONDEN'}
               </span>
             </div>
+            <span
+              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                mollieEnv === 'live'
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : 'bg-amber-100 text-amber-800 border-amber-300'
+              }`}
+            >
+              {mollieEnv === 'live' ? 'Mollie Live Modus' : 'Mollie Testmodus'}
+            </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
             Live Deurmonitor: {activeFestival.name}
@@ -171,6 +184,9 @@ export const DoorMonitorPage: React.FC = () => {
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          {/* Mollie Test / Live Mode Schakelaar */}
+          <MollieEnvToggle onEnvChange={(newEnv) => fetchDoorData(newEnv)} />
+
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
             className="flex-1 sm:flex-initial p-2 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] flex items-center justify-center gap-1.5"
@@ -189,8 +205,8 @@ export const DoorMonitorPage: React.FC = () => {
           </button>
 
           <button
-            onClick={fetchDoorData}
-            className="p-2 bg-[#FAF7F2] hover:bg-[#EAE5DC] text-[#1D1C1A] border-2 border-[#1D1C1A] rounded text-xs font-bold shadow-[2px_2px_0px_rgba(29,28,26,0.8)]"
+            onClick={() => fetchDoorData(mollieEnv)}
+            className="p-2 bg-[#FAF7F2] hover:bg-[#EAE5DC] text-[#1D1C1A] border-2 border-[#1D1C1A] rounded text-xs font-bold shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer"
             title="Verversen"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

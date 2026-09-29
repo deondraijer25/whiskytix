@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { FestivalBadgeLogo } from './FestivalBadgeLogo';
 import { Footer } from './Footer';
+import { MollieEnvToggle } from './MollieEnvToggle';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -148,8 +149,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               })}
             </nav>
 
-            {/* Right: Quick Tools & Profile Dropdown */}
+            {/* Right: Environment Toggle, Quick Tools & Profile Dropdown */}
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              {/* Mollie Test / Live Switcher */}
+              <MollieEnvToggle compact className="hidden sm:inline-flex" />
+
               {/* Quick Scanner PWA Button */}
               <Link
                 to="/scan"
@@ -272,6 +276,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         {/* Mobile menu dropdown */}
         {mobileMenuOpen && (
           <div className="lg:hidden border-t-2 border-[#1D1C1A] bg-[#FCFAF7] p-4 space-y-2 shadow-xl">
+            <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce]">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752]">
+                Omgeving:
+              </span>
+              <MollieEnvToggle compact />
+            </div>
+
             <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752] mb-1">
               Navigatie:
             </div>

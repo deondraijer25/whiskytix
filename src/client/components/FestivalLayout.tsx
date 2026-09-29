@@ -18,6 +18,8 @@ import {
 import { INITIAL_FESTIVALS } from '../data/mockData';
 import { FestivalBadgeLogo } from './FestivalBadgeLogo';
 import { Footer } from './Footer';
+import { useEnvironment } from '../context/EnvironmentContext';
+import { MollieEnvToggle } from './MollieEnvToggle';
 
 const CITY_THEMES: Record<string, {
   primary: string;
@@ -49,10 +51,15 @@ const CITY_THEMES: Record<string, {
   },
 };
 
+interface FestivalLayoutProps {
+  children: React.ReactNode;
+}
+
 export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { cityId = 'denhaag' } = useParams<{ cityId: string }>();
+  const { env: mollieEnv } = useEnvironment();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -61,7 +68,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
   const userDropdownRef = useRef<HTMLDivElement>(null);
 
   const currentFestival =
-    INITIAL_FESTIVALS.find((f) => f.id === cityId) || INITIAL_FESTIVALS[0];
+    INITIAL_FESTIVALS.find((f: any) => f.id === cityId) || INITIAL_FESTIVALS[0];
 
   const theme = CITY_THEMES[cityId] || CITY_THEMES.denhaag;
 
@@ -194,13 +201,24 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                   <span className={`w-2 h-2 rounded-full ${theme.dotColor}`}></span>
                   <span className="hidden md:inline">{currentFestival.name}</span>
                   <span className="md:hidden">{cityId === 'denhaag' ? 'Den Haag' : cityId === 'amsterdam' ? 'Amsterdam' : 'Gent'} Hub</span>
+                  <span
+                    className={`ml-1 hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider border ${
+                      mollieEnv === 'live'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : 'bg-amber-100 text-amber-800 border-amber-300'
+                    }`}
+                  >
+                    {mollieEnv === 'live' ? 'Live' : 'Test'}
+                  </span>
                 </span>
               </div>
             </div>
 
-            {/* Right: City Switcher, Quick Scanner & Profile Dropdown */}
+            {/* Right: Environment Toggle, City Switcher, Quick Scanner & Profile Dropdown */}
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              
+              {/* Mollie Test / Live Switcher */}
+              <MollieEnvToggle compact className="hidden sm:inline-flex" />
+
               {/* Fast City Switcher */}
               <div className="relative" ref={cityDropdownRef}>
                 <button
@@ -223,7 +241,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                     <div className="px-3 py-2 border-b border-[#c1d4ce] text-[10px] font-extrabold uppercase tracking-wider text-[#4c5752]">
                       Kies festival editie:
                     </div>
-                    {INITIAL_FESTIVALS.map((fest) => (
+                    {INITIAL_FESTIVALS.map((fest: any) => (
                       <button
                         key={fest.id}
                         type="button"
@@ -398,10 +416,17 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
           <div className="lg:hidden border-t-2 border-[#1D1C1A] bg-[#FCFAF7] p-4 space-y-2 shadow-xl">
             <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce]">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752]">
+                Modus:
+              </span>
+              <MollieEnvToggle compact />
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce]">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752]">
                 Navigatie {currentFestival.edition}:
               </span>
               <span className={`text-[10px] text-white px-2 py-0.5 rounded font-extrabold ${theme.dotColor}`}>
-                {currentFestival.statusLabel}
+                {mollieEnv === 'live' ? 'Live Verkoop' : 'Testomgeving'}
               </span>
             </div>
 

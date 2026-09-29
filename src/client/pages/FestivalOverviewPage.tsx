@@ -22,6 +22,8 @@ import {
   SessionCapacity,
 } from '../data/mockData';
 import { OrderDetailDrawer } from '../components/OrderDetailDrawer';
+import { useEnvironment } from '../context/EnvironmentContext';
+import { MollieEnvToggle } from '../components/MollieEnvToggle';
 
 const CITY_THEMES: Record<string, {
   primary: string;
@@ -71,17 +73,19 @@ export const FestivalOverviewPage: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const { env: mollieEnv } = useEnvironment();
 
   const theme = CITY_THEMES[cityId] || CITY_THEMES.denhaag;
 
   const activeFestival = useMemo(() => {
-    return INITIAL_FESTIVALS.find((f) => f.id === cityId) || INITIAL_FESTIVALS[0];
+    return INITIAL_FESTIVALS.find((f: any) => f.id === cityId) || INITIAL_FESTIVALS[0];
   }, [cityId]);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (targetEnv?: 'test' | 'live') => {
     setIsLoading(true);
+    const activeEnv = targetEnv || mollieEnv;
     try {
-      const res = await fetch(`/api/admin/orders?festivalId=${cityId}`);
+      const res = await fetch(`/api/admin/orders?festivalId=${cityId}&env=${activeEnv}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.orders)) {
         setOrders(data.orders);
@@ -97,8 +101,8 @@ export const FestivalOverviewPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchOrders();
-  }, [cityId]);
+    fetchOrders(mollieEnv);
+  }, [cityId, mollieEnv]);
 
   // Real paid orders for this festival
   const paidOrders = useMemo(() => {
@@ -120,13 +124,13 @@ export const FestivalOverviewPage: React.FC = () => {
 
   // Real capacity calculation for sessions
   const sessions = useMemo<SessionCapacity[]>(() => {
-    const rawSessions = INITIAL_SESSIONS.filter((s) => s.city === cityId);
-    return rawSessions.map((session) => {
+    const rawSessions = INITIAL_SESSIONS.filter((s: any) => s.city === cityId);
+    return rawSessions.map((session: any) => {
       // Calculate how many tickets were sold for this specific session
       let soldCount = 0;
       paidOrders.forEach((o) => {
         if (Array.isArray(o.tickets)) {
-          o.tickets.forEach((t) => {
+          o.tickets.forEach((t: any) => {
             if (t.session && t.session.toLowerCase().includes(session.name.toLowerCase().replace(' sessie', ''))) {
               soldCount++;
             }
@@ -158,8 +162,8 @@ export const FestivalOverviewPage: React.FC = () => {
             <span
               className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border-2 border-[#1D1C1A] bg-[#FCFAF7] text-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)] flex items-center gap-1.5"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${isPrelaunch ? 'bg-amber-500' : 'bg-emerald-600'}`}></span>
-              {isPrelaunch ? 'In Voorbereiding' : 'Mollie Actief'}
+              <span className={`w-1.5 h-1.5 rounded-full ${isPrelaunch ? 'bg-amber-500' : mollieEnv === 'live' ? 'bg-emerald-600' : 'bg-amber-500'}`}></span>
+              {isPrelaunch ? 'In Voorbereiding' : mollieEnv === 'live' ? 'Mollie Live Actief' : 'Mollie Testmodus'}
             </span>
           </div>
           <h1 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-sm">
@@ -168,13 +172,18 @@ export const FestivalOverviewPage: React.FC = () => {
           <p className="text-xs sm:text-sm text-[#FAF7F2]/90 mt-1 font-medium">
             {isPrelaunch
               ? 'Deze festivaleditie staat momenteel in voorbereiding. De kaartverkoop is nog niet gestart.'
-              : 'Realtime inzicht in omzet, zaalcapaciteit en bestellingen via Mollie.'}
+              : mollieEnv === 'live'
+              ? 'Realtime inzicht in live omzet, zaalcapaciteit en echte bestellingen via Mollie.'
+              : 'Testmodus actief: inzicht in proefbetalingen, testorders en voorlopige capaciteit.'}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap">
+          {/* Mollie Test / Live Mode Schakelaar */}
+          <MollieEnvToggle onEnvChange={(newEnv) => fetchOrders(newEnv)} />
+
           <button
-            onClick={fetchOrders}
+            onClick={() => fetchOrders(mollieEnv)}
             disabled={isLoading}
             className="p-2.5 rounded border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer disabled:opacity-50 transition-all active:translate-y-0.5"
             title="Ververs gegevens"
@@ -231,7 +240,7 @@ export const FestivalOverviewPage: React.FC = () => {
             Totaalscore {activeFestival.name}
           </h2>
           <span className="text-[10px] sm:text-xs text-[#4c5752] font-bold">
-            {isPrelaunch ? 'Pre-launch' : 'Mollie Live Gekoppeld'}
+            {isPrelaunch ? 'Pre-launch' : mollieEnv === 'live' ? 'Mollie Live Gekoppeld' : 'Mollie Testmodus'}
           </span>
         </div>
 
@@ -428,7 +437,9 @@ export const FestivalOverviewPage: React.FC = () => {
               <div className="text-xs text-[#4c5752] mt-1 font-medium max-w-sm mx-auto">
                 {isPrelaunch
                   ? 'De kaartverkoop voor deze editie is nog in voorbereiding.'
-                  : 'Zodra de eerste bezoeker via Mollie afrekent, verschijnt deze hier direct.'}
+                  : mollieEnv === 'live'
+                  ? 'Zodra de eerste bezoeker via Mollie Live afrekent, verschijnt deze hier direct.'
+                  : 'Nog geen testbestellingen gevonden. Schakel naar Mollie Live of plaats een proeforder.'}
               </div>
             </div>
           ) : (
@@ -449,13 +460,13 @@ export const FestivalOverviewPage: React.FC = () => {
                     const ticketCount = (() => {
                       const tCount = order.tickets ? order.tickets.length : 0;
                       const summaryCount = order.itemsSummary
-                        ? order.itemsSummary.split(',').reduce((sum, p) => {
+                        ? order.itemsSummary.split(',').reduce((sum: number, p: string) => {
                             const m = p.match(/(\d+)x/i);
                             return sum + (m ? parseInt(m[1], 10) : 1);
                           }, 0)
                         : 0;
                       const itemsCount = Array.isArray(order.items)
-                        ? order.items.reduce((sum, it) => sum + (Number(it.quantity || it.qty) || 1), 0)
+                        ? order.items.reduce((sum: number, it: any) => sum + (Number(it.quantity || it.qty) || 1), 0)
                         : 0;
                       return Math.max(tCount, summaryCount, itemsCount, 1);
                     })();

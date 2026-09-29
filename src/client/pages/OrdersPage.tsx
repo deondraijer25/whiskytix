@@ -98,16 +98,20 @@ export const OrdersPage: React.FC = () => {
             if (prev) {
               const fresh = data.orders.find(
                 (o: Order) =>
-                  o.orderNumber === prev.orderNumber ||
-                  o.orderNumber.replace('#', '') === prev.orderNumber.replace('#', '')
+                  Boolean(o.orderNumber && prev.orderNumber && (
+                    o.orderNumber === prev.orderNumber ||
+                    o.orderNumber.replace('#', '') === prev.orderNumber.replace('#', '')
+                  ))
               );
               return fresh || prev;
             }
             if (openOrderParam) {
               const found = data.orders.find(
                 (o: Order) =>
-                  o.orderNumber === openOrderParam ||
-                  o.orderNumber.replace('#', '') === openOrderParam.replace('#', '')
+                  Boolean(o.orderNumber && (
+                    o.orderNumber === openOrderParam ||
+                    o.orderNumber.replace('#', '') === openOrderParam.replace('#', '')
+                  ))
               );
               return found || null;
             }
@@ -131,11 +135,12 @@ export const OrdersPage: React.FC = () => {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
+      const q = searchQuery.toLowerCase();
       const matchesSearch =
-        o.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        o.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        o.customerEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (o.customerPhone && o.customerPhone.toLowerCase().includes(searchQuery.toLowerCase()));
+        (o.orderNumber || '').toLowerCase().includes(q) ||
+        (o.customerName || '').toLowerCase().includes(q) ||
+        (o.customerEmail || '').toLowerCase().includes(q) ||
+        (o.customerPhone ? o.customerPhone.toLowerCase().includes(q) : false);
 
       const matchesCity = effectiveCity === 'all' || o.city === effectiveCity;
       const matchesStatus = selectedStatus === 'all' || o.status === selectedStatus;
@@ -147,7 +152,7 @@ export const OrdersPage: React.FC = () => {
   const totalRevenueCents = useMemo(() => {
     return filteredOrders
       .filter((o) => o.status === 'paid')
-      .reduce((acc, o) => acc + o.totalCents, 0);
+      .reduce((acc, o) => acc + (o.totalCents || 0), 0);
   }, [filteredOrders]);
 
   const isPrelaunch = effectiveCity === 'denhaag' || effectiveCity === 'amsterdam';
@@ -160,6 +165,15 @@ export const OrdersPage: React.FC = () => {
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-widest px-2 py-0.5 rounded border ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}>
               {activeFestival ? `${activeFestival.edition} • Klantenbeheer` : 'Klanten & Bestellingen'}
+            </span>
+            <span
+              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                mollieEnv === 'live'
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : 'bg-amber-100 text-amber-800 border-amber-300'
+              }`}
+            >
+              {mollieEnv === 'live' ? 'Mollie Live Modus' : 'Mollie Testmodus'}
             </span>
             <span className="text-xs text-[#4c5752] font-semibold">
               • Realtime Mollie Transacties
@@ -174,6 +188,9 @@ export const OrdersPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 text-xs font-bold text-[#4c5752] w-full md:w-auto justify-between md:justify-end flex-wrap">
+          {/* Mollie Test / Live Mode Schakelaar */}
+          <MollieEnvToggle onEnvChange={(newEnv) => fetchOrders(newEnv)} />
+
           <button
             onClick={() => {
               const defaultCity = (effectiveCity === 'amsterdam' || effectiveCity === 'denhaag') ? effectiveCity : 'gent';
@@ -191,7 +208,7 @@ export const OrdersPage: React.FC = () => {
           </button>
 
           <button
-            onClick={fetchOrders}
+            onClick={() => fetchOrders(mollieEnv)}
             disabled={isLoading}
             className="p-2 rounded border-2 border-[#1D1C1A] bg-[#FAF7F2] text-[#1D1C1A] hover:bg-[#d8e7e2] shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer disabled:opacity-50"
             title="Ververs bestellingen"
@@ -202,7 +219,7 @@ export const OrdersPage: React.FC = () => {
             Aantal: <strong className={theme.textPrimary}>{filteredOrders.length}</strong> orders
           </span>
           <span className={`border px-3 py-1.5 rounded ${theme.badgeBg} ${theme.badgeBorder} ${theme.badgeText}`}>
-            Omzet: <strong>€ {(totalRevenueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+            Omzet: <strong>€ {((totalRevenueCents || 0) / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
           </span>
         </div>
       </div>
@@ -264,7 +281,9 @@ export const OrdersPage: React.FC = () => {
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-8 text-center text-[#4c5752] font-medium text-xs shadow-[3px_3px_0px_rgba(29,28,26,0.9)]">
             {isPrelaunch
               ? 'Nog geen bestellingen voor deze editie. De kaartverkoop start binnenkort.'
-              : 'Geen bestellingen gevonden die voldoen aan de zoekcriteria.'}
+              : mollieEnv === 'live'
+              ? 'Nog geen live bestellingen gevonden via Mollie Live.'
+              : 'Geen testbestellingen gevonden die voldoen aan de zoekcriteria.'}
           </div>
         ) : (
           filteredOrders.map((order) => (
@@ -322,7 +341,9 @@ export const OrdersPage: React.FC = () => {
           <div className="p-12 text-center text-[#4c5752] font-medium text-xs">
             {isPrelaunch
               ? 'Nog geen bestellingen voor deze editie. De kaartverkoop start binnenkort.'
-              : 'Geen bestellingen gevonden die voldoen aan de zoekcriteria.'}
+              : mollieEnv === 'live'
+              ? 'Nog geen live bestellingen gevonden via Mollie Live.'
+              : 'Geen testbestellingen gevonden die voldoen aan de zoekcriteria.'}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -382,7 +403,7 @@ export const OrdersPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 px-4 font-extrabold text-[#1D1C1A]">
-                      € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
+                      € {((order.totalCents || 0) / 100).toFixed(2).replace('.', ',')}
                     </td>
                     <td className="py-3 px-4 text-[#4c5752] whitespace-nowrap">
                       {formatOrderDate(order.createdAt)}
@@ -422,7 +443,7 @@ export const OrdersPage: React.FC = () => {
         order={selectedOrder}
         cityId={cityId || (effectiveCity !== 'all' ? effectiveCity : undefined)}
         onClose={() => setSelectedOrder(null)}
-        onOrderUpdated={fetchOrders}
+        onOrderUpdated={() => fetchOrders(mollieEnv)}
       />
     </div>
   );

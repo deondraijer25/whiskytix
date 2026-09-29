@@ -15,6 +15,8 @@ import {
   ArrowLeftRight
 } from 'lucide-react';
 import { INITIAL_FESTIVALS } from '../data/mockData';
+import { useEnvironment } from '../context/EnvironmentContext';
+import { MollieEnvToggle } from '../components/MollieEnvToggle';
 
 interface MonitorTicket {
   id: string;
@@ -36,6 +38,8 @@ interface MonitorTicket {
   checkedInAt?: string | null;
   swapReason?: string;
   swappedAt?: string;
+  swappedToTicketId?: string;
+  swappedToTicketCode?: string;
   createdAt: string;
 }
 
@@ -46,6 +50,7 @@ export const TicketsMonitorPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedCity, setSelectedCity] = useState(cityId || 'all');
+  const { env: mollieEnv } = useEnvironment();
 
   // Modals
   const [swapModalTicket, setSwapModalTicket] = useState<MonitorTicket | null>(null);
@@ -56,13 +61,14 @@ export const TicketsMonitorPage: React.FC = () => {
 
   const [inspectQrTicket, setInspectQrTicket] = useState<MonitorTicket | null>(null);
 
-  const activeFestival = cityId ? INITIAL_FESTIVALS.find((f) => f.id === cityId) : null;
+  const activeFestival = cityId ? INITIAL_FESTIVALS.find((f: any) => f.id === cityId) : null;
   const effectiveCity = cityId || selectedCity;
 
-  const fetchTickets = async () => {
+  const fetchTickets = async (targetEnv?: 'test' | 'live') => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/tickets');
+      const activeEnv = targetEnv || mollieEnv;
+      const res = await fetch(`/api/admin/tickets?env=${activeEnv}`);
       if (res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.tickets)) {
@@ -77,10 +83,10 @@ export const TicketsMonitorPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchTickets();
-    const interval = setInterval(fetchTickets, 10000);
+    fetchTickets(mollieEnv);
+    const interval = setInterval(() => fetchTickets(mollieEnv), 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [mollieEnv]);
 
   // City matcher helper
   const isMatchingCity = (t: MonitorTicket) => {
@@ -174,11 +180,20 @@ export const TicketsMonitorPage: React.FC = () => {
       {/* Header */}
       <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-6 shadow-[5px_5px_0px_rgba(29,28,26,0.9)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs font-extrabold uppercase tracking-widest text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
               {activeFestival ? `${activeFestival.name} • Barcode Engine` : 'Centrale Barcode & PDF Monitor'}
             </span>
             <span className="text-xs text-[#4c5752] font-semibold">• HMAC-SHA256 Beveiligd</span>
+            <span
+              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                mollieEnv === 'live'
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : 'bg-amber-100 text-amber-800 border-amber-300'
+              }`}
+            >
+              {mollieEnv === 'live' ? 'Mollie Live Modus' : 'Mollie Testmodus'}
+            </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
             Ticket & QR-Code Generator Monitor
@@ -188,13 +203,18 @@ export const TicketsMonitorPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={fetchTickets}
-          className="flex items-center gap-2 bg-[#FAF7F2] hover:bg-[#EAE5DC] text-[#1D1C1A] px-3.5 py-2 rounded border-2 border-[#1D1C1A] text-xs font-bold transition shadow-[2px_2px_0px_rgba(29,28,26,0.8)]"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Verversen
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Mollie Test / Live Mode Schakelaar */}
+          <MollieEnvToggle onEnvChange={(newEnv) => fetchTickets(newEnv)} />
+
+          <button
+            onClick={() => fetchTickets(mollieEnv)}
+            className="flex items-center gap-2 bg-[#FAF7F2] hover:bg-[#EAE5DC] text-[#1D1C1A] px-3.5 py-2 rounded border-2 border-[#1D1C1A] text-xs font-bold transition shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Verversen
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}

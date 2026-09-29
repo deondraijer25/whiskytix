@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Layers, AlertCircle, CheckCircle, Edit3, Lock, Unlock, Users, Plus, Save } from 'lucide-react';
 import { INITIAL_SESSIONS, INITIAL_FESTIVALS, SessionCapacity } from '../data/mockData';
+import { useEnvironment } from '../context/EnvironmentContext';
+import { MollieEnvToggle } from '../components/MollieEnvToggle';
 
 export const InventoryPage: React.FC = () => {
   const { cityId } = useParams<{ cityId?: string }>();
@@ -11,15 +13,16 @@ export const InventoryPage: React.FC = () => {
   );
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [tempCapacity, setTempCapacity] = useState<number>(0);
+  const { env: mollieEnv } = useEnvironment();
 
   const effectiveCity = (cityId as any) || selectedCity;
-  const activeFestival = INITIAL_FESTIVALS.find((f) => f.id === effectiveCity);
+  const activeFestival = INITIAL_FESTIVALS.find((f: any) => f.id === effectiveCity);
 
-  useEffect(() => {
-    const fetchLiveCapacity = async () => {
-      try {
-        const res = await fetch(`/api/admin/orders?city=${effectiveCity}`);
-        if (res.ok) {
+  const fetchLiveCapacity = async (targetEnv?: 'test' | 'live') => {
+    const activeEnv = targetEnv || mollieEnv;
+    try {
+      const res = await fetch(`/api/admin/orders?city=${effectiveCity}&env=${activeEnv}`);
+      if (res.ok) {
           const data = await res.json();
           if (data && Array.isArray(data.orders)) {
             const paid = data.orders.filter((o: any) => o.status === 'paid');
@@ -49,8 +52,10 @@ export const InventoryPage: React.FC = () => {
         console.error('Kon live capaciteit niet ophalen:', err);
       }
     };
-    fetchLiveCapacity();
-  }, [effectiveCity]);
+
+  useEffect(() => {
+    fetchLiveCapacity(mollieEnv);
+  }, [effectiveCity, mollieEnv]);
 
   const filteredSessions = sessions.filter((s) => s.city === effectiveCity);
   const regularAndVip = filteredSessions.filter((s) => s.category !== 'masterclass');
@@ -79,9 +84,18 @@ export const InventoryPage: React.FC = () => {
       {/* Header */}
       <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-6 shadow-[5px_5px_0px_rgba(29,28,26,0.9)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs font-extrabold uppercase tracking-widest text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
               {activeFestival ? `${activeFestival.edition} • Capaciteit` : 'Voorraad & Toegangscontrole'}
+            </span>
+            <span
+              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                mollieEnv === 'live'
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  : 'bg-amber-100 text-amber-800 border-amber-300'
+              }`}
+            >
+              {mollieEnv === 'live' ? 'Mollie Live Modus' : 'Mollie Testmodus'}
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
@@ -92,28 +106,33 @@ export const InventoryPage: React.FC = () => {
           </p>
         </div>
 
-        {/* City Filter Tabs (only shown if not in a festival route) */}
-        {!cityId && (
-          <div className="flex items-center gap-1 bg-[#FAF7F2] p-1.5 rounded border-2 border-[#1D1C1A] w-full sm:w-auto overflow-x-auto">
-            {[
-              { id: 'denhaag', label: 'Den Haag' },
-              { id: 'amsterdam', label: 'Amsterdam' },
-              { id: 'gent', label: 'Gent' },
-            ].map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelectedCity(c.id as any)}
-                className={`flex-1 sm:flex-initial px-3 py-1.5 rounded text-xs font-extrabold uppercase tracking-wider transition-all text-center ${
-                  selectedCity === c.id
-                    ? 'bg-[#006448] text-white shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
-                    : 'text-[#4c5752] hover:text-[#1D1C1A]'
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Mollie Test / Live Mode Schakelaar */}
+          <MollieEnvToggle onEnvChange={(newEnv) => fetchLiveCapacity(newEnv)} />
+
+          {/* City Filter Tabs (only shown if not in a festival route) */}
+          {!cityId && (
+            <div className="flex items-center gap-1 bg-[#FAF7F2] p-1.5 rounded border-2 border-[#1D1C1A] w-full sm:w-auto overflow-x-auto">
+              {[
+                { id: 'denhaag', label: 'Den Haag' },
+                { id: 'amsterdam', label: 'Amsterdam' },
+                { id: 'gent', label: 'Gent' },
+              ].map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCity(c.id as any)}
+                  className={`flex-1 sm:flex-initial px-3 py-1.5 rounded text-xs font-extrabold uppercase tracking-wider transition-all text-center ${
+                    selectedCity === c.id
+                      ? 'bg-[#006448] text-white shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                      : 'text-[#4c5752] hover:text-[#1D1C1A]'
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Hoofdsessies Section */}
