@@ -1082,6 +1082,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
      status: 'valid' | 'checked_in' | 'cancelled' | 'swapped';
      replacedBy?: string;
      swappedToTicketCode?: string;
+     swapReason?: string;
      dateStr?: string;
      timeStr?: string;
    }
@@ -1104,6 +1105,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          status: t.status,
          replacedBy: t.swappedToTicketCode ? t.swappedToTicketCode.replace(/^#+/, '') : (t as any).replacedBy ? String((t as any).replacedBy).replace(/^#+/, '') : undefined,
          swappedToTicketCode: t.swappedToTicketCode,
+          swapReason: (t as any).swapReason,
          dateStr: t.dateStr,
          timeStr: t.timeStr,
        })) : [];
@@ -1123,7 +1125,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
              type: 'Entreeticket',
              session: summary.replace(/^\d+x\s*/, ''),
              attendeeName: o.customerName || 'Bezoeker',
-             status: o.status === 'paid' ? 'valid' : 'cancelled',
+             status: (o.status === 'paid' || o.status === 'pending') ? 'valid' : (o.status === 'refunded' || o.status === 'failed') ? 'cancelled' : 'valid',
            });
          }
        }
@@ -1205,7 +1207,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                    type: typeLabel,
                    session: it.title,
                    attendeeName: resolvedName,
-                   status: p.status === 'paid' ? 'valid' : 'cancelled',
+                   status: (p.status === 'paid' || p.status === 'authorized' || p.status === 'open' || p.status === 'pending') ? 'valid' : (p.status === 'refunded' || p.status === 'canceled' || p.status === 'failed') ? 'cancelled' : 'valid',
                    dateStr: OrdersRepository.resolveSessionDateTime(festId, it.title, (it as any).date, (it as any).time).dateStr,
                    timeStr: OrdersRepository.resolveSessionDateTime(festId, it.title, (it as any).date, (it as any).time).timeStr,
                  });
@@ -1278,9 +1280,32 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 };
                 OrdersRepository.registerSyncedOrder(storedOrder);
               } catch (_) {}
-           } else if (p.status === 'paid' && existing.status !== 'paid') {
-             existing.status = 'paid';
-           }
+           } else if (p.status === 'paid') {
+              if (existing.status !== 'paid') {
+                existing.status = 'paid';
+              }
+              // Ensure all tickets for paid order are valid (unless explicitly swapped/cancelled with reason)
+              if (Array.isArray(existing.tickets)) {
+                for (const t of existing.tickets) {
+                  if (t.status !== 'swapped' && !t.swapReason) {
+                    t.status = 'valid';
+                  }
+                }
+              }
+              const repoOrder = await OrdersRepository.findOrder(metaOrderNumber);
+              if (repoOrder) {
+                repoOrder.status = 'paid';
+                repoOrder.paidAt = p.paidAt || new Date().toISOString();
+                if (Array.isArray(repoOrder.tickets)) {
+                  for (const t of repoOrder.tickets) {
+                    if (t.status !== 'swapped' && !t.swapReason) {
+                      t.status = 'valid';
+                    }
+                  }
+                }
+                OrdersRepository.registerSyncedOrder(repoOrder);
+              }
+            }
          }
        }
      } catch (syncErr: any) {

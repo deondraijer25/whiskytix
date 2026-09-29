@@ -144,6 +144,19 @@ export class OrdersRepository {
       memoryOrders.set(order.orderNumber, order);
       memoryOrders.set(order.id, order);
       saveLocalStore();
+    } else {
+      if (order.status === 'paid') {
+        existing.status = 'paid';
+        if (order.paidAt) existing.paidAt = order.paidAt;
+        if (Array.isArray(existing.tickets)) {
+          for (const t of existing.tickets) {
+            if (t.status === 'cancelled' && !t.swapReason) {
+              t.status = 'valid';
+            }
+          }
+        }
+        saveLocalStore();
+      }
     }
   }
 
@@ -405,6 +418,14 @@ export class OrdersRepository {
 
     order.status = 'paid';
     order.paidAt = new Date().toISOString();
+    // Auto-heal falsely cancelled tickets upon payment confirmation
+    if (Array.isArray(order.tickets)) {
+      for (const t of order.tickets) {
+        if (t.status === 'cancelled' && !t.swapReason) {
+          t.status = 'valid';
+        }
+      }
+    }
     if (paymentDetails?.paymentMethod) {
       order.paymentMethod = paymentDetails.paymentMethod;
     }

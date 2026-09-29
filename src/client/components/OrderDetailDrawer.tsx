@@ -136,7 +136,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
             type: isMc ? 'Masterclass' : 'Entreeticket',
             session: title,
             attendeeName: order.customerName,
-            status: order.status === 'paid' ? 'valid' : 'cancelled',
+            status: order.status === 'paid' ? 'valid' : order.status === 'refunded' ? 'cancelled' : 'valid',
           });
           ticketIndex++;
         }
@@ -145,6 +145,16 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
         return parsed;
       }
     }
+    // Auto-heal: If order is paid, any ticket without an explicit cancel reason is valid
+    if (order.status === 'paid') {
+      base = base.map((t: any) => {
+        if (t.status === 'cancelled' && !t.swapReason) {
+          return { ...t, status: 'valid' };
+        }
+        return t;
+      });
+    }
+
     return base;
   }, [order, localTickets]);
 
