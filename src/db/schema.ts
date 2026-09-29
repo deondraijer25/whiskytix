@@ -1,7 +1,7 @@
 import { pgTable, text, timestamp, integer, boolean, uuid, index, pgEnum } from 'drizzle-orm/pg-core';
 
 export const festivalIdEnum = pgEnum('festival_id', ['denhaag', 'gent', 'amsterdam']);
-export const orderStatusEnum = pgEnum('order_status', ['pending', 'paid', 'expired', 'failed', 'refunded']);
+export const orderStatusEnum = pgEnum('order_status', ['pending', 'paid', 'expired', 'failed', 'refunded', 'cancelled']);
 export const ticketStatusEnum = pgEnum('ticket_status', ['valid', 'checked_in', 'cancelled', 'swapped']);
 export const discountTypeEnum = pgEnum('discount_type', ['percentage', 'fixed_amount']);
 export const userRoleEnum = pgEnum('user_role', ['admin', 'organizer', 'scanner']);

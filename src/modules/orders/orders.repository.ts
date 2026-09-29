@@ -53,7 +53,7 @@ export interface StoredOrder {
   subtotalCents: number;
   discountCents: number;
   totalCents: number;
-  status: 'pending' | 'paid' | 'expired' | 'failed' | 'refunded';
+  status: 'pending' | 'paid' | 'expired' | 'failed' | 'refunded' | 'cancelled';
   molliePaymentId?: string | null;
   paymentMethod?: string | null;
   createdAt: string;
@@ -148,13 +148,7 @@ export class OrdersRepository {
       if (order.status === 'paid') {
         existing.status = 'paid';
         if (order.paidAt) existing.paidAt = order.paidAt;
-        if (Array.isArray(existing.tickets)) {
-          for (const t of existing.tickets) {
-            if (t.status === 'cancelled' && !t.swapReason) {
-              t.status = 'valid';
-            }
-          }
-        }
+        // Preserve ticket cancellation & swap statuses during sync
         saveLocalStore();
       }
     }
@@ -256,6 +250,84 @@ export class OrdersRepository {
   }
 
   /**
+   * Ensure order has issued tickets generated for all its items
+   */
+  static ensureOrderTickets(order: StoredOrder): StoredIssuedTicket[] {
+    if (!order) return [];
+    if (Array.isArray(order.tickets) && order.tickets.length > 0) {
+      return order.tickets;
+    }
+
+    const tickets: StoredIssuedTicket[] = [];
+    let ticketCounter = 1;
+    const cleanOrderNumber = (order.orderNumber || 'WF').replace(/^#+/, '');
+    const cityName = order.festivalId || 'gent';
+    const attendeeName = order.customerName || 'Bezoeker';
+
+    const items = (Array.isArray(order.items) && order.items.length > 0)
+      ? order.items
+      : parseItemsSummary(order.itemsSummary).map((it) => ({
+          id: crypto.randomUUID(),
+          orderId: order.id,
+          ticketTypeId: 'ticket',
+          title: it.title,
+          quantity: it.quantity,
+          unitPriceCents: 0,
+        }));
+
+    for (const item of items) {
+      const qty = Number(item.quantity || (item as any).qty || 1);
+      const sessionTitle = item.title || 'ENTREE SESSIE';
+      for (let q = 0; q < qty; q++) {
+        const ticketCode = `#${cleanOrderNumber}-${ticketCounter}`;
+        ticketCounter++;
+
+        const qrPayload = buildQrPayload({
+          ticketCode,
+          cityName,
+          sessionTitle,
+          attendeeName,
+        });
+
+        const resolved = OrdersRepository.resolveSessionDateTime(
+          cityName,
+          sessionTitle,
+          (item as any).date,
+          (item as any).timeslot || (item as any).time
+        );
+        const inferredDate = resolved.dateStr;
+        const inferredTime = resolved.timeStr;
+
+        const signature = generateTicketSignature(ticketCode, cityName, sessionTitle, attendeeName);
+        const cleanCode = ticketCode.replace(/^#+/, '');
+        const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${cityName}&orderNumber=${cleanOrderNumber}&name=${encodeURIComponent(attendeeName)}&title=${encodeURIComponent(sessionTitle)}&time=${encodeURIComponent(inferredTime)}&date=${encodeURIComponent(inferredDate)}`;
+
+        tickets.push({
+          id: crypto.randomUUID(),
+          orderId: order.id,
+          ticketCode,
+          qrPayload,
+          qrPayloadHash: signature,
+          attendeeName,
+          status: order.status === 'cancelled' ? 'cancelled' : 'valid',
+          sessionTitle,
+          cityName,
+          dateStr: inferredDate,
+          timeStr: inferredTime,
+          pdfUrl,
+          createdAt: order.createdAt || new Date().toISOString(),
+        });
+      }
+    }
+
+    order.tickets = tickets;
+    memoryOrders.set(order.orderNumber, order);
+    memoryOrders.set(order.id, order);
+    saveLocalStore();
+    return tickets;
+  }
+
+  /**
    * Save a newly created order
    */
   static async createOrder(order: Omit<StoredOrder, 'tickets'>): Promise<StoredOrder> {
@@ -263,6 +335,9 @@ export class OrdersRepository {
       ...order,
       tickets: [],
     };
+
+    // Immediately generate authentic tickets for all items
+    this.ensureOrderTickets(fullOrder);
 
     // Store in local memory and file
     memoryOrders.set(fullOrder.orderNumber, fullOrder);
@@ -330,7 +405,12 @@ export class OrdersRepository {
   static async findOrder(identifier: string): Promise<StoredOrder | null> {
     const normalized = identifier.startsWith('#') ? identifier : `#${identifier}`;
     let order = memoryOrders.get(normalized) || memoryOrders.get(identifier);
-    if (order) return order;
+    if (order) {
+      if (order.tickets.length === 0 && Array.isArray(order.items) && order.items.length > 0) {
+        this.ensureOrderTickets(order);
+      }
+      return order;
+    }
 
     try {
       const dbStatus = await checkDbConnection();
@@ -418,14 +498,7 @@ export class OrdersRepository {
 
     order.status = 'paid';
     order.paidAt = new Date().toISOString();
-    // Auto-heal falsely cancelled tickets upon payment confirmation
-    if (Array.isArray(order.tickets)) {
-      for (const t of order.tickets) {
-        if (t.status === 'cancelled' && !t.swapReason) {
-          t.status = 'valid';
-        }
-      }
-    }
+    // Preserve explicit cancellation statuses upon payment confirmation
     if (paymentDetails?.paymentMethod) {
       order.paymentMethod = paymentDetails.paymentMethod;
     }
@@ -525,27 +598,45 @@ export class OrdersRepository {
     const normalized = ticketCode.startsWith('#') ? ticketCode : `#${ticketCode}`;
     const clean = ticketCode.replace(/^#/, '');
 
-    // 1. Search in memory cache
+    // 1. Search in memory cache across all orders
     for (const order of memoryOrders.values()) {
-      const ticket = order.tickets.find((t) => t.ticketCode === normalized || t.ticketCode === clean || t.ticketCode.replace(/^#/, '') === clean);
-      if (ticket) {
-        return { order, ticket };
+      if (Array.isArray(order.tickets)) {
+        const ticket = order.tickets.find((t) =>
+          t.ticketCode === normalized ||
+          t.ticketCode === clean ||
+          t.ticketCode.replace(/^#/, '') === clean
+        );
+        if (ticket) {
+          return { order, ticket };
+        }
       }
     }
 
-    // 2. Try parsing order number from ticket code (e.g. WF-2026-84387-1 -> #WF-2026-84387)
-    const orderNumberPart = clean.replace(/-\d+$/, '');
+    // 2. Parse base order number from ticket code
+    // Supports regular (#WF-2027-81851-1), swapped (#WF-2027-81851-1-R1), and composite codes
+    const baseCode = clean.split('-R')[0];
+    const orderNumberPart = baseCode.replace(/-\d+$/, '');
     const matchedOrder = await this.findOrder(orderNumberPart);
+
     if (matchedOrder) {
-      if (matchedOrder.tickets.length === 0 && matchedOrder.status === 'paid') {
-        await this.markOrderPaid(matchedOrder.orderNumber);
-      }
-      let ticket = matchedOrder.tickets.find((t) => t.ticketCode === normalized || t.ticketCode === clean || t.ticketCode.replace(/^#/, '') === clean);
-      if (!ticket && matchedOrder.tickets.length > 0) {
-        ticket = matchedOrder.tickets[0];
-      }
+      this.ensureOrderTickets(matchedOrder);
+
+      const ticket = matchedOrder.tickets.find((t) =>
+        t.ticketCode === normalized ||
+        t.ticketCode === clean ||
+        t.ticketCode.replace(/^#/, '') === clean
+      );
       if (ticket) {
         return { order: matchedOrder, ticket };
+      }
+
+      // Check if ticketCode matches index (e.g. WF-2027-81851-2 -> index 1)
+      const idxMatch = clean.match(/-(\d+)(?:-R\d+)?$/);
+      if (idxMatch) {
+        const idx = parseInt(idxMatch[1], 10) - 1;
+        if (matchedOrder.tickets[idx]) {
+          return { order: matchedOrder, ticket: matchedOrder.tickets[idx] };
+        }
       }
     }
 
@@ -848,6 +939,52 @@ export class OrdersRepository {
     }
 
     return { success: true, ticket, order };
+  }
+
+  /**
+   * Annuleren van een volledige bestelling en al haar tickets
+   */
+  static async cancelOrder(orderNumber: string, reason = 'Geannuleerd door beheerder'): Promise<{
+    success: boolean;
+    error?: string;
+    order?: StoredOrder;
+  }> {
+    const order = await this.findOrder(orderNumber);
+    if (!order) {
+      return { success: false, error: 'Bestelling niet gevonden.' };
+    }
+
+    this.ensureOrderTickets(order);
+
+    order.status = 'cancelled';
+    if (Array.isArray(order.tickets)) {
+      for (const t of order.tickets) {
+        t.status = 'cancelled';
+        t.swapReason = reason;
+      }
+    }
+
+    this.rebuildOrderItemsAndSummary(order);
+
+    memoryOrders.set(order.orderNumber, order);
+    memoryOrders.set(order.id, order);
+    saveLocalStore();
+
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        await db.update(schema.orders)
+          .set({ status: 'cancelled' })
+          .where(eq(schema.orders.orderNumber, order.orderNumber));
+        await db.update(schema.issuedTickets)
+          .set({ status: 'cancelled', swapReason: reason })
+          .where(eq(schema.issuedTickets.orderId, order.id));
+      }
+    } catch (e: any) {
+      console.warn('Could not update cancelled order in DB:', e.message);
+    }
+
+    return { success: true, order };
   }
 
   /**

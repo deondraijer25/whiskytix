@@ -145,16 +145,6 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
         return parsed;
       }
     }
-    // Auto-heal: If order is paid, any ticket without an explicit cancel reason is valid
-    if (order.status === 'paid') {
-      base = base.map((t: any) => {
-        if (t.status === 'cancelled' && !t.swapReason) {
-          return { ...t, status: 'valid' };
-        }
-        return t;
-      });
-    }
-
     return base;
   }, [order, localTickets]);
 
@@ -250,9 +240,30 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
     window.open(`/api/tickets/${encodeURIComponent(code)}/pdf?city=${resolvedCityKey}&name=${encodeURIComponent(order.customerName)}&title=${encodeURIComponent(session)}&orderNumber=${encodeURIComponent(order.orderNumber)}`, '_blank');
   };
 
-  const handleRefund = () => {
+  const handleRefund = async () => {
     if (window.confirm(`Weet u zeker dat u bestelling ${order.orderNumber} wilt annuleren en de voorraad wilt teruggeven?`)) {
-      showToast(`Bestelling ${order.orderNumber} is geannuleerd. Zaalvoorraad direct teruggegeven.`);
+      setIsProcessing(true);
+      try {
+        const cleanOrderNumber = order.orderNumber.replace(/^#+/, '');
+        const res = await fetch(`/api/admin/orders/${encodeURIComponent(cleanOrderNumber)}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Geannuleerd en voorraad teruggegeven via beheer' }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(`Bestelling ${order.orderNumber} is geannuleerd. Zaalvoorraad direct teruggegeven.`);
+          const updated = effectiveTickets.map((t) => ({ ...t, status: 'cancelled' }));
+          setLocalTickets(updated);
+          if (onOrderUpdated) onOrderUpdated();
+        } else {
+          showToast(`Fout bij annuleren: ${data.error || 'Onbekende fout'}`);
+        }
+      } catch (err: any) {
+        showToast(`Fout: ${err.message}`);
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
 

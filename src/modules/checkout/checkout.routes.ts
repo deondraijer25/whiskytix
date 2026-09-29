@@ -1550,6 +1550,35 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
    });
 
    /**
+    * 11b. VOLLEDIGE BESTELLING ANNULEREN
+    * POST /api/admin/orders/:orderNumber/cancel
+    */
+   server.post('/api/admin/orders/:orderNumber/cancel', async (request, reply) => {
+     try {
+       const params = request.params as { orderNumber: string };
+       const body = (request.body || {}) as { reason?: string };
+
+       const cleanOrderNumber = decodeURIComponent(params.orderNumber).replace(/^#+/, '');
+       const result = await OrdersRepository.cancelOrder(
+         cleanOrderNumber,
+         body.reason || 'Geannuleerd en voorraad teruggegeven via beheer'
+       );
+
+       if (!result.success) {
+         return reply.status(400).send({ success: false, error: result.error });
+       }
+
+       return reply.send({
+         success: true,
+         message: `Bestelling ${result.order?.orderNumber} succesvol geannuleerd.`,
+         order: result.order,
+       });
+     } catch (err: any) {
+       return reply.status(500).send({ success: false, error: err.message });
+     }
+   });
+
+   /**
     * 12. TICKET OF MASTERCLASS HANDMATIG TOEVOEGEN AAN BESTELLING (€0,- CADEAU / COMP)
     * POST /api/admin/orders/:orderNumber/add-ticket
     */
