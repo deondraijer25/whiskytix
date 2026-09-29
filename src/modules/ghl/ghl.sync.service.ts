@@ -6,7 +6,7 @@
 import { StoredOrder } from '../orders/orders.repository.js';
 
 const GHL_API_BASE = 'https://services.leadconnectorhq.com';
-const GHL_API_KEY = process.env.GHL_API_KEY || '';
+const GHL_API_KEY = process.env.GHL_API_KEY || 'pit-150d6114-ac2c-4cf7-9d5c-ffc20499c790';
 const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID || '1OZ9uxIBFoxwbheVC5iN';
 const GHL_TICKETS_OBJECT_KEY = 'custom_objects.festival_tickets';
 
