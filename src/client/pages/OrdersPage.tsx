@@ -4,6 +4,8 @@ import { Search, ShoppingBag, CheckCircle2, Clock, X, ChevronRight, Download, Ma
 import { INITIAL_FESTIVALS, Order } from '../data/mockData';
 import { OrderDetailDrawer } from '../components/OrderDetailDrawer';
 import { getFestivalCatalog, FestivalCatalogItem, formatEuro } from '../data/festivalCatalog';
+import { useEnvironment } from '../context/EnvironmentContext';
+import { MollieEnvToggle } from '../components/MollieEnvToggle';
 
 function formatOrderDate(dateStr: string): string {
   if (!dateStr) return '';
@@ -76,16 +78,18 @@ export const OrdersPage: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const { env: mollieEnv } = useEnvironment();
 
   const activeFestival = cityId ? INITIAL_FESTIVALS.find((f) => f.id === cityId) : null;
   const effectiveCity = cityId || selectedCity;
   const theme = CITY_THEMES[effectiveCity] || CITY_THEMES.denhaag;
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (targetEnv?: 'test' | 'live') => {
     setIsLoading(true);
+    const activeEnv = targetEnv || mollieEnv;
     try {
-      const cityQuery = effectiveCity && effectiveCity !== 'all' ? `?city=${effectiveCity}` : '';
-      const res = await fetch(`/api/admin/orders${cityQuery}`);
+      const cityQuery = effectiveCity && effectiveCity !== 'all' ? `city=${effectiveCity}&` : '';
+      const res = await fetch(`/api/admin/orders?${cityQuery}env=${activeEnv}`);
       if (res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.orders)) {
@@ -122,8 +126,8 @@ export const OrdersPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchOrders();
-  }, [effectiveCity, openOrderParam]);
+    fetchOrders(mollieEnv);
+  }, [effectiveCity, openOrderParam, mollieEnv]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {

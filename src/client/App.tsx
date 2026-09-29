@@ -16,12 +16,14 @@ import { CreateInvitationPage } from './pages/CreateInvitationPage';
 import { AdminLayout } from './components/AdminLayout';
 import { FestivalLayout } from './components/FestivalLayout';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { EnvironmentProvider } from './context/EnvironmentContext';
 
 export const App: React.FC = () => {
   const [selectedCity, setSelectedCity] = useState<string>('all');
 
   return (
-    <Routes>
+    <EnvironmentProvider>
+      <Routes>
       {/* 1. Admin Login Screen */}
       <Route path="/admin/login" element={<LoginPage />} />
 
@@ -167,6 +169,7 @@ export const App: React.FC = () => {
       <Route path="/" element={<Navigate to="/admin/login" replace />} />
       <Route path="*" element={<Navigate to="/admin/login" replace />} />
     </Routes>
+    </EnvironmentProvider>
   );
 };
 

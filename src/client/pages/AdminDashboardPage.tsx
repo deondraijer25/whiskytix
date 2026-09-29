@@ -17,6 +17,8 @@ import {
 import { Order } from '../data/mockData';
 import { OrderDetailDrawer } from '../components/OrderDetailDrawer';
 import { useLiveCatalog } from '../data/festivalCatalog';
+import { useEnvironment } from '../context/EnvironmentContext';
+import { MollieEnvToggle } from '../components/MollieEnvToggle';
 
 interface AdminDashboardPageProps {
   selectedCity: string;
@@ -59,7 +61,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [mollieEnv, setMollieEnv] = useState<'test' | 'live'>('test');
+  const { env: mollieEnv, setEnv: setMollieEnv } = useEnvironment();
   const [mollieStatus, setMollieStatus] = useState<MollieStatus | null>(null);
 
   // Live GoHighLevel Custom Objects Catalogus & Zaalcapaciteiten
@@ -255,32 +257,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </button>
 
           {/* Mollie Test / Live Mode Schakelaar */}
-          <div className="flex items-center bg-[#FAF7F2] border-2 border-[#1D1C1A] p-1 rounded-lg shadow-[2px_2px_0px_rgba(29,28,26,0.9)]">
-            <button
-              type="button"
-              onClick={() => setMollieEnv('test')}
-              className={`px-3 py-1.5 rounded text-xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
-                mollieEnv === 'test'
-                  ? 'bg-[#caac8e] text-[#1D1C1A] border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
-                  : 'text-[#4c5752] hover:text-[#1D1C1A]'
-              }`}
-              title="Bekijk de testorders en proefbetalingen"
-            >
-              Mollie Test
-            </button>
-            <button
-              type="button"
-              onClick={() => setMollieEnv('live')}
-              className={`px-3 py-1.5 rounded text-xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
-                mollieEnv === 'live'
-                  ? 'bg-[#006448] text-white border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
-                  : 'text-[#4c5752] hover:text-[#1D1C1A]'
-              }`}
-              title="Schakel naar de echte live verkoopomgeving"
-            >
-              Mollie Live
-            </button>
-          </div>
+          <MollieEnvToggle />
 
           <button
             onClick={() => fetchOrders(mollieEnv)}
