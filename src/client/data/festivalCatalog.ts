@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+
 export interface FestivalCatalogItem {
   id: string;
   city: 'gent' | 'denhaag' | 'amsterdam';
@@ -607,22 +609,20 @@ export function formatEuro(amount: number): string {
   return `€ ${amount.toFixed(2).replace('.', ',')}`;
 }
 
-import { useState, useEffect } from 'react';
-
 /**
  * React Hook om overal in de cockpit live GHL tickets en capaciteiten te gebruiken
  */
 export function useLiveCatalog(city?: 'gent' | 'denhaag' | 'amsterdam' | 'all') {
-  const [items, setItems] = useState<FestivalCatalogItem[]>(() => {
+  const [items, setItems] = React.useState<FestivalCatalogItem[]>(() => {
     if (city && city !== 'all') {
       return getFestivalCatalog(city);
     }
     return liveCatalogCache || FESTIVAL_CATALOG;
   });
-  const [stats, setStats] = useState<Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats> | null>(liveStatsCache);
-  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = React.useState<Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats> | null>(liveStatsCache);
+  const [loading, setLoading] = React.useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     let isMounted = true;
     const load = async () => {
       setLoading(true);
