@@ -32,6 +32,50 @@ export class GhlSyncService {
    * 3. Custom Fields vullen met downloadlinks en ordernummer
    * 4. GHL Custom Objects ticket-telling bijwerken
    */
+  /**
+   * Normaliseert telefoonnummers naar internationaal E.164 formaat (+31... of +32...)
+   */
+  static normalizePhoneNumber(rawPhone?: string, festivalId = 'denhaag'): string | undefined {
+    if (!rawPhone || typeof rawPhone !== 'string') return undefined;
+    let clean = rawPhone.replace(/[\s\-\(\)\.]/g, '').trim();
+    if (!clean) return undefined;
+
+    // Al E.164 formaat (+...)
+    if (clean.startsWith('+')) return clean;
+
+    // 00 prefix
+    if (clean.startsWith('00')) return `+${clean.slice(2)}`;
+
+    // Nederlands mobiel (06...) of vast (0...)
+    if (clean.startsWith('06') || (clean.startsWith('0') && (festivalId === 'denhaag' || festivalId === 'amsterdam'))) {
+      return `+31${clean.slice(1)}`;
+    }
+
+    // Belgisch mobiel (04...) of vast (0...)
+    if (clean.startsWith('04') || (clean.startsWith('0') && festivalId === 'gent')) {
+      return `+32${clean.slice(1)}`;
+    }
+
+    // Nummers zonder voorloopnul maar met 9 cijfers (bijv. 612345678)
+    if (clean.length === 9 && clean.startsWith('6')) {
+      return `+31${clean}`;
+    }
+
+    // Fallback op basis van festival stad
+    if (festivalId === 'gent') {
+      return clean.startsWith('0') ? `+32${clean.slice(1)}` : `+32${clean}`;
+    } else {
+      return clean.startsWith('0') ? `+31${clean.slice(1)}` : `+31${clean}`;
+    }
+  }
+
+  /**
+   * Synchroniseert een betaalde bestelling direct naar GoHighLevel:
+   * 1. Contactpersoon aanmaken of bijwerken
+   * 2. Maximaal 2 schone tags: 'Klant' en 'Nieuwe Bestelling' (trigger voor workflow)
+   * 3. Custom Fields vullen met ordernummer, downloadlink én portaallink
+   * 4. GHL Custom Objects ticket-telling bijwerken
+   */
   static async syncPaidOrder(order: StoredOrder, publicBaseUrl = process.env.PUBLIC_API_URL || 'https://whiskytix-r1qq.vercel.app'): Promise<GhlSyncResult> {
     if (!GHL_API_KEY) {
       console.info('[GHL Sync] GHL_API_KEY niet ingesteld. Sync overgeslagen (mock mode).');
@@ -43,73 +87,52 @@ export class GhlSyncService {
       const cleanOrderNumber = order.orderNumber.replace('#', '');
       const downloadUrl = `${publicBaseUrl}/api/tickets/${encodeURIComponent(cleanOrderNumber)}-1/pdf?city=${order.festivalId}&orderNumber=${cleanOrderNumber}`;
 
-      // 1. Bouw relevante marketing- en organisatietags
-      const tags: string[] = [
-        'Klant',
-        'Klant 2026',
-        `Stad: ${cityName}`,
-        `${cityName} 2026`,
-        `${cityName}: Klant`,
-      ];
-
-      for (const item of order.items) {
-        if (item.category === 'masterclass') {
-          tags.push('Product: Masterclass');
-        } else if (item.category === 'botteling') {
-          tags.push('Product: Botteling');
-          tags.push('Product: Festivalfles');
-        } else if (item.category === 'tram') {
-          if (order.festivalId === 'gent') {
-            tags.push('Product: Gentse Bootjes');
-          } else {
-            tags.push('Product: Whiskytram');
-          }
-        }
-
-        if (item.title) {
-          const tLower = item.title.toLowerCase();
-          if (tLower.includes('vip')) {
-            tags.push('Product: VIP Ticket');
-            tags.push('Sessie: Vrijdag VIP');
-          } else if (tLower.includes('vrijdag')) {
-            tags.push('Sessie: Vrijdag Avond');
-          } else if (tLower.includes('zaterdag') && tLower.includes('middag')) {
-            tags.push('Sessie: Zaterdag Middag');
-          } else if (tLower.includes('zaterdag') && tLower.includes('avond')) {
-            tags.push('Sessie: Zaterdag Avond');
-          } else if (tLower.includes('zondag')) {
-            tags.push('Sessie: Zondag Middag');
-          }
-          if (tLower.includes('boot') || tLower.includes('bootjes')) {
-            tags.push('Product: Gentse Bootjes');
-          }
+      // Bepaal de dynamische portaallink (website domein / preview / live)
+      let portalBase = order.portalBaseUrl;
+      if (!portalBase) {
+        if (order.festivalId === 'gent') {
+          portalBase = process.env.PORTAL_BASE_URL_GENT || 'https://whisky-fest-gent.vercel.app';
+        } else if (order.festivalId === 'amsterdam') {
+          portalBase = process.env.PORTAL_BASE_URL_AMSTERDAM || 'https://whisky-fest-amsterdam.vercel.app';
+        } else {
+          portalBase = process.env.PORTAL_BASE_URL_DENHAAG || 'https://whisky-fest-den-haag.vercel.app';
         }
       }
+      portalBase = portalBase.replace(/\/+$/, '');
+      const portalUrl = `${portalBase}/account?orderNumber=${encodeURIComponent(cleanOrderNumber)}&email=${encodeURIComponent(order.customerEmail)}`;
 
-      // 2. Splits naam in voor- en achternaam
-      const nameParts = (order.customerName || 'Bezoeker').trim().split(' ');
-      const firstName = nameParts[0] || 'Bezoeker';
-      const lastName = nameParts.slice(1).join(' ') || '';
+      // Maximaal 2 tags toekennen (geen tag-wildgroei!)
+      const tags: string[] = [
+        'Klant',
+        'Nieuwe Bestelling'
+      ];
 
-      // 3. Upsert Contact in GHL (Met exacte Custom Field IDs en Dossier Samenvatting)
+      // Bepaal voor- en achternaam
+      const firstName = order.firstName || (order.customerName ? order.customerName.trim().split(' ')[0] : 'Bezoeker');
+      const lastName = order.lastName || (order.customerName ? order.customerName.trim().split(' ').slice(1).join(' ') : '');
+      const fullName = (firstName + ' ' + lastName).trim() || order.customerName || 'Bezoeker';
+      const normalizedPhone = this.normalizePhoneNumber(order.customerPhone, order.festivalId);
+
+      // Upsert Contact in GHL met exacte Custom Fields
       const contactPayload = {
         locationId: GHL_LOCATION_ID,
         email: order.customerEmail,
-        phone: order.customerPhone || undefined,
+        phone: normalizedPhone,
         firstName,
         lastName,
-        name: order.customerName,
-        tags: Array.from(new Set(tags)),
+        name: fullName,
+        tags: tags,
         customFields: [
           { id: 'rWdxHMB2McLAZWo1Fxwl', key: 'contact.ticket_order_number', field_value: order.orderNumber },
+          { id: '72haFPm6QoE9K24WA5Hw', key: 'contact.ticket_portaal_url', field_value: portalUrl },
           { id: '8juF9GsuPlMFPajvm9Kk', key: 'contact.ticket_download_url', field_value: downloadUrl },
           { id: 'wemZ8ghoJw3YPBkFoSyi', key: 'contact.ticket_festival_stad', field_value: cityName },
-          { key: 'contact.totaal_aantal_tickets', field_value: order.tickets.length || order.items.reduce((s, i) => s + i.quantity, 0) },
-          { key: 'contact.totale_omzet_eur', field_value: (order.totalCents / 100).toFixed(2) },
-          { key: 'contact.meest_recente_editie', field_value: `${cityName} 2026` },
-          { key: 'contact.laatste_besteldatum', field_value: new Date().toISOString().split('T')[0] },
-          { key: 'contact.klantstatus', field_value: 'Betaald' },
-          { key: 'contact.aankoop_dossier_samenvatting', field_value: order.items.map(i => `${i.quantity}x ${i.title}`).join(', ') },
+          { id: 'TfG7IEMYBcuYDhoNlFR8', key: 'contact.aankoop_dossier_samenvatting', field_value: order.items.map(i => `${i.quantity}x ${i.title}`).join(', ') },
+          { id: 'q4nGpzmLvbZjm8HOVARZ', key: 'contact.totaal_aantal_tickets', field_value: order.tickets.length || order.items.reduce((s, i) => s + i.quantity, 0) },
+          { id: 'eT6a9aXU8Cow0ksysTrO', key: 'contact.totale_omzet_eur', field_value: (order.totalCents / 100).toFixed(2) },
+          { id: '3wg1nud85Z3AyqpZCAPl', key: 'contact.klantstatus', field_value: 'Betaald' },
+          { id: 'oYqgbCgnbUC7iD7oiYCI', key: 'contact.laatste_besteldatum', field_value: new Date().toISOString().split('T')[0] },
+          { id: 'Et1sgi7Z7bE8jcJGGS02', key: 'contact.meest_recente_editie', field_value: `${cityName} 2026` },
         ],
       };
 

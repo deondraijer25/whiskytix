@@ -49,8 +49,11 @@ export interface StoredOrder {
   orderNumber: string;
   festivalId: 'gent' | 'denhaag' | 'amsterdam';
   customerName: string;
+  firstName?: string;
+  lastName?: string;
   customerEmail: string;
   customerPhone?: string;
+  portalBaseUrl?: string;
   subtotalCents: number;
   discountCents: number;
   totalCents: number;
@@ -1391,6 +1394,11 @@ export class OrdersRepository {
     memoryOrders.set(order.orderNumber, order);
     memoryOrders.set(order.id, order);
     saveLocalStore();
+
+    // Trigger realtime sync to GoHighLevel in background
+    GhlSyncService.syncPaidOrder(order).catch((err) => {
+      console.warn('[GHL Sync] Fout bij achtergrond sync van handmatige order:', err.message);
+    });
 
     // Persist to DB if connected
     try {

@@ -1,8 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
-import { OrdersRepository, StoredOrderItem, parseItemsSummary } from '../orders/orders.repository.js';
+import { OrdersRepository, StoredOrderItem, StoredOrder, parseItemsSummary } from '../orders/orders.repository.js';
 import { MollieService, sandboxPayments } from '../payments/mollie.service.js';
 import { verifyQrPayload } from '../tickets/qr.service.js';
+import { GhlSyncService } from '../ghl/ghl.sync.service.js';
 
 export async function registerCheckoutRoutes(server: FastifyInstance): Promise<void> {
   /**
@@ -15,12 +16,15 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       const {
         festivalId = 'gent',
         customerName = 'Gast Bezoeker',
+        firstName,
+        lastName,
         customerEmail,
         customerPhone = '',
         items = [],
         discountCents = 0,
         shippingAddress,
         ageVerification,
+        portalBaseUrl,
       } = body || {};
 
       if (!customerEmail) {
@@ -100,14 +104,21 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       const finalDiscountCents = Number(discountCents) || 0;
       const totalCents = Math.max(0, subtotalCents + feeCents + shippingCents - finalDiscountCents);
 
+      const finalCustomerName = (firstName && lastName)
+        ? `${firstName} ${lastName}`.trim()
+        : (customerName || 'Gast Bezoeker');
+
       // Create Pending Order
       const storedOrder = await OrdersRepository.createOrder({
         id: orderId,
         orderNumber,
         festivalId: (festivalId as any) || 'gent',
-        customerName,
+        customerName: finalCustomerName,
+        firstName: firstName || finalCustomerName.split(' ')[0],
+        lastName: lastName || finalCustomerName.split(' ').slice(1).join(' '),
         customerEmail,
         customerPhone,
+        portalBaseUrl,
         subtotalCents,
         discountCents: finalDiscountCents,
         totalCents,
@@ -1951,4 +1962,86 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
        return reply.status(500).send({ success: false, ok: false, error: err.message });
      }
    });
- }
+ 
+    /**
+     * Test / Trigger GoHighLevel notification for an order (manual testing or webhook dry-run)
+     */
+    server.post('/api/ghl/test-order-notification', async (request, reply) => {
+      try {
+        const body = (request.body as any) || {};
+        const {
+          orderNumber,
+          email,
+          firstName = 'Test',
+          lastName = 'Bezoeker',
+          phone = '+31612345678',
+          city = 'denhaag',
+          portalBaseUrl
+        } = body;
+
+        let order = orderNumber ? await OrdersRepository.findOrder(orderNumber) : null;
+        if (!order) {
+          const testOrderNum = orderNumber || OrdersRepository.generateOrderNumber();
+          order = {
+            id: crypto.randomUUID(),
+            orderNumber: testOrderNum,
+            festivalId: city,
+            customerName: `${firstName} ${lastName}`.trim(),
+            firstName,
+            lastName,
+            customerEmail: email || 'test@whiskyfestival.nl',
+            customerPhone: phone,
+            portalBaseUrl,
+            subtotalCents: 4500,
+            discountCents: 0,
+            totalCents: 4675,
+            status: 'paid',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date().toISOString(),
+            items: [
+              {
+                id: crypto.randomUUID(),
+                orderId: 'test',
+                ticketTypeId: 'regular',
+                title: 'Regulier Entreeticket Zaterdag',
+                quantity: 1,
+                unitPriceCents: 4500,
+                category: 'ticket',
+                date: 'Zaterdag 28 Maart 2026',
+                time: '13:00 - 17:00',
+              },
+            ],
+            tickets: [
+              {
+                id: crypto.randomUUID(),
+                orderId: 'test',
+                ticketCode: `${testOrderNum}-1`,
+                qrPayload: 'test',
+                qrPayloadHash: 'test',
+                attendeeName: `${firstName} ${lastName}`.trim(),
+                status: 'valid',
+                sessionTitle: 'Zaterdag Middag',
+                cityName: city === 'gent' ? 'Gent' : city === 'amsterdam' ? 'Amsterdam' : 'Den Haag',
+                dateStr: 'Zaterdag 28 Maart 2026',
+                timeStr: '13:00 - 17:00',
+                pdfUrl: '/api/tickets/test',
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          };
+        }
+
+        const syncResult = await GhlSyncService.syncPaidOrder(order as StoredOrder);
+        return reply.send({
+          success: syncResult.success,
+          contactId: syncResult.contactId,
+          orderNumber: order.orderNumber,
+          error: syncResult.error,
+        });
+      } catch (err: any) {
+        server.log.error(err);
+        return reply.status(500).send({ success: false, error: err.message });
+      }
+    });
+
+}
