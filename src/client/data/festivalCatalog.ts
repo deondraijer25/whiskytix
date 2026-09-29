@@ -85,69 +85,7 @@ export const FESTIVAL_CATALOG: FestivalCatalogItem[] = [
     description: 'Gemoedelijke zondagmiddagsessie. Wordt geactiveerd zodra de verkoop van de overige sessies gevorderd is.'
   },
 
-  // 2. Masterclasses Gent (4 bevestigde sessies)
-  {
-    id: 'gent-mc-bowmore-zaterdag',
-    city: 'gent',
-    category: 'masterclass',
-    title: 'Bowmore Single Malt Masterclass',
-    dateStr: 'Zaterdag 2 oktober 2027',
-    timeStr: '19:30 - 20:15 uur',
-    originalPriceEur: 20.00,
-    location: 'MC-Ruimte (De Oude Vismijn)',
-    capacity: 35,
-    sold: 0,
-    isSoldOut: false,
-    extra: 'Teddy Joseph Global Brand Ambassador',
-    description: 'Exclusieve Bowmore Islay proeverij onder leiding van Global Ambassador Teddy Joseph.'
-  },
-  {
-    id: 'gent-mc-jura-zondag',
-    city: 'gent',
-    category: 'masterclass',
-    title: 'Jura Island Single Malt Masterclass',
-    dateStr: 'Zondag 3 oktober 2027',
-    timeStr: '12:15 - 13:00 uur',
-    originalPriceEur: 20.00,
-    location: 'MC-Ruimte (De Oude Vismijn)',
-    capacity: 35,
-    sold: 0,
-    isSoldOut: false,
-    extra: 'Line-up: Jura 12Y Sherry, Jura Perspective, Jura 15Y Manzanilla, Jura 18Y',
-    description: 'Reis mee naar het afgelegen eiland Jura en ontdek 4 uitzonderlijke expressies.'
-  },
-  {
-    id: 'gent-mc-laphroaig-zondag',
-    city: 'gent',
-    category: 'masterclass',
-    title: 'Laphroaig Islay Masterclass',
-    dateStr: 'Zondag 3 oktober 2027',
-    timeStr: '13:45 - 14:30 uur',
-    originalPriceEur: 20.00,
-    location: 'MC-Ruimte (De Oude Vismijn)',
-    capacity: 35,
-    sold: 0,
-    isSoldOut: false,
-    extra: 'Teddy Joseph Global Brand Ambassador',
-    description: 'De onmiskenbare turf- en medicinale tonen van Laphroaig onder leiding van Teddy Joseph.'
-  },
-  {
-    id: 'gent-mc-suntory-zondag',
-    city: 'gent',
-    category: 'masterclass',
-    title: 'The House of Suntory Masterclass',
-    dateStr: 'Zondag 3 oktober 2027',
-    timeStr: '15:00 - 15:45 uur',
-    originalPriceEur: 20.00,
-    location: 'MC-Ruimte (De Oude Vismijn)',
-    capacity: 35,
-    sold: 0,
-    isSoldOut: false,
-    extra: 'Michael Yona Costa – Suntory Global Spirits',
-    description: 'Meesterlijke Japanse blend- en distilleerkunst van The House of Suntory met Michael Yona Costa.'
-  },
-
-  // 3. Specials Gent: Dada Chapel Botteling, Bootjes & Distilleerderij Bezoek
+  // 2. Specials Gent: Dada Chapel Botteling, Bootjes & Distilleerderij Bezoek
   {
     id: 'gent-botteling-dada-chapel',
     city: 'gent',
