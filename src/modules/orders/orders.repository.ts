@@ -474,7 +474,86 @@ export class OrdersRepository {
         }
       }
     } catch (e) {
-      // ignore
+      // ignore DB error
+    }
+
+    // Reconstruct from Mollie API if not in memory or DB (e.g. serverless cold start)
+    try {
+      const molliePayments = await MollieService.listRecentPayments(50);
+      const cleaned = identifier.replace(/^#+/, '');
+      const matched = molliePayments.find((p: any) => {
+        const oNum = p.metadata?.orderNumber;
+        if (!oNum) return false;
+        return oNum === normalized || oNum === identifier || oNum.replace(/^#+/, '') === cleaned;
+      });
+
+      if (matched) {
+        const meta = matched.metadata || {};
+        const festivalId = (meta.festivalId || 'gent') as 'gent' | 'denhaag' | 'amsterdam';
+        const valEur = parseFloat(matched.amountValue || '0');
+        const amountCents = Math.round(valEur * 100);
+        const itemsSummary = meta.itemsSummary || 'Festival Entreetickets';
+
+        let parsedItems: any[] | null = null;
+        if (meta.itemsJson) {
+          try {
+            const arr = JSON.parse(meta.itemsJson);
+            if (Array.isArray(arr) && arr.length > 0) {
+              parsedItems = arr.map((x: any) => ({
+                quantity: Number(x.qty || x.q || 1),
+                title: x.title || x.t || 'Entreeticket',
+                category: x.cat || x.category || 'entree',
+                date: x.d || x.date,
+                time: x.tm || x.time,
+              }));
+            }
+          } catch {}
+        }
+
+        const effectiveItems = parsedItems || [
+          {
+            quantity: 1,
+            title: itemsSummary,
+            category: 'entree',
+            date: '',
+            time: '',
+          },
+        ];
+
+        const totalQty = effectiveItems.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0) || 1;
+        const reconstructedItems: StoredOrderItem[] = effectiveItems.map((pi: any) => ({
+          id: crypto.randomUUID(),
+          orderId: meta.orderId || matched.id,
+          ticketTypeId: `${festivalId}-${pi.category || 'entree'}`,
+          title: pi.title,
+          quantity: pi.quantity || 1,
+          unitPriceCents: Math.round(amountCents / totalQty),
+          category: pi.category || 'entree',
+          date: pi.date,
+          time: pi.time,
+        }));
+
+        const newOrder = await this.createOrder({
+          id: meta.orderId || matched.id,
+          orderNumber: normalized,
+          festivalId,
+          customerName: meta.customerName || 'Bezoeker',
+          customerEmail: meta.customerEmail || '',
+          customerPhone: meta.customerPhone || undefined,
+          subtotalCents: amountCents,
+          discountCents: 0,
+          totalCents: amountCents,
+          status: 'paid',
+          molliePaymentId: matched.id,
+          createdAt: matched.paidAt || matched.createdAt || new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          items: reconstructedItems,
+        });
+
+        return newOrder;
+      }
+    } catch (err) {
+      console.warn('Mollie lookup in findOrder failed:', err);
     }
 
     return null;
