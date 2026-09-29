@@ -228,11 +228,11 @@ export async function buildServer(): Promise<FastifyInstance> {
     const resolvedSession = OrdersRepository.resolveSessionDateTime(
       resolvedCity,
       rawSessionTitle,
-      query.date || ticket?.dateStr || (order?.items && order.items[0]?.date),
-      query.time || ticket?.timeStr || (order?.items && (order.items[0]?.timeslot || order.items[0]?.time))
+      ticket?.dateStr || query.date || (order?.items && order.items[0]?.date),
+      ticket?.timeStr || query.time || (order?.items && (order.items[0]?.timeslot || order.items[0]?.time))
     );
-    const timeStr = resolvedSession.timeStr;
-    const dateStr = resolvedSession.dateStr;
+    const timeStr = ticket?.timeStr || resolvedSession.timeStr;
+    const dateStr = ticket?.dateStr || resolvedSession.dateStr;
 
     // Calculate itemNumber if multiple tickets in order
     let itemNumber = query.itemNumber;
