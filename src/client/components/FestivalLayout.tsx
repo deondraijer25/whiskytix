@@ -83,12 +83,12 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
   }, []);
 
   const initials = useMemo(() => {
-    if (!authData?.user) return 'DD';
-    const parts = authData.user.trim().split(/\s+/);
-    if (parts.length >= 2) {
+    const userName = String(authData?.user || 'DD').trim();
+    const parts = userName.split(/\s+/);
+    if (parts.length >= 2 && parts[0] && parts[parts.length - 1]) {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
-    return authData.user.slice(0, 2).toUpperCase();
+    return userName.slice(0, 2).toUpperCase() || 'DD';
   }, [authData]);
 
   useEffect(() => {

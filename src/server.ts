@@ -497,6 +497,9 @@ export async function buildServer(): Promise<FastifyInstance> {
       if (request.raw.url && request.raw.url.startsWith('/api')) {
         return reply.status(404).send({ error: 'API endpoint niet gevonden' });
       }
+      reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+      reply.header('Pragma', 'no-cache');
+      reply.header('Expires', '0');
       return reply.sendFile('index.html');
     });
   }
