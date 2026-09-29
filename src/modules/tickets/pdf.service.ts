@@ -56,13 +56,13 @@ const FESTIVAL_THEMES: Record<string, FestivalTheme> = {
     transit: 'Tram 1 of 4: halte Gravensteen (1 min. lopen)',
     parking: 'Parking Vrijdagmarkt of Sint-Michiels (5-7 min.)',
     established: 'EST. 2004',
-    edition: 'Editie 2026',
+    edition: '26e Editie',
     email: 'info@whiskyfestival.be',
     watermark: 'GWF',
-    datesShort: '2, 3 en 4 Oktober 2026',
+    datesShort: '1, 2 en 3 Oktober 2027',
     defaultMonth: 'OKT',
-    defaultDay: '02',
-    year: '2026',
+    defaultDay: '01',
+    year: '2027',
     pillLocation: 'DE OUDE VISMIJN  \u2022  GENT',
     colors: {
       primary: '#1E3A8A',        // Gent Royal Blue (--whisky-gold-dark)

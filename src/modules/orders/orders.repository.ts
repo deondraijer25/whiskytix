@@ -172,7 +172,7 @@ export class OrdersRepository {
    */
   static generateOrderNumber(): string {
     const randomDigits = Math.floor(10000 + Math.random() * 90000);
-    return `#WF-2026-${randomDigits}`;
+    return `#WF-2027-${randomDigits}`;
   }
 
   /**
@@ -197,14 +197,14 @@ export class OrdersRepository {
     // Only if dateStr is missing, deduce from title and festival city
     if (!dateStr) {
       if (cityName === 'Gent') {
-        if (titleLower.includes('bowmore') || titleLower.includes('zondag')) {
-          dateStr = 'Zondag 4 oktober 2026';
+        if (titleLower.includes('zondag')) {
+          dateStr = 'Zondag 3 oktober 2027';
         } else if (titleLower.includes('vrijdag')) {
-          dateStr = 'Vrijdag 2 oktober 2026';
+          dateStr = 'Vrijdag 1 oktober 2027';
         } else if (titleLower.includes('botteling')) {
-          dateStr = 'Afhalen Festival (2-4 okt)';
+          dateStr = 'Afhalen Festival (1-3 okt 2027)';
         } else {
-          dateStr = 'Zaterdag 3 oktober 2026';
+          dateStr = 'Zaterdag 2 oktober 2027';
         }
       } else if (cityName === 'Amsterdam') {
         dateStr = 'Zaterdag 16 januari 2027';
@@ -1025,7 +1025,7 @@ export class OrdersRepository {
     );
 
     const randomDigits = Math.floor(10000 + Math.random() * 90000);
-    const orderNumber = `#WF-2026-COMP-${randomDigits}`;
+    const orderNumber = `#WF-2027-COMP-${randomDigits}`;
     const orderId = crypto.randomUUID();
     const nowIso = new Date().toISOString();
     const qty = Math.max(1, Math.min(Number(params.quantity) || 1, 50));
