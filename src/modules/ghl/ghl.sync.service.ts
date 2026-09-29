@@ -99,12 +99,11 @@ export class GhlSyncService {
         }
       }
       portalBase = portalBase.replace(/\/+$/, '');
-      const portalUrl = `${portalBase}/account?orderNumber=${encodeURIComponent(cleanOrderNumber)}&email=${encodeURIComponent(order.customerEmail)}`;
+      const portalUrl = `${portalBase}/inloggen?orderNumber=${encodeURIComponent(cleanOrderNumber)}&email=${encodeURIComponent(order.customerEmail)}`;
 
       // Maximaal 2 tags toekennen (geen tag-wildgroei!)
       const tags: string[] = [
-        'Klant',
-        'Nieuwe Bestelling'
+        'Klant'
       ];
 
       // Bepaal voor- en achternaam
@@ -151,7 +150,20 @@ export class GhlSyncService {
       const json: any = await response.json();
       const contactId = json?.contact?.id;
 
-      // 4. Update Custom Objects capaciteit tellers in GHL
+      // 4. Garandeer dat de GHL workflow trigger 'Tag Contactpersoon: Tag toegevoegd' afgaat
+      if (contactId) {
+        try {
+          await fetch(`${GHL_API_BASE}/contacts/${contactId}/tags`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body: JSON.stringify({ tags: ['nieuwe bestelling'] }),
+          });
+        } catch (tagErr: any) {
+          console.warn('[GHL Sync] Fout bij expliciet toekennen trigger tag:', tagErr.message);
+        }
+      }
+
+      // 5. Update Custom Objects capaciteit tellers in GHL
       for (const item of order.items) {
         if (item.ticketTypeId) {
           await this.incrementGhlCustomObjectSold(item.ticketTypeId, item.quantity);
