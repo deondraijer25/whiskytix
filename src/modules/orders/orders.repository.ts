@@ -594,9 +594,11 @@ export class OrdersRepository {
   /**
    * Find ticket by code across all orders
    */
-  static async findTicket(ticketCode: string): Promise<{ order: StoredOrder; ticket: StoredIssuedTicket } | null> {
-    const normalized = ticketCode.startsWith('#') ? ticketCode : `#${ticketCode}`;
-    const clean = ticketCode.replace(/^#/, '');
+  static async findTicket(ticketCode?: string): Promise<{ order: StoredOrder; ticket: StoredIssuedTicket } | null> {
+    if (!ticketCode || typeof ticketCode !== 'string') return null;
+    const clean = ticketCode.trim().replace(/^#/, '');
+    if (!clean) return null;
+    const normalized = `#${clean}`;
 
     // 1. Search in memory cache across all orders
     for (const order of memoryOrders.values()) {
@@ -733,22 +735,54 @@ export class OrdersRepository {
    * 2. Genereert nieuw ticket met frisse cryptografische HMAC QR-code
    * 3. Schiet update door naar GoHighLevel
    */
-  static async swapTicket(params: {
-    ticketCode: string;
-    newSessionTitle: string;
-    newDateStr?: string;
-    newTimeStr?: string;
-    adminEmail: string;
-    reason: string;
-    priceDiffCents?: number;
-    publicBaseUrl?: string;
-  }): Promise<{
+  static async swapTicket(
+    ticketCodeOrParams: string | {
+      ticketCode: string;
+      newSessionTitle?: string;
+      newTitle?: string;
+      newDateStr?: string;
+      newDate?: string;
+      newTimeStr?: string;
+      newTime?: string;
+      adminEmail?: string;
+      reason?: string;
+      priceDiffCents?: number;
+      publicBaseUrl?: string;
+    },
+    maybeOptions?: {
+      newSessionTitle?: string;
+      newTitle?: string;
+      newDateStr?: string;
+      newDate?: string;
+      newTimeStr?: string;
+      newTime?: string;
+      adminEmail?: string;
+      reason?: string;
+      priceDiffCents?: number;
+      publicBaseUrl?: string;
+    }
+  ): Promise<{
     success: boolean;
     error?: string;
     oldTicket?: StoredIssuedTicket;
     newTicket?: StoredIssuedTicket;
     order?: StoredOrder;
   }> {
+    const raw = typeof ticketCodeOrParams === 'string'
+      ? { ticketCode: ticketCodeOrParams, ...maybeOptions }
+      : (ticketCodeOrParams || ({} as any));
+
+    const params = {
+      ticketCode: (raw.ticketCode || '').trim(),
+      newSessionTitle: (raw.newSessionTitle || raw.newTitle || '').trim(),
+      newDateStr: raw.newDateStr || raw.newDate,
+      newTimeStr: raw.newTimeStr || raw.newTime,
+      adminEmail: raw.adminEmail || 'beheer@whiskyfestival.nl',
+      reason: raw.reason || 'Klantverzoek via admin',
+      priceDiffCents: raw.priceDiffCents || 0,
+      publicBaseUrl: raw.publicBaseUrl,
+    };
+
     const match = await this.findTicket(params.ticketCode);
     if (!match) {
       return { success: false, error: 'Oorspronkelijk ticket niet gevonden.' };
