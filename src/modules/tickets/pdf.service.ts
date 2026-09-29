@@ -1008,3 +1008,24 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
 
   return await pdfDoc.save();
 }
+
+/**
+ * Bundles multiple tickets into a single multi-page PDF document.
+ * Each ticket retains its exact 1-on-1 A4 layout, rendered on its own separate page.
+ */
+export async function generateTicketsBundlePdf(tickets: TicketPdfOptions[]): Promise<Uint8Array> {
+  if (!tickets || tickets.length === 0) {
+    throw new Error('Geen tickets opgegeven voor bundel PDF');
+  }
+
+  const mergedPdf = await PDFDocument.create();
+
+  for (const ticketOpts of tickets) {
+    const singlePdfBytes = await generateTicketPdf(ticketOpts);
+    const singleDoc = await PDFDocument.load(singlePdfBytes);
+    const copiedPages = await mergedPdf.copyPages(singleDoc, singleDoc.getPageIndices());
+    copiedPages.forEach((p) => mergedPdf.addPage(p));
+  }
+
+  return await mergedPdf.save();
+}

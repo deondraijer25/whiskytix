@@ -800,6 +800,16 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   });
 
   /**
+   * GET /api/checkout/order/:orderNumber/pdf
+   * Direct alias to bundled PDF download
+   */
+  server.get('/api/checkout/order/:orderNumber/pdf', async (request, reply) => {
+    const params = request.params as { orderNumber: string };
+    const queryString = new URLSearchParams((request.query || {}) as Record<string, string>).toString();
+    return reply.redirect(`/api/orders/${encodeURIComponent(params.orderNumber)}/pdf${queryString ? `?${queryString}` : ''}`);
+  });
+
+  /**
    * 4c. PUBLIC TICKET STATUS LOOKUP
    * GET /api/tickets/:ticketCode/status
    */

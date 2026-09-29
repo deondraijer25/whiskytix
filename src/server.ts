@@ -8,7 +8,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { checkDbConnection } from './db/index.js';
-import { generateTicketPdf } from './modules/tickets/pdf.service.js';
+import { generateTicketPdf, generateTicketsBundlePdf, type TicketPdfOptions } from './modules/tickets/pdf.service.js';
 import { generateQrSvg, generateQrPngDataUrl } from './modules/tickets/qr.service.js';
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
 import { registerCatalogRoutes } from './modules/catalog/catalog.routes.js';
@@ -264,6 +264,124 @@ export async function buildServer(): Promise<FastifyInstance> {
       `inline; filename="E-Ticket-${cleanCode.replace('#', '')}.pdf"`
     );
     return reply.send(Buffer.from(pdfBytes));
+  });
+
+  // Official Multi-Page Bundled A4 PDF Generator endpoint for an entire order
+  server.get('/api/orders/:orderNumber/pdf', async (request, reply) => {
+    const params = request.params as { orderNumber: string };
+    const query = (request.query || {}) as Record<string, string>;
+
+    const cleanOrderNumber = params.orderNumber
+      ? decodeURIComponent(params.orderNumber).replace(/^#+/, '').trim()
+      : 'WF1861';
+
+    let order = await OrdersRepository.findOrder(cleanOrderNumber);
+    if (!order) {
+      order = await OrdersRepository.findOrder(`#${cleanOrderNumber}`);
+    }
+
+    const resolvedCity = (query.city || order?.festivalId || 'gent').toLowerCase();
+    const resolvedAttendeeName = query.name || order?.customerName || 'Bezoeker';
+
+    let ticketsToRender: TicketPdfOptions[] = [];
+
+    if (order && order.tickets && order.tickets.length > 0) {
+      const activeTickets = order.tickets.filter((t) => t.status !== 'cancelled' && t.status !== 'swapped');
+      const list = activeTickets.length > 0 ? activeTickets : order.tickets;
+      ticketsToRender = list.map((t, idx) => ({
+        ticketCode: t.ticketCode.startsWith('#') ? t.ticketCode : `#${t.ticketCode}`,
+        orderNumber: cleanOrderNumber,
+        attendeeName: t.attendeeName || resolvedAttendeeName,
+        cityName: t.cityName || resolvedCity,
+        sessionTitle: t.sessionTitle,
+        dateStr: t.dateStr,
+        timeStr: t.timeStr,
+        itemNumber: `${idx + 1}/${list.length}`,
+        ticketStatus: t.status,
+      }));
+    } else if (order && order.items && order.items.length > 0) {
+      let tIdx = 1;
+      const totalQty = order.items.reduce((acc, it) => acc + (it.quantity || 1), 0);
+      for (const item of order.items) {
+        for (let q = 0; q < (item.quantity || 1); q++) {
+          ticketsToRender.push({
+            ticketCode: `#${cleanOrderNumber}-${tIdx}`,
+            orderNumber: cleanOrderNumber,
+            attendeeName: resolvedAttendeeName,
+            cityName: resolvedCity,
+            sessionTitle: item.title,
+            dateStr: item.date,
+            timeStr: item.timeslot || item.time,
+            itemNumber: `${tIdx}/${totalQty}`,
+            ticketStatus: 'valid',
+          });
+          tIdx++;
+        }
+      }
+    } else if (query.tickets) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(query.tickets));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          ticketsToRender = parsed.map((t: any, idx: number) => ({
+            ticketCode: t.ticketCode ? (t.ticketCode.startsWith('#') ? t.ticketCode : `#${t.ticketCode}`) : `#${cleanOrderNumber}-${idx + 1}`,
+            orderNumber: cleanOrderNumber,
+            attendeeName: t.attendeeName || resolvedAttendeeName,
+            cityName: t.cityName || resolvedCity,
+            sessionTitle: t.sessionTitle || t.title || 'Festival Entreeticket',
+            dateStr: t.dateStr || t.date,
+            timeStr: t.timeStr || t.time,
+            itemNumber: t.itemNumber || `${idx + 1}/${parsed.length}`,
+            ticketStatus: t.status || 'valid',
+          }));
+        }
+      } catch (err) {
+        console.error('Fout bij parsen query.tickets:', err);
+      }
+    }
+
+    if (ticketsToRender.length === 0) {
+      ticketsToRender.push({
+        ticketCode: `#${cleanOrderNumber}-1`,
+        orderNumber: cleanOrderNumber,
+        attendeeName: resolvedAttendeeName,
+        cityName: resolvedCity,
+        sessionTitle: query.title || 'Festival Entreeticket',
+        dateStr: query.date,
+        timeStr: query.time,
+        itemNumber: '1/1',
+        ticketStatus: 'valid',
+      });
+    }
+
+    const bundlePdfBytes = await generateTicketsBundlePdf(ticketsToRender);
+
+    reply.header('Content-Type', 'application/pdf');
+    reply.header(
+      'Content-Disposition',
+      `inline; filename="E-Tickets-Bundel-${cleanOrderNumber}.pdf"`
+    );
+    return reply.send(Buffer.from(bundlePdfBytes));
+  });
+
+  // Official POST Bundled A4 PDF Generator endpoint
+  server.post('/api/tickets/bundle/pdf', async (request, reply) => {
+    const body = (request.body || {}) as {
+      orderNumber?: string;
+      cityName?: string;
+      tickets?: TicketPdfOptions[];
+    };
+    const cleanOrderNumber = (body.orderNumber || 'WF1861').replace(/^#+/, '').trim();
+    const tickets = body.tickets || [];
+    if (tickets.length === 0) {
+      return reply.status(400).send({ error: 'Geen tickets opgegeven voor bundel.' });
+    }
+    const bundlePdfBytes = await generateTicketsBundlePdf(tickets);
+    reply.header('Content-Type', 'application/pdf');
+    reply.header(
+      'Content-Disposition',
+      `inline; filename="E-Tickets-Bundel-${cleanOrderNumber}.pdf"`
+    );
+    return reply.send(Buffer.from(bundlePdfBytes));
   });
 
   // Official Cryptographic Vector SVG QR Code endpoint
