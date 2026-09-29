@@ -11,6 +11,7 @@ import { checkDbConnection } from './db/index.js';
 import { generateTicketPdf } from './modules/tickets/pdf.service.js';
 import { generateQrSvg, generateQrPngDataUrl } from './modules/tickets/qr.service.js';
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
+import { registerCatalogRoutes } from './modules/catalog/catalog.routes.js';
 import { startStockCleanupWorker } from './modules/orders/stock-cleanup.worker.js';
 import { UsersRepository } from './modules/auth/users.repository.js';
 import { OrdersRepository } from './modules/orders/orders.repository.js';
@@ -352,7 +353,8 @@ export async function buildServer(): Promise<FastifyInstance> {
     return reply.redirect(`/api/tickets/${encodeURIComponent(cleanCode)}/pdf${queryString ? `?${queryString}` : ''}`);
   });
 
-  // 5. Checkout & Payment Routes
+  // 5. Catalog, Checkout & Payment Routes
+  await registerCatalogRoutes(server);
   await registerCheckoutRoutes(server);
 
   // Start background 15-minute stock hold cleanup

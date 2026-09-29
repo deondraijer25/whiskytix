@@ -15,7 +15,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { getFestivalCatalog, FestivalCatalogItem, formatEuro } from '../data/festivalCatalog';
+import { getFestivalCatalog, useLiveCatalog, FestivalCatalogItem, formatEuro } from '../data/festivalCatalog';
 import { INITIAL_FESTIVALS } from '../data/mockData';
 
 const CITY_THEMES: Record<string, {
@@ -94,7 +94,7 @@ export const CreateInvitationPage: React.FC = () => {
   const [filterCategory, setFilterCategory] = useState<'all' | 'entree' | 'masterclass' | 'special'>('all');
   const [sessionSearchQuery, setSessionSearchQuery] = useState('');
 
-  const catalogItems = useMemo(() => getFestivalCatalog(selectedCity), [selectedCity]);
+  const { items: catalogItems, loading: isCatalogLoading } = useLiveCatalog(selectedCity);
 
   const filteredCatalogItems = useMemo(() => {
     return catalogItems.filter((item) => {
@@ -116,13 +116,12 @@ export const CreateInvitationPage: React.FC = () => {
     return items[0]?.id || '';
   });
 
-  // Switch selection if city changes
+  // Switch selection if city changes or catalog loads
   useEffect(() => {
-    const items = getFestivalCatalog(selectedCity);
-    if (!items.some((i) => i.id === selectedItemId)) {
-      setSelectedItemId(items[0]?.id || '');
+    if (catalogItems.length > 0 && !catalogItems.some((i) => i.id === selectedItemId)) {
+      setSelectedItemId(catalogItems[0]?.id || '');
     }
-  }, [selectedCity]);
+  }, [selectedCity, catalogItems]);
 
   const selectedItem: FestivalCatalogItem | undefined = useMemo(() => {
     return catalogItems.find((i) => i.id === selectedItemId) || filteredCatalogItems[0];

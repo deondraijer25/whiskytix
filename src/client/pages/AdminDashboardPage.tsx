@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Order } from '../data/mockData';
 import { OrderDetailDrawer } from '../components/OrderDetailDrawer';
+import { useLiveCatalog } from '../data/festivalCatalog';
 
 interface AdminDashboardPageProps {
   selectedCity: string;
@@ -60,6 +61,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [mollieEnv, setMollieEnv] = useState<'test' | 'live'>('test');
   const [mollieStatus, setMollieStatus] = useState<MollieStatus | null>(null);
+
+  // Live GoHighLevel Custom Objects Catalogus & Zaalcapaciteiten
+  const { stats: ghlStats, loading: ghlLoading, refresh: refreshGhlCatalog } = useLiveCatalog('all');
 
   // Fetch real orders from API based on active environment (test vs live)
   const fetchOrders = async (env: 'test' | 'live') => {
@@ -129,30 +133,30 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     const gentPaid = orders.filter((o) => o.city === 'gent' && o.status === 'paid');
     const gentRevCents = gentPaid.reduce((acc, o) => acc + (o.totalCents || 0), 0);
     const gentTickets = gentPaid.reduce((acc, o) => acc + (o.tickets?.length || 1), 0);
-    const gentTotal = 3500;
+    const gentTotal = ghlStats?.gent?.totalCapacity || 2360;
     const gentPct = ((gentTickets / gentTotal) * 100).toFixed(1);
 
     // Den Haag: Empty / Pre-launch
     const dhPaid = orders.filter((o) => o.city === 'denhaag' && o.status === 'paid');
     const dhRevCents = dhPaid.reduce((acc, o) => acc + (o.totalCents || 0), 0);
     const dhTickets = dhPaid.reduce((acc, o) => acc + (o.tickets?.length || 1), 0);
-    const dhTotal = 5850;
+    const dhTotal = ghlStats?.denhaag?.totalCapacity || 7663;
     const dhPct = ((dhTickets / dhTotal) * 100).toFixed(1);
 
     // Amsterdam: Empty / Pre-launch
     const amsPaid = orders.filter((o) => o.city === 'amsterdam' && o.status === 'paid');
     const amsRevCents = amsPaid.reduce((acc, o) => acc + (o.totalCents || 0), 0);
     const amsTickets = amsPaid.reduce((acc, o) => acc + (o.tickets?.length || 1), 0);
-    const amsTotal = 4200;
+    const amsTotal = ghlStats?.amsterdam?.totalCapacity || 2860;
     const amsPct = ((amsTickets / amsTotal) * 100).toFixed(1);
 
     return [
       {
         id: 'gent',
-        name: 'International Whisky Festival Gent',
+        name: 'Gents Whisky Festival',
         edition: '21e Editie',
         location: 'De Oude Vismijn Gent',
-        dates: '20, 21 en 22 Mrt 2027',
+        dates: '2, 3 en 4 Okt 2026',
         isLive: true,
         accountInfo: 'Eigen Mollie Account (Gent)',
         statusLabel: mollieEnv === 'live' ? 'Mollie Live Actief' : 'Mollie Testmodus',
@@ -162,6 +166,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         ticketsTotal: gentTotal,
         pct: gentPct,
         vipNote: 'Vroegboeking actief',
+        ticketTypesCount: ghlStats?.gent?.ticketTypesCount || 16,
       },
       {
         id: 'denhaag',
@@ -178,13 +183,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         ticketsTotal: dhTotal,
         pct: dhPct,
         vipNote: 'Beschikbaar bij start verkoop',
+        ticketTypesCount: ghlStats?.denhaag?.ticketTypesCount || 118,
       },
       {
         id: 'amsterdam',
         name: 'Whisky Weekend Amsterdam',
         edition: '2e Editie',
-        location: 'Zuiderkerk Amsterdam',
-        dates: '2, 3 en 4 Okt 2026',
+        location: 'De Hallen Amsterdam',
+        dates: '15, 16 en 17 Jan 2027',
         isLive: false,
         accountInfo: 'Gezamenlijk Account (NL)',
         statusLabel: 'In Voorbereiding',
@@ -194,9 +200,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         ticketsTotal: amsTotal,
         pct: amsPct,
         vipNote: 'Beschikbaar bij start verkoop',
+        ticketTypesCount: ghlStats?.amsterdam?.ticketTypesCount || 22,
       },
     ];
-  }, [orders, mollieEnv]);
+  }, [orders, mollieEnv, ghlStats]);
 
   const displayedFestivals = useMemo(() => {
     if (selectedCity === 'all') return festivalsData;
@@ -222,19 +229,32 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               Centrale Festival Cockpit
             </span>
             <span className="text-xs text-[#4c5752] font-semibold">
-              • Realtime transacties via Mollie
+              • Realtime transacties via Mollie • GHL Catalogus Actief
             </span>
           </div>
           <h1 className="text-xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
             3-Steden Festival Cockpit
           </h1>
           <p className="text-xs sm:text-sm text-[#4c5752] mt-0.5 font-medium">
-            Overkoepelend inzicht in omzet en transacties. Momenteel gekoppeld met Mollie (Gent actief).
+            Overkoepelend inzicht in omzet, zaalcapaciteiten en live tickets rechtstreeks uit GoHighLevel.
           </p>
         </div>
 
-        {/* Mollie Test / Live Mode Schakelaar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
+        {/* Controls: Mollie Test/Live & GHL Sync */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 shrink-0 flex-wrap">
+          {/* GHL Catalogus Sync Knop */}
+          <button
+            type="button"
+            onClick={() => refreshGhlCatalog()}
+            disabled={ghlLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-[#d8e7e2] text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer text-xs font-bold transition-all disabled:opacity-50"
+            title="Herlaad live tickets en zaalcapaciteiten direct uit GoHighLevel Custom Objects"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#006448] ${ghlLoading ? 'animate-spin' : ''}`} />
+            <span>{ghlLoading ? 'GHL Leden...' : 'GHL Sync'}</span>
+          </button>
+
+          {/* Mollie Test / Live Mode Schakelaar */}
           <div className="flex items-center bg-[#FAF7F2] border-2 border-[#1D1C1A] p-1 rounded-lg shadow-[2px_2px_0px_rgba(29,28,26,0.9)]">
             <button
               type="button"
@@ -265,7 +285,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           <button
             onClick={() => fetchOrders(mollieEnv)}
             disabled={isLoading}
-            className="p-2 rounded border-2 border-[#1D1C1A] bg-[#FAF7F2] text-[#1D1C1A] hover:bg-[#d8e7e2] shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer disabled:opacity-50"
+            className="p-2 rounded-lg border-2 border-[#1D1C1A] bg-[#FAF7F2] text-[#1D1C1A] hover:bg-[#d8e7e2] shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer disabled:opacity-50"
             title="Ververs live gegevens"
           >
             <RefreshCw className={`w-4 h-4 text-[#006448] ${isLoading ? 'animate-spin' : ''}`} />
@@ -468,9 +488,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         ></div>
                       </div>
                       <div className="flex items-center justify-between text-[10px] sm:text-[11px] pt-1 border-t border-[#c1d4ce]/60">
-                        <span className="text-[#4c5752] font-medium truncate mr-2">Status:</span>
-                        <span className="font-bold text-[#1D1C1A]">
-                          {fest.vipNote}
+                        <span className="text-[#4c5752] font-medium truncate mr-2">GHL Catalogus:</span>
+                        <span className="font-bold text-[#006448]">
+                          {fest.ticketTypesCount} types ({fest.ticketsTotal.toLocaleString('nl-NL')} pl.)
                         </span>
                       </div>
                     </div>

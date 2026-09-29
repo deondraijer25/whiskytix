@@ -541,10 +541,137 @@ export const FESTIVAL_CATALOG: FestivalCatalogItem[] = [
   },
 ];
 
+export interface CityCatalogStats {
+  city: 'gent' | 'denhaag' | 'amsterdam';
+  cityName: string;
+  totalCapacity: number;
+  totalSold: number;
+  ticketTypesCount: number;
+  soldPercentage: string;
+}
+
+// In-memory runtime cache voor client-side
+let liveCatalogCache: FestivalCatalogItem[] | null = null;
+let liveStatsCache: Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats> | null = null;
+let isFetchingCatalog = false;
+
+/**
+ * Haalt live tickets op uit de Whiskytix GHL Catalog API
+ */
+export async function fetchLiveCatalog(force = false): Promise<FestivalCatalogItem[]> {
+  if (!force && liveCatalogCache && liveCatalogCache.length > 0) {
+    return liveCatalogCache;
+  }
+  if (isFetchingCatalog) {
+    return liveCatalogCache || FESTIVAL_CATALOG;
+  }
+
+  isFetchingCatalog = true;
+  try {
+    const res = await fetch(`/api/catalog${force ? '?refresh=true' : ''}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.items) && data.items.length > 0) {
+        liveCatalogCache = data.items;
+        if (data.stats) {
+          liveStatsCache = data.stats;
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('whiskytix:catalog-updated', { detail: data }));
+        }
+        return data.items;
+      }
+    }
+  } catch (err) {
+    console.warn('[FestivalCatalog] Kon live catalogus niet ophalen:', err);
+  } finally {
+    isFetchingCatalog = false;
+  }
+
+  return liveCatalogCache || FESTIVAL_CATALOG;
+}
+
+export function getLiveStats(): Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats> | null {
+  return liveStatsCache;
+}
+
 export function getFestivalCatalog(city: 'gent' | 'denhaag' | 'amsterdam'): FestivalCatalogItem[] {
+  if (liveCatalogCache && liveCatalogCache.length > 0) {
+    const filtered = liveCatalogCache.filter((item) => item.city === city);
+    if (filtered.length > 0) return filtered;
+  }
   return FESTIVAL_CATALOG.filter((item) => item.city === city);
 }
 
 export function formatEuro(amount: number): string {
   return `€ ${amount.toFixed(2).replace('.', ',')}`;
+}
+
+import { useState, useEffect } from 'react';
+
+/**
+ * React Hook om overal in de cockpit live GHL tickets en capaciteiten te gebruiken
+ */
+export function useLiveCatalog(city?: 'gent' | 'denhaag' | 'amsterdam' | 'all') {
+  const [items, setItems] = useState<FestivalCatalogItem[]>(() => {
+    if (city && city !== 'all') {
+      return getFestivalCatalog(city);
+    }
+    return liveCatalogCache || FESTIVAL_CATALOG;
+  });
+  const [stats, setStats] = useState<Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats> | null>(liveStatsCache);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      setLoading(true);
+      const data = await fetchLiveCatalog();
+      if (isMounted) {
+        if (city && city !== 'all') {
+          setItems(data.filter((i) => i.city === city));
+        } else {
+          setItems(data);
+        }
+        setStats(getLiveStats());
+        setLoading(false);
+      }
+    };
+    load();
+
+    const handleUpdate = (e: any) => {
+      if (!isMounted) return;
+      const allItems = e.detail?.items || liveCatalogCache || [];
+      if (city && city !== 'all') {
+        setItems(allItems.filter((i: any) => i.city === city));
+      } else {
+        setItems(allItems);
+      }
+      setStats(e.detail?.stats || getLiveStats());
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('whiskytix:catalog-updated', handleUpdate);
+    }
+    return () => {
+      isMounted = false;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('whiskytix:catalog-updated', handleUpdate);
+      }
+    };
+  }, [city]);
+
+  const refresh = async () => {
+    setLoading(true);
+    const data = await fetchLiveCatalog(true);
+    if (city && city !== 'all') {
+      setItems(data.filter((i) => i.city === city));
+    } else {
+      setItems(data);
+    }
+    setStats(getLiveStats());
+    setLoading(false);
+  };
+
+  return { items, stats, loading, refresh };
 }

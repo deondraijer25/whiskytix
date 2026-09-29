@@ -18,7 +18,7 @@ export async function runSeed() {
       },
       {
         id: 'gent',
-        name: 'International Whisky Festival Gent',
+        name: 'Gents Whisky Festival',
         city: 'Gent',
         currency: 'EUR',
         supportEmail: 'tickets@gentwhisky.be',
