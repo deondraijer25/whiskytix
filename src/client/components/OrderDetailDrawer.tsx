@@ -336,19 +336,26 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
     }
     const rawCode = ticket.code.replace('#', '');
     try {
-      await fetch(`/api/admin/tickets/${encodeURIComponent(rawCode)}/cancel`, {
+      const res = await fetch(`/api/admin/tickets/${encodeURIComponent(rawCode)}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'Handmatig geannuleerd via orderbeheer' }),
       });
-    } catch (_) {}
-    const updated = effectiveTickets.map(t => {
-      if (t.code === ticket.code) return { ...t, status: 'cancelled' };
-      return t;
-    });
-    setLocalTickets(updated);
-    showToast(`Ticket ${ticket.code} is geannuleerd en QR is ongeldig gemaakt.`);
-    if (onOrderUpdated) onOrderUpdated();
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        const updated = effectiveTickets.map(t => {
+          if (t.code === ticket.code) return { ...t, status: 'cancelled' };
+          return t;
+        });
+        setLocalTickets(updated);
+        showToast(`Ticket ${ticket.code} is geannuleerd en QR is ongeldig gemaakt.`);
+        if (onOrderUpdated) onOrderUpdated();
+      } else {
+        showToast(data.error || 'Fout bij annuleren van ticket.');
+      }
+    } catch (err: any) {
+      showToast('Netwerkfout bij annuleren van ticket.');
+    }
   };
 
   const handleAddTicketSubmit = async (e: React.FormEvent) => {

@@ -217,4 +217,69 @@ export class MollieService {
       return [];
     }
   }
+
+  /**
+   * Persist ticket modifications (cancellations, swaps, order status) directly to Mollie payment metadata
+   */
+  static async updateOrderMetadata(
+    orderNumberOrPaymentId: string,
+    modifications: {
+      orderStatus?: string;
+      cancelledTicketCodes?: string[];
+      swappedTickets?: Array<{ originalCode: string; newCode: string; newTitle: string; newDate?: string; newTime?: string }>;
+    },
+    mode?: 'test' | 'live'
+  ): Promise<boolean> {
+    const apiKey = this.getApiKey(mode);
+    if (!apiKey) return false;
+
+    try {
+      const client = createMollieClient({ apiKey });
+      let paymentId = orderNumberOrPaymentId;
+
+      if (!paymentId.startsWith('tr_')) {
+        const clean = orderNumberOrPaymentId.startsWith('#') ? orderNumberOrPaymentId : `#${orderNumberOrPaymentId}`;
+        const raw = orderNumberOrPaymentId.replace(/^#+/, '');
+        const payments = await this.listRecentPayments(50, mode);
+        const matched = payments.find((p: any) =>
+          p.metadata?.orderNumber === clean ||
+          p.metadata?.orderNumber === raw ||
+          p.metadata?.orderNumber?.replace(/^#+/, '') === raw
+        );
+        if (!matched) {
+          console.warn(`[Mollie Sync] Geen betaling gevonden voor ordernummer ${orderNumberOrPaymentId}`);
+          return false;
+        }
+        paymentId = matched.id;
+      }
+
+      const payment = await client.payments.get(paymentId);
+      const currentMeta = payment.metadata || {};
+
+      const mergedMeta: any = { ...currentMeta };
+
+      if (modifications.orderStatus) {
+        mergedMeta.orderStatus = modifications.orderStatus;
+      }
+
+      if (modifications.cancelledTicketCodes && modifications.cancelledTicketCodes.length > 0) {
+        const existingCancelled = mergedMeta.cancelledTicketCodes
+          ? (typeof mergedMeta.cancelledTicketCodes === 'string' ? mergedMeta.cancelledTicketCodes.split(',') : mergedMeta.cancelledTicketCodes)
+          : [];
+        const combined = Array.from(new Set([...existingCancelled, ...modifications.cancelledTicketCodes]));
+        mergedMeta.cancelledTicketCodes = combined.join(',');
+      }
+
+      if (modifications.swappedTickets && modifications.swappedTickets.length > 0) {
+        mergedMeta.swappedJson = JSON.stringify(modifications.swappedTickets);
+      }
+
+      await client.payments.update(paymentId, { metadata: mergedMeta });
+      console.info(`[Mollie Sync] Succesvol metadata bijgewerkt voor betaling ${paymentId} (${mergedMeta.orderNumber || ''})`);
+      return true;
+    } catch (err: any) {
+      console.warn(`[Mollie Sync] Fout bij bijwerken Mollie metadata voor ${orderNumberOrPaymentId}:`, err.message);
+      return false;
+    }
+  }
 }

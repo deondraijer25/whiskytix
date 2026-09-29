@@ -6,6 +6,7 @@ import * as schema from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { buildQrPayload, generateTicketSignature } from '../tickets/qr.service.js';
 import { GhlSyncService } from '../ghl/ghl.sync.service.js';
+import { MollieService } from '../payments/mollie.service.js';
 
 export interface StoredOrderItem {
   id: string;
@@ -875,6 +876,21 @@ export class OrdersRepository {
     memoryOrders.set(order.id, order);
     saveLocalStore();
 
+    // Persist swap to Mollie metadata for persistent cloud storage across Vercel cold starts
+    try {
+      await MollieService.updateOrderMetadata(order.orderNumber, {
+        swappedTickets: [{
+          originalCode: oldTicket.ticketCode,
+          newCode: newTicketCode,
+          newTitle: params.newSessionTitle,
+          newDate: resolvedDateStr,
+          newTime: resolvedTimeStr,
+        }],
+      });
+    } catch (err: any) {
+      console.warn('[Mollie Sync] Fout bij syncen van ticket omruiling:', err.message);
+    }
+
     // 3. Save swap audit trail in DB if available
     try {
       const dbStatus = await checkDbConnection();
@@ -961,6 +977,15 @@ export class OrdersRepository {
     memoryOrders.set(order.id, order);
     saveLocalStore();
 
+    // Persist to Mollie metadata for persistent cloud storage across Vercel cold starts
+    try {
+      await MollieService.updateOrderMetadata(order.orderNumber, {
+        cancelledTicketCodes: [ticket.ticketCode],
+      });
+    } catch (err: any) {
+      console.warn('[Mollie Sync] Fout bij syncen van ticket annulering:', err.message);
+    }
+
     try {
       const dbStatus = await checkDbConnection();
       if (dbStatus.ok) {
@@ -1003,6 +1028,16 @@ export class OrdersRepository {
     memoryOrders.set(order.orderNumber, order);
     memoryOrders.set(order.id, order);
     saveLocalStore();
+
+    // Persist to Mollie metadata for persistent cloud storage across Vercel cold starts
+    try {
+      await MollieService.updateOrderMetadata(order.orderNumber, {
+        orderStatus: 'cancelled',
+        cancelledTicketCodes: order.tickets.map((t) => t.ticketCode),
+      });
+    } catch (err: any) {
+      console.warn('[Mollie Sync] Fout bij syncen van order annulering:', err.message);
+    }
 
     try {
       const dbStatus = await checkDbConnection();

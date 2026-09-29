@@ -489,6 +489,69 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           } else {
             order = reconstructedOrder;
           }
+
+          // Apply persistent Mollie metadata modifications
+          if (order && meta) {
+            const rawCanc = meta.cancelledTicketCodes;
+            const cancList = rawCanc
+              ? (typeof rawCanc === 'string' ? rawCanc.split(',') : Array.isArray(rawCanc) ? rawCanc : [rawCanc])
+                  .map((c: string) => String(c).trim().replace(/^#+/, ''))
+              : [];
+
+            if (cancList.length > 0 && Array.isArray(order.tickets)) {
+              for (const t of order.tickets) {
+                const cleanT = t.ticketCode.replace(/^#+/, '');
+                if (cancList.includes(cleanT) || cancList.includes(t.ticketCode)) {
+                  t.status = 'cancelled';
+                  t.swapReason = 'Geannuleerd via orderbeheer';
+                }
+              }
+            }
+
+            if (meta.orderStatus) {
+              order.status = meta.orderStatus as any;
+              if (meta.orderStatus === 'cancelled' && Array.isArray(order.tickets)) {
+                for (const t of order.tickets) {
+                  t.status = 'cancelled';
+                  t.swapReason = 'Geannuleerd via orderbeheer';
+                }
+              }
+            }
+
+            if (meta.swappedJson && Array.isArray(order.tickets)) {
+              try {
+                const swappedList = JSON.parse(meta.swappedJson);
+                if (Array.isArray(swappedList)) {
+                  for (const sw of swappedList) {
+                    const orig = order.tickets.find((t) => t.ticketCode === sw.originalCode || t.ticketCode.replace(/^#+/, '') === String(sw.originalCode).replace(/^#+/, ''));
+                    if (orig) {
+                      orig.status = 'swapped';
+                      orig.swappedToTicketCode = sw.newCode;
+                      orig.swapReason = `Omgeruild naar ${sw.newTitle}`;
+                    }
+                    if (!order.tickets.some((t) => t.ticketCode === sw.newCode)) {
+                      order.tickets.push({
+                        id: crypto.randomUUID(),
+                        orderId: order.id,
+                        ticketCode: sw.newCode,
+                        qrPayload: `WT1:${sw.newCode.replace('#', '')}:${order.festivalId}:${sw.newTitle}:${order.customerName}`,
+                        qrPayloadHash: sw.newCode.replace('#', '').substring(0, 10),
+                        attendeeName: order.customerName,
+                        status: 'valid',
+                        sessionTitle: sw.newTitle,
+                        cityName: order.festivalId,
+                        dateStr: sw.newDate || '',
+                        timeStr: sw.newTime || '',
+                        pdfUrl: `/api/tickets/${sw.newCode.replace('#', '')}/pdf?city=${order.festivalId}`,
+                        replacedTicketCode: sw.originalCode,
+                        createdAt: new Date().toISOString(),
+                      });
+                    }
+                  }
+                }
+              } catch {}
+            }
+          }
         }
       } catch (err: any) {
         server.log.warn('Could not reconstruct order from Mollie: ' + err.message);
@@ -520,6 +583,82 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       return reply.status(404).send({ error: 'Bestelling niet gevonden.' });
     }
 
+    // Always apply Mollie metadata modifications (cancelledTicketCodes, swappedJson, orderStatus)
+    try {
+      const molliePayments = await MollieService.listRecentPayments(50);
+      const cleanedNum = order.orderNumber.startsWith('#') ? order.orderNumber : `#${order.orderNumber}`;
+      const rawNum = order.orderNumber.replace(/^#+/, '');
+      const matched = molliePayments.find((p: any) =>
+        p.id === order.molliePaymentId ||
+        p.metadata?.orderNumber === cleanedNum ||
+        p.metadata?.orderNumber === rawNum ||
+        p.metadata?.orderNumber?.replace(/^#+/, '') === rawNum
+      );
+
+      if (matched?.metadata) {
+        const meta = matched.metadata;
+        const rawCanc = meta.cancelledTicketCodes;
+        const cancList = rawCanc
+          ? (typeof rawCanc === 'string' ? rawCanc.split(',') : Array.isArray(rawCanc) ? rawCanc : [rawCanc])
+              .map((c: string) => String(c).trim().replace(/^#+/, ''))
+          : [];
+
+        if (cancList.length > 0 && Array.isArray(order.tickets)) {
+          for (const t of order.tickets) {
+            const cleanT = (t.ticketCode || '').replace(/^#+/, '');
+            if (cancList.includes(cleanT) || cancList.includes(t.ticketCode)) {
+              t.status = 'cancelled';
+              t.swapReason = 'Geannuleerd via orderbeheer';
+            }
+          }
+        }
+
+        if (meta.orderStatus) {
+          order.status = meta.orderStatus as any;
+          if (meta.orderStatus === 'cancelled' && Array.isArray(order.tickets)) {
+            for (const t of order.tickets) {
+              t.status = 'cancelled';
+              t.swapReason = 'Geannuleerd via orderbeheer';
+            }
+          }
+        }
+
+        if (meta.swappedJson && Array.isArray(order.tickets)) {
+          try {
+            const swappedList = JSON.parse(meta.swappedJson);
+            if (Array.isArray(swappedList)) {
+              for (const sw of swappedList) {
+                const orig = order.tickets.find((t) => t.ticketCode === sw.originalCode || t.ticketCode?.replace(/^#+/, '') === String(sw.originalCode).replace(/^#+/, ''));
+                if (orig) {
+                  orig.status = 'swapped';
+                  orig.swappedToTicketCode = sw.newCode;
+                  orig.swapReason = `Omgeruild naar ${sw.newTitle}`;
+                }
+                if (!order.tickets.some((t) => t.ticketCode === sw.newCode)) {
+                  order.tickets.push({
+                    id: crypto.randomUUID(),
+                    orderId: order.id,
+                    ticketCode: sw.newCode,
+                    qrPayload: `WT1:${sw.newCode.replace('#', '')}:${order.festivalId}:${sw.newTitle}:${order.customerName}`,
+                    qrPayloadHash: sw.newCode.replace('#', '').substring(0, 10),
+                    attendeeName: order.customerName,
+                    status: 'valid',
+                    sessionTitle: sw.newTitle,
+                    cityName: order.festivalId,
+                    dateStr: sw.newDate || '',
+                    timeStr: sw.newTime || '',
+                    pdfUrl: `/api/tickets/${sw.newCode.replace('#', '')}/pdf?city=${order.festivalId}`,
+                    replacedTicketCode: sw.originalCode,
+                    createdAt: new Date().toISOString(),
+                  });
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch (_) {}
+
     // Generate pre-rendered ticket cards HTML for festival websites
     const cityConfig: Record<string, { primary: string; primaryLight: string; badgeBorder: string; venue: string; gradient: string }> = {
       gent: { primary: '#1E3A8A', primaryLight: '#E0E9FF', badgeBorder: '#93C5FD', venue: 'De Oude Vismijn, Gent', gradient: 'linear-gradient(90deg, #1E3A8A 0%, #2563EB 50%, #1E3A8A 100%)' },
@@ -530,7 +669,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     const apiBase = `${request.protocol}://${request.headers.host || 'whiskytix-r1qq.vercel.app'}`;
 
     let ticketsHtml = '';
-    if (order.status === 'paid' && order.tickets && order.tickets.length > 0) {
+    if (order.tickets && order.tickets.length > 0) {
       for (const ticket of order.tickets) {
         const cleanCode = (ticket.ticketCode || '').replace('#', '');
         const isSwapped = ticket.status === 'swapped';
@@ -1029,7 +1168,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       }
 
       // Check-in ticket in database/store
-      const checkInResult = await OrdersRepository.checkInTicket(ticketCode);
+      let checkInResult = await OrdersRepository.checkInTicket(ticketCode);
+      if (!checkInResult.success && checkInResult.error?.includes('niet gevonden')) {
+        await getSyncedOrders({});
+        checkInResult = await OrdersRepository.checkInTicket(ticketCode);
+      }
 
       if (!checkInResult.success) {
         const isDuplicate = checkInResult.error?.includes('AL GESCAND');
@@ -1225,23 +1368,68 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
              const effectiveItems = parsedItems || parseItemsSummary(cleanSummary);
              const tickets: FormattedOrderTicket[] = [];
 
+             // Read persistent metadata modifications (cancelled tickets, swaps, order cancellation)
+             const rawCanc = p.metadata?.cancelledTicketCodes;
+             const cancList = rawCanc
+               ? (typeof rawCanc === 'string' ? rawCanc.split(',') : Array.isArray(rawCanc) ? rawCanc : [rawCanc])
+                   .map((c: string) => String(c).trim().replace(/^#+/, ''))
+               : [];
+             const isOrderCancelled = p.metadata?.orderStatus === 'cancelled';
+
              let ticketIndex = 1;
-             for (const it of effectiveItems) {
-               const isMc = it.title.toLowerCase().includes('masterclass');
-               const typeLabel = isMc ? 'Masterclass' : 'Entreeticket';
-               for (let q = 0; q < it.quantity; q++) {
-                 tickets.push({
-                   code: `#${cleanNum}-${ticketIndex}`,
-                   type: typeLabel,
-                   session: it.title,
-                   attendeeName: resolvedName,
-                   status: (p.status === 'paid' || p.status === 'authorized' || p.status === 'open' || p.status === 'pending') ? 'valid' : (p.status === 'refunded' || p.status === 'canceled' || p.status === 'failed') ? 'cancelled' : 'valid',
-                   dateStr: OrdersRepository.resolveSessionDateTime(festId, it.title, (it as any).date, (it as any).time).dateStr,
-                   timeStr: OrdersRepository.resolveSessionDateTime(festId, it.title, (it as any).date, (it as any).time).timeStr,
-                 });
-                 ticketIndex++;
-               }
-             }
+              for (const it of effectiveItems) {
+                const isMc = it.title.toLowerCase().includes('masterclass');
+                const typeLabel = isMc ? 'Masterclass' : 'Entreeticket';
+                for (let q = 0; q < it.quantity; q++) {
+                  const cleanTicketCode = `${cleanNum}-${ticketIndex}`;
+                  const isCancelled = isOrderCancelled || cancList.includes(cleanTicketCode) || cancList.includes(`#${cleanTicketCode}`);
+                  const ticketStatus = isCancelled
+                    ? 'cancelled'
+                    : (p.status === 'paid' || p.status === 'authorized' || p.status === 'open' || p.status === 'pending')
+                    ? 'valid'
+                    : 'cancelled';
+
+                  tickets.push({
+                    code: `#${cleanTicketCode}`,
+                    type: typeLabel,
+                    session: it.title,
+                    attendeeName: resolvedName,
+                    status: ticketStatus,
+                    swapReason: isCancelled ? 'Geannuleerd via orderbeheer' : undefined,
+                    dateStr: OrdersRepository.resolveSessionDateTime(festId, it.title, (it as any).date, (it as any).time).dateStr,
+                    timeStr: OrdersRepository.resolveSessionDateTime(festId, it.title, (it as any).date, (it as any).time).timeStr,
+                  });
+                  ticketIndex++;
+                }
+              }
+
+              // Apply persistent swapped tickets from metadata
+              if (p.metadata?.swappedJson) {
+                try {
+                  const swappedList = JSON.parse(p.metadata.swappedJson);
+                  if (Array.isArray(swappedList)) {
+                    for (const sw of swappedList) {
+                      const orig = tickets.find((t) => t.code === sw.originalCode || t.code.replace(/^#+/, '') === String(sw.originalCode).replace(/^#+/, ''));
+                      if (orig) {
+                        orig.status = 'swapped';
+                        orig.swappedToTicketCode = sw.newCode;
+                        orig.swapReason = `Omgeruild naar ${sw.newTitle}`;
+                      }
+                      if (!tickets.some((t) => t.code === sw.newCode)) {
+                        tickets.push({
+                          code: sw.newCode,
+                          type: (sw.newTitle || '').toLowerCase().includes('masterclass') ? 'Masterclass' : 'Entreeticket',
+                          session: sw.newTitle,
+                          attendeeName: resolvedName,
+                          status: 'valid',
+                          dateStr: sw.newDate || '',
+                          timeStr: sw.newTime || '',
+                        });
+                      }
+                    }
+                  }
+                } catch {}
+              }
 
              formattedOrders.unshift({
                id: p.id,
@@ -1253,7 +1441,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                cityName,
                itemsSummary: cleanSummary,
                totalCents: amountCents,
-               status: p.status === 'paid' ? 'paid' : (p.status as any),
+               status: isOrderCancelled ? 'cancelled' : p.status === 'paid' ? 'paid' : (p.status as any),
                createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
                environment: p.environment || targetMode,
                tickets,
@@ -1320,26 +1508,77 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 };
                 OrdersRepository.registerSyncedOrder(storedOrder);
               } catch (_) {}
-           } else if (p.status === 'paid') {
-              if (existing.status !== 'paid') {
+           } else {
+              // Existing order found in local repository - ALWAYS sync Mollie metadata (cancellations, swaps, orderStatus)
+              const rawCanc = p.metadata?.cancelledTicketCodes;
+              const cancList = rawCanc
+                ? (typeof rawCanc === 'string' ? rawCanc.split(',') : Array.isArray(rawCanc) ? rawCanc : [rawCanc])
+                    .map((c: string) => String(c).trim().replace(/^#+/, ''))
+                : [];
+              const isOrderCancelled = p.metadata?.orderStatus === 'cancelled';
+
+              if (isOrderCancelled) {
+                existing.status = 'cancelled';
+              } else if (p.status === 'paid' && existing.status !== 'paid') {
                 existing.status = 'paid';
               }
-              // Ensure all tickets for paid order are valid (unless explicitly swapped/cancelled with reason)
+
+              // Apply cancellations to existing.tickets
               if (Array.isArray(existing.tickets)) {
                 for (const t of existing.tickets) {
-                  if (t.status !== 'swapped' && !t.swapReason) {
+                  const cleanTicketCode = (t.code || '').replace(/^#+/, '');
+                  if (isOrderCancelled || cancList.includes(cleanTicketCode) || cancList.includes(`#${cleanTicketCode}`)) {
+                    t.status = 'cancelled';
+                    t.swapReason = 'Geannuleerd via orderbeheer';
+                  } else if (p.status === 'paid' && t.status !== 'swapped' && t.status !== 'cancelled') {
                     t.status = 'valid';
                   }
                 }
               }
+
+              // Apply swapped tickets from Mollie metadata
+              if (p.metadata?.swappedJson && Array.isArray(existing.tickets)) {
+                try {
+                  const swappedList = JSON.parse(p.metadata.swappedJson);
+                  if (Array.isArray(swappedList)) {
+                    for (const sw of swappedList) {
+                      const orig = existing.tickets.find((t) => t.code === sw.originalCode || t.code.replace(/^#+/, '') === String(sw.originalCode).replace(/^#+/, ''));
+                      if (orig) {
+                        orig.status = 'swapped';
+                        orig.swappedToTicketCode = sw.newCode;
+                        orig.swapReason = `Omgeruild naar ${sw.newTitle}`;
+                      }
+                      if (!existing.tickets.some((t) => t.code === sw.newCode)) {
+                        existing.tickets.push({
+                          code: sw.newCode,
+                          type: (sw.newTitle || '').toLowerCase().includes('masterclass') ? 'Masterclass' : 'Entreeticket',
+                          session: sw.newTitle,
+                          attendeeName: existing.customerName,
+                          status: 'valid',
+                          dateStr: sw.newDate || '',
+                          timeStr: sw.newTime || '',
+                        });
+                      }
+                    }
+                  }
+                } catch {}
+              }
+
+              // Also persist cancellations and status back to OrdersRepository
               const repoOrder = await OrdersRepository.findOrder(metaOrderNumber);
               if (repoOrder) {
-                repoOrder.status = 'paid';
-                repoOrder.paidAt = p.paidAt || new Date().toISOString();
+                if (isOrderCancelled) {
+                  repoOrder.status = 'cancelled';
+                } else if (p.status === 'paid') {
+                  repoOrder.status = 'paid';
+                  repoOrder.paidAt = p.paidAt || new Date().toISOString();
+                }
                 if (Array.isArray(repoOrder.tickets)) {
                   for (const t of repoOrder.tickets) {
-                    if (t.status !== 'swapped' && !t.swapReason) {
-                      t.status = 'valid';
+                    const cleanCode = (t.ticketCode || '').replace(/^#+/, '');
+                    if (isOrderCancelled || cancList.includes(cleanCode) || cancList.includes(`#${cleanCode}`)) {
+                      t.status = 'cancelled';
+                      t.swapReason = 'Geannuleerd via orderbeheer';
                     }
                   }
                 }
