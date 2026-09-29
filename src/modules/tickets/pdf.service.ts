@@ -203,10 +203,20 @@ export function parseTicketDateTime(
     else if (dLower.includes('zaterdag')) dayName = 'ZATERDAG';
     else if (dLower.includes('zondag')) dayName = 'ZONDAG';
 
-    // Day number (e.g. "3" or "03" or "2" or "14")
-    const dayMatch = rawDateStr.match(/\b([0-3]?\d)\b/);
-    if (dayMatch) {
-      day = dayMatch[1].padStart(2, '0');
+    // Day number (e.g. "3" or "03" or "4" or "14")
+    const monthDayMatch = rawDateStr.match(/\b([0-3]?\d)\s*(?:okt|oct|nov|dec|jan|feb|mrt|mar|apr|mei|may|jun|jul|aug|sep)/i);
+    if (monthDayMatch) {
+      day = monthDayMatch[1].padStart(2, '0');
+    } else {
+      const isoMatch = rawDateStr.match(/\d{4}-\d{2}-([0-3]\d)/);
+      if (isoMatch) {
+        day = isoMatch[1];
+      } else {
+        const anyDayMatch = rawDateStr.match(/\b([0-3]?\d)\b/);
+        if (anyDayMatch) {
+          day = anyDayMatch[1].padStart(2, '0');
+        }
+      }
     }
 
     // Month
@@ -221,112 +231,71 @@ export function parseTicketDateTime(
     }
   }
 
-  // 2. If day, month or dayName are still missing or known session needs enforcement
+  // 2. City specific fallbacks ONLY when day, month, dayName or timeStr are not provided
   if (cityKey === 'gent') {
-    month = 'OKT';
-    year = '2026';
+    month = month || 'OKT';
+    year = year || '2026';
 
-    if (titleLower.includes('fuji')) {
-      dayName = 'ZATERDAG';
-      day = '03';
-      timeStr = '21:00 - 21:45 UUR';
-    } else if (titleLower.includes('jura')) {
-      dayName = 'ZONDAG';
-      day = '04';
-      timeStr = '12:15 - 13:00 UUR';
-    } else if (titleLower.includes('laphroaig')) {
-      dayName = 'ZONDAG';
-      day = '04';
-      timeStr = '13:30 - 14:15 UUR';
-    } else if (titleLower.includes('cvh')) {
-      dayName = 'ZATERDAG';
-      day = '03';
-      timeStr = '12:15 - 13:00 UUR';
-    } else if (titleLower.includes('fettercairn')) {
-      dayName = 'ZATERDAG';
-      day = '03';
-      timeStr = '15:00 - 15:45 UUR';
-    } else if (titleLower.includes('bowmore')) {
-      dayName = 'ZATERDAG';
-      day = '03';
-      timeStr = '19:30 - 20:15 UUR';
-    } else if (titleLower.includes('bulleit')) {
-      dayName = 'ZATERDAG';
-      day = '03';
-      timeStr = '16:15 - 17:00 UUR';
-    } else if (titleLower.includes('belgian owl')) {
-      dayName = 'ZONDAG';
-      day = '04';
-      timeStr = '13:30 - 14:15 UUR';
-    } else if (titleLower.includes('suntory') || titleLower.includes('glenfiddich') || titleLower.includes('balvenie')) {
-      dayName = 'ZONDAG';
-      day = '04';
-      timeStr = '15:00 - 15:45 UUR';
-    } else if (titleLower.includes('boot') || titleLower.includes('bootje')) {
-      dayName = dayName || 'ZATERDAG';
-      day = day || '03';
-      if (!timeStr || timeStr === '14:00 - 14:45 UUR') timeStr = '12:00 - 13:00 UUR';
-    } else if (titleLower.includes('rondleiding')) {
-      if (titleLower.includes('vrijdag')) {
-        dayName = 'VRIJDAG';
-        day = '02';
-        timeStr = '18:00 - 19:30 UUR';
+    if (!dayName) {
+      if (titleLower.includes('vrijdag')) dayName = 'VRIJDAG';
+      else if (titleLower.includes('zaterdag')) dayName = 'ZATERDAG';
+      else if (titleLower.includes('zondag')) dayName = 'ZONDAG';
+      else if (titleLower.includes('jura') || titleLower.includes('laphroaig') || titleLower.includes('belgian owl') || titleLower.includes('suntory')) {
+        dayName = 'ZONDAG';
+      } else if (titleLower.includes('rondleiding') || titleLower.includes('dada')) {
+        dayName = titleLower.includes('vrijdag') ? 'VRIJDAG' : 'ZATERDAG';
       } else {
         dayName = 'ZATERDAG';
-        day = '03';
-        timeStr = '11:00 - 12:30 UUR';
       }
-    } else if (titleLower.includes('dada chapel') || titleLower.includes('dada')) {
-      if (titleLower.includes('vrijdag')) {
-        dayName = 'VRIJDAG';
-        day = '02';
-        timeStr = '20:00 - 20:45 UUR';
-      } else {
-        dayName = 'ZATERDAG';
-        day = '03';
-        timeStr = '13:45 - 14:30 UUR';
-      }
-    } else if (titleLower.includes('zaterdag')) {
-      dayName = dayName || 'ZATERDAG';
-      day = day || '03';
-      if (!timeStr) {
-        timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
-      }
-    } else if (titleLower.includes('zondag')) {
-      dayName = dayName || 'ZONDAG';
-      day = day || '04';
-      if (!timeStr) timeStr = '13:00 - 17:00 UUR';
-    } else if (titleLower.includes('vrijdag')) {
-      dayName = dayName || 'VRIJDAG';
-      day = day || '02';
-      if (!timeStr) timeStr = '19:00 - 23:00 UUR';
-    } else {
-      // Default Gent Friday if unspecified
-      dayName = dayName || 'VRIJDAG';
-      day = day || '02';
-      if (!timeStr) timeStr = '19:00 - 23:00 UUR';
+    }
+
+    if (!day) {
+      if (dayName === 'VRIJDAG') day = '02';
+      else if (dayName === 'ZATERDAG') day = '03';
+      else if (dayName === 'ZONDAG') day = '04';
+      else day = '02';
+    }
+
+    if (!timeStr) {
+      if (titleLower.includes('fuji')) timeStr = '21:00 - 21:45 UUR';
+      else if (titleLower.includes('jura')) timeStr = '12:15 - 13:00 UUR';
+      else if (titleLower.includes('laphroaig')) timeStr = '13:30 - 14:15 UUR';
+      else if (titleLower.includes('cvh')) timeStr = '12:15 - 13:00 UUR';
+      else if (titleLower.includes('fettercairn')) timeStr = '15:00 - 15:45 UUR';
+      else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:15 UUR';
+      else if (titleLower.includes('bulleit')) timeStr = '16:15 - 17:00 UUR';
+      else if (titleLower.includes('belgian owl')) timeStr = '13:30 - 14:15 UUR';
+      else if (titleLower.includes('suntory') || titleLower.includes('glenfiddich') || titleLower.includes('balvenie')) timeStr = '15:00 - 15:45 UUR';
+      else if (titleLower.includes('boot') || titleLower.includes('bootje')) timeStr = '12:00 - 13:00 UUR';
+      else if (titleLower.includes('rondleiding')) timeStr = (dayName === 'VRIJDAG') ? '18:00 - 19:30 UUR' : '11:00 - 12:30 UUR';
+      else if (titleLower.includes('dada chapel') || titleLower.includes('dada')) timeStr = (dayName === 'VRIJDAG') ? '20:00 - 20:45 UUR' : '13:45 - 14:30 UUR';
+      else if (dayName === 'ZATERDAG') timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
+      else if (dayName === 'ZONDAG') timeStr = '13:00 - 17:00 UUR';
+      else timeStr = '19:00 - 23:00 UUR';
     }
   } else if (cityKey === 'denhaag') {
     month = month || 'NOV';
     year = year || '2026';
-    if (titleLower.includes('zaterdag')) {
-      dayName = dayName || 'ZATERDAG';
-      day = day || '14';
-      if (!timeStr) timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
-    } else if (titleLower.includes('zondag')) {
-      dayName = dayName || 'ZONDAG';
-      day = day || '15';
-      if (!timeStr) timeStr = '13:00 - 17:00 UUR';
-    } else {
-      dayName = dayName || 'VRIJDAG';
-      day = day || '13';
-      if (!timeStr) timeStr = titleLower.includes('vip') ? '13:00 - 17:00 UUR' : '18:30 - 22:30 UUR';
+    if (!dayName) {
+      if (titleLower.includes('zaterdag')) dayName = 'ZATERDAG';
+      else if (titleLower.includes('zondag')) dayName = 'ZONDAG';
+      else dayName = 'VRIJDAG';
+    }
+    if (!day) {
+      if (dayName === 'VRIJDAG') day = '13';
+      else if (dayName === 'ZATERDAG') day = '14';
+      else if (dayName === 'ZONDAG') day = '15';
+    }
+    if (!timeStr) {
+      if (dayName === 'ZATERDAG') timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
+      else if (dayName === 'ZONDAG') timeStr = '13:00 - 17:00 UUR';
+      else timeStr = titleLower.includes('vip') ? '13:00 - 17:00 UUR' : '18:30 - 22:30 UUR';
     }
   } else if (cityKey === 'amsterdam') {
     month = month || 'JAN';
     year = year || '2027';
-    dayName = dayName || 'ZATERDAG';
-    day = day || '16';
+    if (!dayName) dayName = 'ZATERDAG';
+    if (!day) day = '16';
     if (!timeStr) timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
   }
 
@@ -335,7 +304,11 @@ export function parseTicketDateTime(
   day = day || '02';
   month = month || 'OKT';
   if (!timeStr) timeStr = '13:00 - 17:00 UUR';
-  if (!timeStr.toUpperCase().includes('UUR')) timeStr += ' UUR';
+  if (timeStr.toLowerCase().endsWith(' uur')) {
+    timeStr = timeStr.slice(0, -4).trim() + ' UUR';
+  } else if (!timeStr.toUpperCase().includes('UUR')) {
+    timeStr += ' UUR';
+  }
 
   return { dayName, day, month, year, timeStr };
 }

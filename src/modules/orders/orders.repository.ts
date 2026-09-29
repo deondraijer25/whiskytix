@@ -178,107 +178,66 @@ export class OrdersRepository {
     if (cityLower.includes('amsterdam')) cityName = 'Amsterdam';
     else if (cityLower.includes('denhaag') || cityLower.includes('haag')) cityName = 'Den Haag';
 
-    let dateStr = explicitDate && explicitDate !== 'Festivaldag' ? explicitDate : '';
-    let timeStr = explicitTime && explicitTime !== 'Regulier' ? explicitTime.replace(/–/g, '-') : '';
+    let dateStr = (explicitDate && explicitDate.trim() && explicitDate !== 'Festivaldag') ? explicitDate.trim() : '';
+    let timeStr = (explicitTime && explicitTime.trim() && explicitTime !== 'Regulier') ? explicitTime.trim().replace(/–/g, '-') : '';
 
-    if (cityName === 'Gent') {
-      if (titleLower.includes('fuji')) {
-        dateStr = 'Zaterdag 3 oktober 2026';
-        timeStr = '21:00 - 21:45 UUR';
-      } else if (titleLower.includes('jura')) {
-        dateStr = 'Zondag 4 oktober 2026';
-        timeStr = '12:15 - 13:00 UUR';
-      } else if (titleLower.includes('laphroaig')) {
-        dateStr = 'Zondag 4 oktober 2026';
-        timeStr = '13:30 - 14:15 UUR';
-      } else if (titleLower.includes('boot') || titleLower.includes('bootje')) {
-        dateStr = dateStr || 'Zaterdag 3 oktober 2026';
-        timeStr = (timeStr && timeStr !== '14:00 - 14:45 UUR') ? timeStr : '12:00 - 13:00 UUR';
-      } else if (titleLower.includes('rondleiding')) {
-        if (titleLower.includes('vrijdag')) {
+    // Only if dateStr is missing, deduce from title and festival city
+    if (!dateStr) {
+      if (cityName === 'Gent') {
+        if (titleLower.includes('zondag')) {
+          dateStr = 'Zondag 4 oktober 2026';
+        } else if (titleLower.includes('vrijdag')) {
           dateStr = 'Vrijdag 2 oktober 2026';
-          timeStr = '18:00 - 19:30 UUR';
+        } else if (titleLower.includes('botteling')) {
+          dateStr = 'Afhalen Festival (2-4 okt)';
         } else {
           dateStr = 'Zaterdag 3 oktober 2026';
-          timeStr = '11:00 - 12:30 UUR';
         }
-      } else if (titleLower.includes('botteling')) {
-        dateStr = dateStr || 'Afhalen Festival (2-4 okt)';
-        if (!timeStr) timeStr = 'Hele dag';
-      } else if (titleLower.includes('cvh')) {
-        dateStr = 'Zaterdag 3 oktober 2026';
-        timeStr = '12:15 - 13:00 UUR';
-      } else if (titleLower.includes('fettercairn')) {
-        dateStr = 'Zaterdag 3 oktober 2026';
-        timeStr = '15:00 - 15:45 UUR';
-      } else if (titleLower.includes('bowmore')) {
-        dateStr = 'Zaterdag 3 oktober 2026';
-        timeStr = '19:30 - 20:15 UUR';
-      } else if (titleLower.includes('bulleit')) {
-        dateStr = 'Zaterdag 3 oktober 2026';
-        timeStr = '16:15 - 17:00 UUR';
-      } else if (titleLower.includes('belgian owl')) {
-        dateStr = 'Zondag 4 oktober 2026';
-        timeStr = '13:30 - 14:15 UUR';
-      } else if (titleLower.includes('suntory')) {
-        dateStr = 'Zondag 4 oktober 2026';
-        timeStr = '15:00 - 15:45 UUR';
-      } else if (titleLower.includes('glenfiddich') || titleLower.includes('balvenie')) {
-        dateStr = 'Zondag 4 oktober 2026';
-        timeStr = '15:00 - 15:45 UUR';
-      } else if (titleLower.includes('dada chapel') || titleLower.includes('dada')) {
-        if (titleLower.includes('vrijdag')) {
-          dateStr = 'Vrijdag 2 oktober 2026';
-          timeStr = '20:00 - 20:45 UUR';
+      } else if (cityName === 'Amsterdam') {
+        dateStr = 'Zaterdag 16 januari 2027';
+      } else {
+        // Den Haag
+        if (titleLower.includes('zondag')) {
+          dateStr = 'Zondag 15 november 2026';
+        } else if (titleLower.includes('zaterdag')) {
+          dateStr = 'Zaterdag 14 november 2026';
         } else {
-          dateStr = 'Zaterdag 3 oktober 2026';
-          timeStr = '13:45 - 14:30 UUR';
+          dateStr = 'Vrijdag 13 november 2026';
         }
-      } else if (titleLower.includes('zaterdag')) {
-        dateStr = dateStr || 'Zaterdag 3 oktober 2026';
-        if (!timeStr) {
-          timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
-        }
-      } else if (titleLower.includes('zondag')) {
-        dateStr = dateStr || 'Zondag 4 oktober 2026';
-        if (!timeStr) timeStr = '13:00 - 17:00 UUR';
-      } else if (titleLower.includes('vrijdag')) {
-        dateStr = dateStr || 'Vrijdag 2 oktober 2026';
-        if (!timeStr) timeStr = '19:00 - 23:00 UUR';
-      } else {
-        dateStr = dateStr || 'Vrijdag 2 oktober 2026';
-        if (!timeStr) timeStr = '19:00 - 23:00 UUR';
-      }
-    } else if (cityName === 'Amsterdam') {
-      dateStr = dateStr || 'Zaterdag 16 januari 2027';
-      if (!timeStr) {
-        timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
-      }
-    } else {
-      // Den Haag
-      if (titleLower.includes('zaterdag')) {
-        dateStr = dateStr || 'Zaterdag 14 november 2026';
-        if (!timeStr) timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
-      } else if (titleLower.includes('zondag')) {
-        dateStr = dateStr || 'Zondag 15 november 2026';
-        if (!timeStr) timeStr = '13:00 - 17:00 UUR';
-      } else {
-        dateStr = dateStr || 'Vrijdag 13 november 2026';
-        if (!timeStr) timeStr = titleLower.includes('vip') ? '13:00 - 17:00 UUR' : '18:30 - 22:30 UUR';
       }
     }
 
+    // Only if timeStr is missing, deduce from title and festival city
     if (!timeStr) {
-      const timeMatch = sessionTitle.match(/\b\d{1,2}:\d{2}(?:\s*-\s*\d{1,2}:\d{2})?(?:\s*UUR)?/i);
-      if (timeMatch) {
-        timeStr = timeMatch[0].toUpperCase().replace(/–/g, '-');
-        if (!timeStr.includes('UUR')) timeStr += ' UUR';
+      if (cityName === 'Gent') {
+        if (titleLower.includes('fuji')) timeStr = '21:00 - 21:45 UUR';
+        else if (titleLower.includes('jura')) timeStr = '12:15 - 13:00 UUR';
+        else if (titleLower.includes('laphroaig')) timeStr = '13:30 - 14:15 UUR';
+        else if (titleLower.includes('cvh')) timeStr = '12:15 - 13:00 UUR';
+        else if (titleLower.includes('fettercairn')) timeStr = '15:00 - 15:45 UUR';
+        else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:15 UUR';
+        else if (titleLower.includes('suntory')) timeStr = '15:00 - 15:45 UUR';
+        else if (titleLower.includes('boot')) timeStr = '12:00 - 13:00 UUR';
+        else if (titleLower.includes('botteling')) timeStr = 'Hele dag';
+        else if (titleLower.includes('vip')) timeStr = '13:00 - 17:00 UUR';
+        else if (titleLower.includes('avond')) timeStr = '19:00 - 23:00 UUR';
+        else timeStr = '13:00 - 17:00 UUR';
+      } else if (cityName === 'Amsterdam') {
+        timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
       } else {
-        timeStr = '13:00 - 17:00 UUR';
+        // Den Haag
+        if (titleLower.includes('zondag')) timeStr = '13:00 - 17:00 UUR';
+        else if (titleLower.includes('avond')) timeStr = '18:30 - 22:30 UUR';
+        else if (titleLower.includes('vip')) timeStr = '13:00 - 17:00 UUR';
+        else timeStr = '13:00 - 17:00 UUR';
       }
     }
 
-    if (!timeStr.toUpperCase().includes('UUR')) timeStr += ' UUR';
+    if (timeStr.toLowerCase().endsWith(' uur')) {
+      timeStr = timeStr.slice(0, -4).trim() + ' UUR';
+    } else if (!timeStr.toUpperCase().includes('UUR') && !timeStr.toUpperCase().includes('DAG') && !timeStr.toUpperCase().includes('POST')) {
+      timeStr += ' UUR';
+    }
 
     return { dateStr, timeStr, cityName };
   }
