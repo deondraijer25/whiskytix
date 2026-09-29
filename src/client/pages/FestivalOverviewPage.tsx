@@ -446,14 +446,19 @@ export const FestivalOverviewPage: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-[#c1d4ce]">
                   {orders.slice(0, 8).map((order) => {
-                    const ticketCount = order.tickets && order.tickets.length > 0
-                      ? order.tickets.length
-                      : order.itemsSummary
-                      ? order.itemsSummary.split(',').reduce((sum, p) => {
-                          const m = p.match(/(\d+)x/i);
-                          return sum + (m ? parseInt(m[1], 10) : 1);
-                        }, 0)
-                      : 1;
+                    const ticketCount = (() => {
+                      const tCount = order.tickets ? order.tickets.length : 0;
+                      const summaryCount = order.itemsSummary
+                        ? order.itemsSummary.split(',').reduce((sum, p) => {
+                            const m = p.match(/(\d+)x/i);
+                            return sum + (m ? parseInt(m[1], 10) : 1);
+                          }, 0)
+                        : 0;
+                      const itemsCount = Array.isArray(order.items)
+                        ? order.items.reduce((sum, it) => sum + (Number(it.quantity || it.qty) || 1), 0)
+                        : 0;
+                      return Math.max(tCount, summaryCount, itemsCount, 1);
+                    })();
 
                     return (
                     <tr

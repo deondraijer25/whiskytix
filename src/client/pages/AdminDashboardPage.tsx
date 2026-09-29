@@ -654,14 +654,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </td>
                       <td className="py-3 px-4 text-center">
                         <span className="font-mono font-extrabold text-xs bg-[#FAF7F2] border border-[#c1d4ce] px-2.5 py-0.5 rounded text-[#1D1C1A]">
-                          {order.tickets && order.tickets.length > 0
-                            ? order.tickets.length
-                            : order.itemsSummary
-                            ? order.itemsSummary.split(',').reduce((sum, p) => {
-                                const m = p.match(/(\d+)x/i);
-                                return sum + (m ? parseInt(m[1], 10) : 1);
-                              }, 0)
-                            : 1}
+                          {(() => {
+                            const ticketCount = order.tickets ? order.tickets.length : 0;
+                            const summaryCount = order.itemsSummary
+                              ? order.itemsSummary.split(',').reduce((sum, p) => {
+                                  const m = p.match(/(\d+)x/i);
+                                  return sum + (m ? parseInt(m[1], 10) : 1);
+                                }, 0)
+                              : 0;
+                            const itemsCount = Array.isArray(order.items)
+                              ? order.items.reduce((sum, it) => sum + (Number(it.quantity || it.qty) || 1), 0)
+                              : 0;
+                            return Math.max(ticketCount, summaryCount, itemsCount, 1);
+                          })()}
                         </span>
                       </td>
                       <td className="py-3 px-4 font-extrabold text-[#1D1C1A]">

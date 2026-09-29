@@ -34,6 +34,7 @@ export interface Order {
     attendeeName: string;
     status: 'valid' | 'checked_in' | 'cancelled';
   }[];
+  items?: any[];
 }
 
 export interface SessionCapacity {

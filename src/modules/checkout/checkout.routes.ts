@@ -1110,23 +1110,50 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          timeStr: t.timeStr,
        })) : [];
 
-       if (tickets.length === 0) {
-         let count = 1;
+       // Check if tickets is empty OR was mashed into 1 single ticket despite multiple items
+       const hasMashedSingleTicket =
+         tickets.length === 1 &&
+         ((tickets[0].session && (tickets[0].session.includes(',') || tickets[0].session.includes('1x'))) ||
+           (summary && summary.includes(',')) ||
+           (Array.isArray(o.items) && o.items.length > 1));
+
+       if (tickets.length === 0 || hasMashedSingleTicket) {
+         tickets = [];
          const cleanNum = (o.orderNumber || 'WF').replace('#', '');
-         const qtyMatch = summary.match(/^(\d+)x/);
-         if (qtyMatch) {
-           count = parseInt(qtyMatch[1], 10);
-         } else if (o.totalCents === 25950) {
-           count = 6;
-         }
-         for (let i = 1; i <= count; i++) {
-           tickets.push({
-             code: `#${cleanNum}-${i}`,
-             type: 'Entreeticket',
-             session: summary.replace(/^\d+x\s*/, ''),
-             attendeeName: o.customerName || 'Bezoeker',
-             status: (o.status === 'paid' || o.status === 'pending') ? 'valid' : (o.status === 'refunded' || o.status === 'failed') ? 'cancelled' : 'valid',
-           });
+         let ticketIdx = 1;
+
+         if (Array.isArray(o.items) && o.items.length > 0) {
+           for (const it of o.items) {
+             const qty = Number(it.quantity || (it as any).qty || 1);
+             const isMc = (it.title || '').toLowerCase().includes('masterclass');
+             for (let q = 0; q < qty; q++) {
+               tickets.push({
+                 code: `#${cleanNum}-${ticketIdx}`,
+                 type: isMc ? 'Masterclass' : 'Entreeticket',
+                 session: it.title,
+                 attendeeName: o.customerName || 'Bezoeker',
+                 status: (o.status === 'paid' || o.status === 'pending') ? 'valid' : (o.status === 'refunded' || o.status === 'failed') ? 'cancelled' : 'valid',
+                 dateStr: it.date,
+                 timeStr: it.time || it.timeslot,
+               });
+               ticketIdx++;
+             }
+           }
+         } else {
+           const parsed = parseItemsSummary(summary);
+           for (const it of parsed) {
+             const isMc = it.title.toLowerCase().includes('masterclass');
+             for (let q = 0; q < it.quantity; q++) {
+               tickets.push({
+                 code: `#${cleanNum}-${ticketIdx}`,
+                 type: isMc ? 'Masterclass' : 'Entreeticket',
+                 session: it.title,
+                 attendeeName: o.customerName || 'Bezoeker',
+                 status: (o.status === 'paid' || o.status === 'pending') ? 'valid' : (o.status === 'refunded' || o.status === 'failed') ? 'cancelled' : 'valid',
+               });
+               ticketIdx++;
+             }
+           }
          }
        }
 
@@ -1144,6 +1171,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          createdAt: o.createdAt || new Date().toISOString(),
          environment: (o as any).environment || 'test',
          tickets,
+         items: o.items || [],
        };
      });
 
@@ -1229,6 +1257,18 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
                environment: p.environment || targetMode,
                tickets,
+               items: effectiveItems.map((it) => ({
+                 id: crypto.randomUUID(),
+                 orderId: p.id,
+                 ticketTypeId: 'ticket',
+                 title: it.title,
+                 quantity: it.quantity,
+                 unitPriceCents: 0,
+                 category: (it as any).category || 'entree',
+                 timeslot: (it as any).time,
+                 date: (it as any).date,
+                 time: (it as any).time,
+               })),
              });
               // Also persist into OrdersRepository so tickets can be swapped, cancelled, or added
               try {
