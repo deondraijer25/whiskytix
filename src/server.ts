@@ -492,9 +492,43 @@ export async function buildServer(): Promise<FastifyInstance> {
       prefix: '/',
     });
 
-    // SPA fallback route
+    const assetsDir = path.join(distPath, 'assets');
+    const findLatestAsset = (pattern: RegExp): string | null => {
+      try {
+        if (!fs.existsSync(assetsDir)) return null;
+        const files = fs.readdirSync(assetsDir);
+        const match = files.find((f) => pattern.test(f));
+        return match ? path.join(assetsDir, match) : null;
+      } catch {
+        return null;
+      }
+    };
+
+    // SPA fallback route & legacy asset compatibility alias
     server.setNotFoundHandler((request, reply) => {
       const url = request.raw.url || '';
+
+      // Legacy/stale asset aliasing: if an old cached index.html requests an old bundle hash that was replaced,
+      // dynamically serve the current bundle instead of 404ing!
+      if (url.includes('/assets/index-') && url.endsWith('.js')) {
+        const latestJsPath = findLatestAsset(/^index-.*\.js$/);
+        if (latestJsPath && fs.existsSync(latestJsPath)) {
+          reply.header('Content-Type', 'application/javascript; charset=utf-8');
+          reply.header('Cache-Control', 'public, max-age=0, must-revalidate');
+          return reply.send(fs.readFileSync(latestJsPath));
+        }
+      }
+
+      if (url.includes('/assets/index-') && url.endsWith('.css')) {
+        const latestCssPath = findLatestAsset(/^index-.*\.css$/);
+        if (latestCssPath && fs.existsSync(latestCssPath)) {
+          reply.header('Content-Type', 'text/css; charset=utf-8');
+          reply.header('Cache-Control', 'public, max-age=0, must-revalidate');
+          return reply.send(fs.readFileSync(latestCssPath));
+        }
+      }
+
+      // Other static files that are truly missing
       if (
         url.startsWith('/api') ||
         url.startsWith('/assets') ||
@@ -502,10 +536,25 @@ export async function buildServer(): Promise<FastifyInstance> {
       ) {
         return reply.status(404).send({ error: 'Niet gevonden' });
       }
-      reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-      reply.header('Pragma', 'no-cache');
-      reply.header('Expires', '0');
-      return reply.sendFile('index.html');
+
+      // Serve index.html with strictly NO caching so clients always receive latest asset hashes
+      try {
+        const indexPath = path.join(distPath, 'index.html');
+        if (fs.existsSync(indexPath)) {
+          const indexHtml = fs.readFileSync(indexPath, 'utf-8');
+          reply.header('Content-Type', 'text/html; charset=utf-8');
+          reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
+          reply.header('Pragma', 'no-cache');
+          reply.header('Expires', '0');
+          reply.removeHeader('etag');
+          reply.removeHeader('last-modified');
+          return reply.send(indexHtml);
+        }
+      } catch (e) {
+        server.log.error(e as any, 'Could not serve index.html');
+      }
+
+      return reply.status(404).send({ error: 'Niet gevonden' });
     });
   }
 

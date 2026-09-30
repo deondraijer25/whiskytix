@@ -12,6 +12,25 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rye&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Self-heal if a browser requests an old chunk hash that 404s after a new deployment
+      window.addEventListener('error', function (e) {
+        var el = e.target || e.srcElement;
+        if (el && (el.tagName === 'SCRIPT' || el.tagName === 'LINK')) {
+          var src = el.src || el.href || '';
+          if (src.indexOf('/assets/') !== -1) {
+            var key = 'wt_reload_' + encodeURIComponent(src);
+            if (!sessionStorage.getItem(key)) {
+              sessionStorage.setItem(key, '1');
+              window.location.reload(true);
+            }
+          }
+        }
+      }, true);
+      window.addEventListener('vite:preloadError', function () {
+        window.location.reload(true);
+      });
+    </script>
   </head>
   <body class="bg-[#FAF7F2] text-[#1D1C1A] antialiased selection:bg-[#006448] selection:text-white min-h-screen">
     <div id="root"></div>
