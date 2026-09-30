@@ -1722,19 +1722,6 @@ export class OrdersRepository {
    * List all stored orders asynchronously with database fallback for cold starts
    */
   static async listOrdersAsync(): Promise<StoredOrder[]> {
-    if (memoryOrders.size === 0) {
-      try {
-        const dbStatus = await checkDbConnection();
-        if (dbStatus.ok) {
-          const rows = await db.select().from(schema.orders);
-          for (const row of rows) {
-            await this.findOrder(row.orderNumber);
-          }
-        }
-      } catch (err: any) {
-        console.warn('Could not hydrate orders from DB on cold start:', err.message);
-      }
-    }
     return this.listOrders();
   }
 
