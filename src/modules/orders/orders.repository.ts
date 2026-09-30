@@ -108,6 +108,7 @@ function loadLocalStore() {
     memoryOrders.clear();
     if (Array.isArray(parsed.orders)) {
       parsed.orders.forEach((o: StoredOrder) => {
+        if (o.orderNumber && o.orderNumber.startsWith('#WF-GENT-')) return;
         memoryOrders.set(o.orderNumber, o);
         memoryOrders.set(o.id, o);
       });
@@ -122,7 +123,7 @@ function saveLocalStore() {
     ensureDataFile();
     const uniqueOrders = Array.from(
       new Map(Array.from(memoryOrders.values()).map((o) => [o.orderNumber, o])).values()
-    );
+    ).filter((o) => !o.orderNumber.startsWith('#WF-GENT-'));
     fs.writeFileSync(STORE_FILE, JSON.stringify({ orders: uniqueOrders }, null, 2), 'utf8');
   } catch (err) {
     console.warn('Could not save local orders store:', err);
@@ -608,10 +609,14 @@ export class OrdersRepository {
       const molliePayments = [...mollieLivePayments, ...mollieTestPayments];
       const cleaned = identifier.replace(/^#+/, '');
       const matched = molliePayments.find((p: any) => {
+        const isWhiskytix = Boolean(
+          (p.metadata?.orderNumber && /^#?WF-202/i.test(p.metadata.orderNumber)) ||
+          (p.metadata?.orderId && p.metadata?.festivalId) ||
+          (p.description && /Bestelling\s+#?WF-202/i.test(p.description))
+        );
+        if (!isWhiskytix) return false;
         const oNum = p.metadata?.orderNumber
-          || (p.description && /^Bestelling\s+\d+/i.test(p.description) ? `#WF-GENT-${p.description.replace(/^Bestelling\s*/i, '').trim()}` : null)
-          || (p.metadata?.order_id ? `#WF-GENT-${p.metadata.order_id}` : null)
-          || (p.description && /^Bestelling\s+#?WF-/i.test(p.description) ? p.description.split('-')[0].trim() : null)
+          || (p.description && /Bestelling\s+(#?WF-202[^\s]+)/i.test(p.description) ? (p.description.match(/Bestelling\s+(#?WF-202[^\s]+)/i)?.[1] || null) : null)
           || `#WF-${p.id.slice(-6).toUpperCase()}`;
         if (!oNum) return p.id === identifier;
         return oNum === normalized || oNum === identifier || oNum.replace(/^#+/, '') === cleaned || p.id === identifier;
@@ -1732,7 +1737,8 @@ export class OrdersRepository {
    * List all stored orders
    */
   static listOrders(): StoredOrder[] {
-    return Array.from(new Map(Array.from(memoryOrders.values()).map((o) => [o.orderNumber, o])).values());
+    return Array.from(new Map(Array.from(memoryOrders.values()).map((o) => [o.orderNumber, o])).values())
+      .filter((o) => !o.orderNumber.startsWith('#WF-GENT-'));
   }
 
   /**

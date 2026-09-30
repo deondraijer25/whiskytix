@@ -222,7 +222,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       }
 
       if (!orderNumber) {
-        orderNumber = `#WF-GENT-${paymentId.slice(-6).toUpperCase()}`;
+        return reply.send({ status: 'ignored_legacy_order', paymentId });
       }
 
       // If order not found in memory (e.g. cold start), reconstruct from Mollie payment
@@ -1429,10 +1429,20 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
        const molliePayments = await MollieService.listRecentPayments(100, targetFest, targetMode);
        
        for (const p of molliePayments) {
+         // EXCLUSIVELY include orders placed via Whiskytix (the new festival website).
+         // Strictly ignore legacy/historical WooCommerce orders from the client's current/old WordPress shop.
+         const isWhiskytixOrder = Boolean(
+           (p.metadata?.orderNumber && /^#?WF-202/i.test(p.metadata.orderNumber)) ||
+           (p.metadata?.orderId && p.metadata?.festivalId) ||
+           (p.description && /Bestelling\s+#?WF-202/i.test(p.description))
+         );
+
+         if (!isWhiskytixOrder) {
+           continue; // Skip old WooCommerce website orders
+         }
+
          const metaOrderNumber = p.metadata?.orderNumber
-           || (p.description && /^Bestelling\s+\d+/i.test(p.description) ? `#WF-GENT-${p.description.replace(/^Bestelling\s*/i, '').trim()}` : null)
-           || (p.metadata?.order_id ? `#WF-GENT-${p.metadata.order_id}` : null)
-           || (p.description && /^Bestelling\s+#?WF-/i.test(p.description) ? p.description.split('-')[0].trim() : null)
+           || (p.description && /Bestelling\s+(#?WF-202[^\s]+)/i.test(p.description) ? (p.description.match(/Bestelling\s+(#?WF-202[^\s]+)/i)?.[1] || null) : null)
            || `#WF-${p.id.slice(-6).toUpperCase()}`;
          if (metaOrderNumber) {
            const cleanMeta = metaOrderNumber.replace(/^#+/, '');

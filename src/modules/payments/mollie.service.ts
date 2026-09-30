@@ -213,10 +213,7 @@ export class MollieService {
           const isPaid = typeof payment.isPaid === 'function' ? payment.isPaid() : payment.status === 'paid';
           const meta = (payment.metadata as any) || {};
           const orderNumber = meta.orderNumber
-            || (payment.description && /^Bestelling\s+\d+/i.test(payment.description) ? `#WF-GENT-${payment.description.replace(/^Bestelling\s*/i, '').trim()}` : null)
-            || (meta.order_id ? `#WF-GENT-${meta.order_id}` : null)
-            || (payment.description && /^Bestelling\s+#?WF-/i.test(payment.description) ? payment.description.split('-')[0].trim() : null)
-            || `#WF-${payment.id.slice(-6).toUpperCase()}`;
+            || (payment.description && /Bestelling\s+(#?WF-202[^\s]+)/i.test(payment.description) ? (payment.description.match(/Bestelling\s+(#?WF-202[^\s]+)/i)?.[1] || null) : null);
 
           return {
             isPaid,
