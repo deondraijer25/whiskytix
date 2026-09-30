@@ -20,6 +20,7 @@ export interface StoredOrderItem {
   delivery?: string;
   date?: string;
   time?: string;
+  metadata?: string;
 }
 
 export interface StoredIssuedTicket {
@@ -281,7 +282,18 @@ export class OrdersRepository {
 
     for (const item of items) {
       const qty = Number(item.quantity || (item as any).qty || 1);
-      const sessionTitle = item.title || 'ENTREE SESSIE';
+      let sessionTitle = item.title || 'ENTREE SESSIE';
+      if (/^[a-f0-9]{24}$/i.test(sessionTitle) || sessionTitle === (item as any).ticketTypeId) {
+        if ((item as any).metadata) {
+          try {
+            const meta = typeof (item as any).metadata === 'string' ? JSON.parse((item as any).metadata) : (item as any).metadata;
+            if (meta.title && !/^[a-f0-9]{24}$/i.test(meta.title)) sessionTitle = meta.title;
+          } catch {}
+        }
+      }
+      sessionTitle = sessionTitle
+        .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
+        .trim() || 'Festival Entreeticket';
       for (let q = 0; q < qty; q++) {
         const ticketCode = `#${cleanOrderNumber}-${ticketCounter}`;
         ticketCounter++;
@@ -434,6 +446,111 @@ export class OrdersRepository {
             .from(schema.issuedTickets)
             .where(eq(schema.issuedTickets.orderId, row.id));
 
+          // Fetch ticket types to resolve human-readable titles if metadata is missing or IDs are passed
+          const ttRows = await db
+            .select()
+            .from(schema.ticketTypes)
+            .where(eq(schema.ticketTypes.festivalId, row.festivalId));
+          const ttMap = new Map(ttRows.map((tt) => [tt.id, tt]));
+
+          const hydratedItems = items.map((i) => {
+            let title = '';
+            let category = 'entree';
+            let timeslot = '';
+            let delivery = '';
+            if (i.metadata) {
+              try {
+                const meta = typeof i.metadata === 'string' ? JSON.parse(i.metadata) : i.metadata;
+                if (meta.title) title = meta.title;
+                if (meta.category) category = meta.category;
+                if (meta.timeslot) timeslot = meta.timeslot;
+                if (meta.delivery) delivery = meta.delivery;
+              } catch {}
+            }
+            if (!title || /^[a-f0-9]{24}$/i.test(title)) {
+              const tt = ttMap.get(i.ticketTypeId);
+              if (tt?.title) title = tt.title;
+            }
+            if (!title) title = i.ticketTypeId;
+
+            return {
+              id: i.id,
+              orderId: i.orderId,
+              ticketTypeId: i.ticketTypeId,
+              title,
+              category,
+              timeslot,
+              delivery,
+              quantity: i.quantity,
+              unitPriceCents: i.unitPriceCents,
+            };
+          });
+
+          const hydratedTickets = tickets.map((t) => {
+            const parentItem = hydratedItems.find((it) => it.id === t.orderItemId);
+            let sessionTitle = '';
+            let dateStr = '';
+            let timeStr = '';
+
+            // Extract from existing pdfUrl query parameters if present
+            if (t.pdfUrl) {
+              try {
+                const u = new URL(t.pdfUrl, 'http://localhost');
+                sessionTitle = u.searchParams.get('title') || '';
+                dateStr = u.searchParams.get('date') || '';
+                timeStr = u.searchParams.get('time') || '';
+              } catch {}
+            }
+
+            // Fallback if sessionTitle is empty or raw hex ID or ticketCode
+            if (!sessionTitle || sessionTitle === t.ticketCode || /^[a-f0-9]{24}$/i.test(sessionTitle)) {
+              if (parentItem && parentItem.title && !/^[a-f0-9]{24}$/i.test(parentItem.title)) {
+                sessionTitle = parentItem.title;
+              } else if (parentItem?.ticketTypeId) {
+                const tt = ttMap.get(parentItem.ticketTypeId);
+                if (tt?.title) sessionTitle = tt.title;
+              }
+            }
+
+            if (!sessionTitle) sessionTitle = 'Festival Entreeticket';
+
+            // Resolve date & time if missing
+            if (!dateStr || !timeStr) {
+              const resolved = OrdersRepository.resolveSessionDateTime(
+                row.festivalId,
+                sessionTitle,
+                dateStr || parentItem?.timeslot,
+                timeStr || parentItem?.timeslot
+              );
+              if (!dateStr) dateStr = resolved.dateStr;
+              if (!timeStr) timeStr = resolved.timeStr;
+            }
+
+            const cleanTitle = sessionTitle
+              .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
+              .trim();
+
+            const cleanCode = t.ticketCode.replace('#', '');
+            const cleanOrderNum = row.orderNumber.replace('#', '');
+            const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${row.festivalId}&orderNumber=${cleanOrderNum}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(cleanTitle)}&time=${encodeURIComponent(timeStr)}&date=${encodeURIComponent(dateStr)}`;
+
+            return {
+              id: t.id,
+              orderId: t.orderId,
+              ticketCode: t.ticketCode,
+              qrPayload: '',
+              qrPayloadHash: t.qrPayloadHash,
+              attendeeName: t.attendeeName,
+              status: t.status as any,
+              sessionTitle: cleanTitle,
+              cityName: row.festivalId,
+              dateStr,
+              timeStr,
+              pdfUrl,
+              createdAt: t.createdAt.toISOString(),
+            };
+          });
+
           return {
             id: row.id,
             orderNumber: row.orderNumber,
@@ -450,29 +567,8 @@ export class OrdersRepository {
             createdAt: row.createdAt.toISOString(),
             paidAt: row.paidAt ? row.paidAt.toISOString() : null,
             expiresAt: row.expiresAt.toISOString(),
-            items: items.map((i) => ({
-              id: i.id,
-              orderId: i.orderId,
-              ticketTypeId: i.ticketTypeId,
-              title: i.ticketTypeId,
-              quantity: i.quantity,
-              unitPriceCents: i.unitPriceCents,
-            })),
-            tickets: tickets.map((t) => ({
-              id: t.id,
-              orderId: t.orderId,
-              ticketCode: t.ticketCode,
-              qrPayload: '',
-              qrPayloadHash: t.qrPayloadHash,
-              attendeeName: t.attendeeName,
-              status: t.status as any,
-              sessionTitle: '',
-              cityName: row.festivalId,
-              dateStr: '',
-              timeStr: '',
-              pdfUrl: t.pdfUrl || `/api/tickets/${t.ticketCode.replace('#', '')}/pdf?city=${row.festivalId}`,
-              createdAt: t.createdAt.toISOString(),
-            })),
+            items: hydratedItems,
+            tickets: hydratedTickets,
           };
         }
       }
@@ -642,7 +738,18 @@ export class OrdersRepository {
           const ticketCode = `#${cleanOrderNumber}-${ticketCounter}`;
           ticketCounter++;
 
-          const sessionTitle = item.title || 'ENTREE SESSIE';
+          let sessionTitle = item.title || 'ENTREE SESSIE';
+          if (/^[a-f0-9]{24}$/i.test(sessionTitle) || sessionTitle === item.ticketTypeId) {
+            if (item.metadata) {
+              try {
+                const meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+                if (meta.title && !/^[a-f0-9]{24}$/i.test(meta.title)) sessionTitle = meta.title;
+              } catch {}
+            }
+          }
+          sessionTitle = sessionTitle
+            .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
+            .trim() || 'Festival Entreeticket';
           const cityName = order.festivalId;
           const attendeeName = order.customerName;
 

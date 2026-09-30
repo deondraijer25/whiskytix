@@ -7,7 +7,9 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
-import { checkDbConnection } from './db/index.js';
+import { checkDbConnection, db } from './db/index.js';
+import * as schema from './db/schema.js';
+import { eq } from 'drizzle-orm';
 import { generateTicketPdf, generateTicketsBundlePdf, type TicketPdfOptions } from './modules/tickets/pdf.service.js';
 import { generateQrSvg, generateQrPngDataUrl } from './modules/tickets/qr.service.js';
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
@@ -215,15 +217,36 @@ export async function buildServer(): Promise<FastifyInstance> {
     const resolvedOrderNumber = (query.orderNumber || order?.orderNumber || 'WF1861').replace(/^#+/, '');
     const resolvedAttendeeName = query.name || ticket?.attendeeName || order?.customerName || 'Deon Draijer';
 
-    const rawSessionTitle = query.title || ticket?.sessionTitle || (order?.items && order.items[0]?.title) ||
+    let rawSessionTitle = query.title || ticket?.sessionTitle || (order?.items && order.items[0]?.title) ||
       (query.session === 'masterclass'
         ? 'ZONDAGMIDDAG + MASTERCLASS'
         : query.session === 'zaterdag_middag'
         ? 'ZATERDAGMIDDAG SESSIE'
         : 'VIP SESSIE — VRIJDAG');
 
+    // If rawSessionTitle is a 24-character hex ID (e.g. from GoHighLevel product ID), look up real title
+    if (/^[a-f0-9]{24}$/i.test(rawSessionTitle)) {
+      const foundItem = order?.items?.find((it) => it.ticketTypeId === rawSessionTitle && it.title && !/^[a-f0-9]{24}$/i.test(it.title));
+      if (foundItem) {
+        rawSessionTitle = foundItem.title;
+      } else {
+        try {
+          const dbStatus = await checkDbConnection();
+          if (dbStatus.ok) {
+            const ttRows = await db
+              .select()
+              .from(schema.ticketTypes)
+              .where(eq(schema.ticketTypes.id, rawSessionTitle));
+            if (ttRows.length > 0 && ttRows[0].title) {
+              rawSessionTitle = ttRows[0].title;
+            }
+          }
+        } catch {}
+      }
+    }
+
     const titleLower = rawSessionTitle.toLowerCase();
-    const cleanSessionTitle = rawSessionTitle.replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*-\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '').trim();
+    const cleanSessionTitle = rawSessionTitle.replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '').trim();
 
     const resolvedSession = OrdersRepository.resolveSessionDateTime(
       resolvedCity,
@@ -351,6 +374,27 @@ export async function buildServer(): Promise<FastifyInstance> {
         itemNumber: '1/1',
         ticketStatus: 'valid',
       });
+    }
+
+    // Sanitize and resolve any hex IDs in session titles
+    for (const t of ticketsToRender) {
+      if (t.sessionTitle && /^[a-f0-9]{24}$/i.test(t.sessionTitle)) {
+        try {
+          const dbStatus = await checkDbConnection();
+          if (dbStatus.ok) {
+            const ttRows = await db
+              .select()
+              .from(schema.ticketTypes)
+              .where(eq(schema.ticketTypes.id, t.sessionTitle));
+            if (ttRows.length > 0 && ttRows[0].title) {
+              t.sessionTitle = ttRows[0].title;
+            }
+          }
+        } catch {}
+      }
+      t.sessionTitle = (t.sessionTitle || 'Festival Entreeticket')
+        .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
+        .trim();
     }
 
     const bundlePdfBytes = await generateTicketsBundlePdf(ticketsToRender);
