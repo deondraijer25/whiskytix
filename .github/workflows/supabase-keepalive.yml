@@ -1,0 +1,21 @@
+name: Supabase Database Keepalive
+
+on:
+  schedule:
+    # Run every 6 hours to ensure Supabase never pauses due to inactivity
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Whiskytix Health Endpoint
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://whiskytix-r1qq.vercel.app/api/health)
+          echo "Health check HTTP status: $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Whiskytix health check failed!"
+            exit 1
+          fi
+          echo "Supabase database kept active successfully."
