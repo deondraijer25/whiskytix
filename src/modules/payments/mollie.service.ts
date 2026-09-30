@@ -43,11 +43,22 @@ export const sandboxPayments: Map<
 
 export class MollieService {
   /**
-   * Returns current active mode based on MOLLIE_ENVIRONMENT or key presence
+   * Returns current active mode based on MOLLIE_ENVIRONMENT, festival-specific overrides, or key presence
    */
-  static getActiveMode(): 'test' | 'live' {
-    const env = process.env.MOLLIE_ENVIRONMENT?.toLowerCase();
+  static getActiveMode(festivalId = 'gent'): 'test' | 'live' {
+    const envOverride = festivalId === 'gent' ? process.env.MOLLIE_ENVIRONMENT_GENT : null;
+    const env = (envOverride || process.env.MOLLIE_ENVIRONMENT)?.toLowerCase();
     if (env === 'live') return 'live';
+    if (env === 'test') return 'test';
+
+    // If a live key is configured specifically for Gent, default to live mode
+    if (festivalId === 'gent') {
+      const gentKey = process.env.MOLLIE_API_KEY_LIVE_GENT || process.env.MOLLIE_API_KEY_GENT;
+      if (gentKey && gentKey.startsWith('live_') && gentKey !== 'live_placeholder') {
+        return 'live';
+      }
+    }
+
     const liveKey = process.env.MOLLIE_API_KEY_LIVE;
     if (liveKey && liveKey.startsWith('live_') && liveKey !== 'live_placeholder' && env !== 'test') {
       return 'live';
@@ -56,16 +67,40 @@ export class MollieService {
   }
 
   /**
-   * Resolves the API key for either test or live mode
+   * Resolves the API key for either test or live mode, with explicit multi-tenant support for
+   * GENT Whisky Festival VOF vs Den Haag / Amsterdam
    */
-  static getApiKey(mode?: 'test' | 'live'): string | null {
-    const targetMode = mode || this.getActiveMode();
+  static getApiKey(festivalId = 'gent', mode?: 'test' | 'live'): string | null {
+    const targetMode = mode || this.getActiveMode(festivalId);
     if (targetMode === 'live') {
+      // 1. City-specific live API key (e.g. GENT Whisky Festival VOF)
+      if (festivalId === 'gent') {
+        const gentKey = process.env.MOLLIE_API_KEY_LIVE_GENT || process.env.MOLLIE_API_KEY_GENT;
+        if (gentKey && gentKey.startsWith('live_') && gentKey !== 'live_placeholder') {
+          return gentKey;
+        }
+      } else if (festivalId === 'denhaag') {
+        const dhKey = process.env.MOLLIE_API_KEY_LIVE_DENHAAG;
+        if (dhKey && dhKey.startsWith('live_') && dhKey !== 'live_placeholder') {
+          return dhKey;
+        }
+      }
+
+      // 2. Global live key fallback
       const liveKey = process.env.MOLLIE_API_KEY_LIVE;
       if (liveKey && liveKey.startsWith('live_') && liveKey !== 'live_placeholder') {
         return liveKey;
       }
     }
+
+    // Test mode
+    if (festivalId === 'gent') {
+      const gentTestKey = process.env.MOLLIE_API_KEY_TEST_GENT;
+      if (gentTestKey && gentTestKey.startsWith('test_') && gentTestKey !== 'test_placeholder') {
+        return gentTestKey;
+      }
+    }
+
     const testKey = process.env.MOLLIE_API_KEY_TEST;
     if (testKey && testKey.startsWith('test_') && testKey !== 'test_placeholder') {
       return testKey;
@@ -76,8 +111,9 @@ export class MollieService {
   /**
    * Creates a payment session via official Mollie API or local interactive sandbox
    */
-  static async createPayment(options: CreatePaymentOptions, mode?: 'test' | 'live'): Promise<PaymentInitResult> {
-    const apiKey = this.getApiKey(mode);
+  static async createPayment(options: CreatePaymentOptions, festivalId = 'gent', mode?: 'test' | 'live'): Promise<PaymentInitResult> {
+    const resolvedFestival = festivalId || options.metadata?.festivalId || 'gent';
+    const apiKey = this.getApiKey(resolvedFestival, mode);
     const amountFormatted = (options.amountCents / 100).toFixed(2);
 
     // 1. If valid live/test key is provided, use official Mollie API
@@ -135,24 +171,37 @@ export class MollieService {
   }
 
   /**
-   * Verifies whether a payment has succeeded
+   * Verifies whether a payment has succeeded with support for multi-city API keys
    */
   static async verifyPayment(
-    paymentId: string
+    paymentId: string,
+    festivalId = 'gent'
   ): Promise<{ isPaid: boolean; orderNumber?: string; method?: string; error?: string }> {
-    const apiKey = this.getApiKey();
+    // 1. Try with festival-specific key
+    const primaryKey = this.getApiKey(festivalId);
+    const keysToTry = [primaryKey];
+    
+    // Also try gent-specific or global live key if primary fails
+    const gentKey = process.env.MOLLIE_API_KEY_LIVE_GENT;
+    if (gentKey && !keysToTry.includes(gentKey)) keysToTry.push(gentKey);
+    const globalKey = process.env.MOLLIE_API_KEY_LIVE;
+    if (globalKey && !keysToTry.includes(globalKey)) keysToTry.push(globalKey);
 
-    if (apiKey && !paymentId.startsWith('tr_test_')) {
-      try {
-        const client = createMollieClient({ apiKey });
-        const payment = await client.payments.get(paymentId);
-        return {
-          isPaid: payment.isPaid(),
-          orderNumber: (payment.metadata as any)?.orderNumber,
-          method: payment.method as string,
-        };
-      } catch (err: any) {
-        return { isPaid: false, error: err.message };
+    if (!paymentId.startsWith('tr_test_')) {
+      for (const apiKey of keysToTry) {
+        if (!apiKey) continue;
+        try {
+          const client = createMollieClient({ apiKey });
+          const payment = await client.payments.get(paymentId);
+          const isPaid = typeof payment.isPaid === 'function' ? payment.isPaid() : payment.status === 'paid';
+          return {
+            isPaid,
+            orderNumber: (payment.metadata as any)?.orderNumber,
+            method: payment.method as string,
+          };
+        } catch (err: any) {
+          // If 404 or auth error on this key, continue to next key
+        }
       }
     }
 

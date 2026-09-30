@@ -569,7 +569,53 @@ export class OrdersRepository {
     for (const o of memoryOrders.values()) {
       if (o.molliePaymentId === molliePaymentId) return o;
     }
+
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        const rows = await db
+          .select()
+          .from(schema.orders)
+          .where(eq(schema.orders.molliePaymentId, molliePaymentId))
+          .limit(1);
+
+        if (rows.length > 0) {
+          return this.findOrder(rows[0].orderNumber);
+        }
+      }
+    } catch (err: any) {
+      console.warn('DB lookup by Mollie ID failed:', err.message);
+    }
+
     return null;
+  }
+
+  /**
+   * Update order with Mollie payment ID in memory and database
+   */
+  static async updateMolliePaymentId(orderNumber: string, molliePaymentId: string): Promise<void> {
+    const normalized = orderNumber.replace(/^#/, '');
+    const fullOrderNumber = orderNumber.startsWith('#') ? orderNumber : `#${orderNumber}`;
+    
+    const existing = memoryOrders.get(orderNumber) || memoryOrders.get(normalized) || memoryOrders.get(fullOrderNumber);
+    if (existing) {
+      existing.molliePaymentId = molliePaymentId;
+      memoryOrders.set(existing.orderNumber, existing);
+      memoryOrders.set(existing.id, existing);
+      saveLocalStore();
+    }
+
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        await db
+          .update(schema.orders)
+          .set({ molliePaymentId })
+          .where(eq(schema.orders.orderNumber, fullOrderNumber));
+      }
+    } catch (err: any) {
+      console.warn('DB update molliePaymentId failed:', err.message);
+    }
   }
 
   /**

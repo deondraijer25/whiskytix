@@ -171,10 +171,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
             tm: i.time,
           }))).slice(0, 850),
         },
-      });
+      }, festivalId);
 
-      // Update order with Mollie payment ID
+      // Update order with Mollie payment ID in memory and database
       storedOrder.molliePaymentId = payment.paymentId;
+      await OrdersRepository.updateMolliePaymentId(orderNumber, payment.paymentId);
 
       return reply.send({
         success: true,
@@ -204,15 +205,19 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         return reply.status(400).send({ error: 'Geen payment id ontvangen.' });
       }
 
-      const verification = await MollieService.verifyPayment(paymentId);
+      // Resolve order first to determine festivalId and use correct Mollie key (e.g. Gent VOF)
+      let order = await OrdersRepository.findOrderByMollieId(paymentId);
+      const festivalId = order?.festivalId || 'gent';
+
+      const verification = await MollieService.verifyPayment(paymentId, festivalId);
       if (!verification.isPaid) {
         return reply.send({ status: 'not_paid', paymentId });
       }
 
       // Resolve order number
-      let orderNumber = verification.orderNumber;
-      if (!orderNumber) {
-        const order = await OrdersRepository.findOrderByMollieId(paymentId);
+      let orderNumber = verification.orderNumber || order?.orderNumber;
+      if (!orderNumber && !order) {
+        order = await OrdersRepository.findOrderByMollieId(paymentId);
         if (order) orderNumber = order.orderNumber;
       }
 
