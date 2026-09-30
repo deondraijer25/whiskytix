@@ -89,17 +89,17 @@ export class GhlSyncService {
 
       // Bepaal de dynamische portaallink (website domein / preview / live)
       let portalBase = order.portalBaseUrl;
-      if (!portalBase) {
+      if (!portalBase || portalBase.includes('vercel.app')) {
         if (order.festivalId === 'gent') {
-          portalBase = process.env.PORTAL_BASE_URL_GENT || 'https://whisky-fest-gent.vercel.app';
+          portalBase = process.env.PORTAL_BASE_URL_GENT || 'https://whiskyfestival.be';
         } else if (order.festivalId === 'amsterdam') {
-          portalBase = process.env.PORTAL_BASE_URL_AMSTERDAM || 'https://whisky-fest-amsterdam.vercel.app';
+          portalBase = process.env.PORTAL_BASE_URL_AMSTERDAM || 'https://whiskyfestival.nl';
         } else {
-          portalBase = process.env.PORTAL_BASE_URL_DENHAAG || 'https://whisky-fest-den-haag.vercel.app';
+          portalBase = process.env.PORTAL_BASE_URL_DENHAAG || 'https://whiskyfestival.nl';
         }
       }
       portalBase = portalBase.replace(/\/+$/, '');
-      const portalUrl = `${portalBase}/inloggen?orderNumber=${encodeURIComponent(cleanOrderNumber)}&email=${encodeURIComponent(order.customerEmail)}`;
+      const portalUrl = `${portalBase}/inloggen`;
 
       // Maximaal 2 tags toekennen (geen tag-wildgroei!)
       const tags: string[] = [
