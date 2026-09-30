@@ -402,8 +402,10 @@ export class OrdersRepository {
             metadata: JSON.stringify({
               title: item.title,
               category: item.category,
-              timeslot: item.timeslot,
-              delivery: item.delivery,
+              timeslot: item.timeslot || item.time || '',
+              delivery: item.delivery || '',
+              date: item.date || '',
+              time: item.time || item.timeslot || '',
             }),
           });
         }
@@ -458,6 +460,8 @@ export class OrdersRepository {
             let category = 'entree';
             let timeslot = '';
             let delivery = '';
+            let date = '';
+            let time = '';
             if (i.metadata) {
               try {
                 const meta = typeof i.metadata === 'string' ? JSON.parse(i.metadata) : i.metadata;
@@ -465,6 +469,8 @@ export class OrdersRepository {
                 if (meta.category) category = meta.category;
                 if (meta.timeslot) timeslot = meta.timeslot;
                 if (meta.delivery) delivery = meta.delivery;
+                if (meta.date) date = meta.date;
+                if (meta.time) time = meta.time;
               } catch {}
             }
             if (!title || /^[a-f0-9]{24}$/i.test(title)) {
@@ -481,6 +487,8 @@ export class OrdersRepository {
               category,
               timeslot,
               delivery,
+              date,
+              time,
               quantity: i.quantity,
               unitPriceCents: i.unitPriceCents,
             };
@@ -519,8 +527,8 @@ export class OrdersRepository {
               const resolved = OrdersRepository.resolveSessionDateTime(
                 row.festivalId,
                 sessionTitle,
-                dateStr || parentItem?.timeslot,
-                timeStr || parentItem?.timeslot
+                dateStr || parentItem?.date || parentItem?.timeslot,
+                timeStr || parentItem?.time || parentItem?.timeslot
               );
               if (!dateStr) dateStr = resolved.dateStr;
               if (!timeStr) timeStr = resolved.timeStr;
@@ -578,12 +586,18 @@ export class OrdersRepository {
 
     // Reconstruct from Mollie API if not in memory or DB (e.g. serverless cold start)
     try {
-      const molliePayments = await MollieService.listRecentPayments(50);
+      const mollieLivePayments = await MollieService.listRecentPayments(100, 'gent', 'live');
+      const mollieTestPayments = await MollieService.listRecentPayments(50, 'gent', 'test');
+      const molliePayments = [...mollieLivePayments, ...mollieTestPayments];
       const cleaned = identifier.replace(/^#+/, '');
       const matched = molliePayments.find((p: any) => {
-        const oNum = p.metadata?.orderNumber;
-        if (!oNum) return false;
-        return oNum === normalized || oNum === identifier || oNum.replace(/^#+/, '') === cleaned;
+        const oNum = p.metadata?.orderNumber
+          || (p.description && /^Bestelling\s+\d+/i.test(p.description) ? `#WF-GENT-${p.description.replace(/^Bestelling\s*/i, '').trim()}` : null)
+          || (p.metadata?.order_id ? `#WF-GENT-${p.metadata.order_id}` : null)
+          || (p.description && /^Bestelling\s+#?WF-/i.test(p.description) ? p.description.split('-')[0].trim() : null)
+          || `#WF-${p.id.slice(-6).toUpperCase()}`;
+        if (!oNum) return p.id === identifier;
+        return oNum === normalized || oNum === identifier || oNum.replace(/^#+/, '') === cleaned || p.id === identifier;
       });
 
       if (matched) {
@@ -712,6 +726,52 @@ export class OrdersRepository {
     } catch (err: any) {
       console.warn('DB update molliePaymentId failed:', err.message);
     }
+  }
+
+  /**
+   * Find orders by customer email address
+   */
+  static async findOrdersByEmail(email: string, festivalId?: string): Promise<StoredOrder[]> {
+    if (!email || !email.trim()) return [];
+    const cleanEmail = email.trim().toLowerCase();
+    const ordersMap = new Map<string, StoredOrder>();
+
+    // 1. Check in-memory store
+    for (const o of memoryOrders.values()) {
+      if (o.customerEmail && o.customerEmail.trim().toLowerCase() === cleanEmail) {
+        if (!festivalId || o.festivalId === festivalId) {
+          ordersMap.set(o.orderNumber, o);
+        }
+      }
+    }
+
+    // 2. Check Supabase DB
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        const rows = await db
+          .select()
+          .from(schema.orders)
+          .where(eq(schema.orders.customerEmail, cleanEmail));
+
+        for (const row of rows) {
+          if (!ordersMap.has(row.orderNumber)) {
+            const hydrated = await this.findOrder(row.orderNumber);
+            if (hydrated) {
+              if (!festivalId || hydrated.festivalId === festivalId) {
+                ordersMap.set(hydrated.orderNumber, hydrated);
+              }
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('DB lookup by email failed:', err.message);
+    }
+
+    return Array.from(ordersMap.values()).sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
   }
 
   /**
@@ -1121,7 +1181,7 @@ export class OrdersRepository {
           newDate: resolvedDateStr,
           newTime: resolvedTimeStr,
         }],
-      });
+      }, order.festivalId || 'gent');
     } catch (err: any) {
       console.warn('[Mollie Sync] Fout bij syncen van ticket omruiling:', err.message);
     }
@@ -1216,7 +1276,7 @@ export class OrdersRepository {
     try {
       await MollieService.updateOrderMetadata(order.orderNumber, {
         cancelledTicketCodes: [ticket.ticketCode],
-      });
+      }, order.festivalId || 'gent');
     } catch (err: any) {
       console.warn('[Mollie Sync] Fout bij syncen van ticket annulering:', err.message);
     }
@@ -1269,7 +1329,7 @@ export class OrdersRepository {
       await MollieService.updateOrderMetadata(order.orderNumber, {
         orderStatus: 'cancelled',
         cancelledTicketCodes: order.tickets.map((t) => t.ticketCode),
-      });
+      }, order.festivalId || 'gent');
     } catch (err: any) {
       console.warn('[Mollie Sync] Fout bij syncen van order annulering:', err.message);
     }
@@ -1656,6 +1716,26 @@ export class OrdersRepository {
    */
   static listOrders(): StoredOrder[] {
     return Array.from(new Map(Array.from(memoryOrders.values()).map((o) => [o.orderNumber, o])).values());
+  }
+
+  /**
+   * List all stored orders asynchronously with database fallback for cold starts
+   */
+  static async listOrdersAsync(): Promise<StoredOrder[]> {
+    if (memoryOrders.size === 0) {
+      try {
+        const dbStatus = await checkDbConnection();
+        if (dbStatus.ok) {
+          const rows = await db.select().from(schema.orders);
+          for (const row of rows) {
+            await this.findOrder(row.orderNumber);
+          }
+        }
+      } catch (err: any) {
+        console.warn('Could not hydrate orders from DB on cold start:', err.message);
+      }
+    }
+    return this.listOrders();
   }
 
   /**

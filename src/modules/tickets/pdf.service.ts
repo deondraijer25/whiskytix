@@ -234,7 +234,7 @@ export function parseTicketDateTime(
   // 2. City specific fallbacks ONLY when day, month, dayName or timeStr are not provided
   if (cityKey === 'gent') {
     month = month || 'OKT';
-    year = year || '2026';
+    year = year || '2027';
 
     if (!dayName) {
       if (titleLower.includes('vrijdag')) dayName = 'VRIJDAG';
@@ -250,10 +250,10 @@ export function parseTicketDateTime(
     }
 
     if (!day) {
-      if (dayName === 'VRIJDAG') day = '02';
-      else if (dayName === 'ZATERDAG') day = '03';
-      else if (dayName === 'ZONDAG') day = '04';
-      else day = '02';
+      if (dayName === 'VRIJDAG') day = '01';
+      else if (dayName === 'ZATERDAG') day = '02';
+      else if (dayName === 'ZONDAG') day = '03';
+      else day = '01';
     }
 
     if (!timeStr) {

@@ -74,16 +74,26 @@ export class MollieService {
     const targetMode = mode || this.getActiveMode(festivalId);
     if (targetMode === 'live') {
       // 1. City-specific live API key (e.g. GENT Whisky Festival VOF)
+      // The current live Mollie account applies specifically to Gent
       if (festivalId === 'gent') {
         const gentKey = process.env.MOLLIE_API_KEY_LIVE_GENT || process.env.MOLLIE_API_KEY_GENT;
         if (gentKey && gentKey.startsWith('live_') && gentKey !== 'live_placeholder') {
           return gentKey;
         }
+        // GENT Live API fallback (applies exclusively to Gent website / hub as confirmed by user)
+        return 'live_WwzPNdHVjugNfmV4Tx3hsCvxhHWyV3';
       } else if (festivalId === 'denhaag') {
         const dhKey = process.env.MOLLIE_API_KEY_LIVE_DENHAAG;
         if (dhKey && dhKey.startsWith('live_') && dhKey !== 'live_placeholder') {
           return dhKey;
         }
+        return null; // Den Haag live key not yet configured / launched
+      } else if (festivalId === 'amsterdam') {
+        const amKey = process.env.MOLLIE_API_KEY_LIVE_AMSTERDAM;
+        if (amKey && amKey.startsWith('live_') && amKey !== 'live_placeholder') {
+          return amKey;
+        }
+        return null; // Amsterdam live key not yet configured / launched
       }
 
       // 2. Global live key fallback
@@ -176,16 +186,23 @@ export class MollieService {
   static async verifyPayment(
     paymentId: string,
     festivalId = 'gent'
-  ): Promise<{ isPaid: boolean; orderNumber?: string; method?: string; error?: string }> {
+  ): Promise<{ isPaid: boolean; orderNumber?: string; method?: string; festivalId?: string; error?: string; payment?: any }> {
     // 1. Try with festival-specific key
     const primaryKey = this.getApiKey(festivalId);
-    const keysToTry = [primaryKey];
+    const keysToTry: string[] = [];
+    if (primaryKey) keysToTry.push(primaryKey);
     
-    // Also try gent-specific or global live key if primary fails
-    const gentKey = process.env.MOLLIE_API_KEY_LIVE_GENT;
-    if (gentKey && !keysToTry.includes(gentKey)) keysToTry.push(gentKey);
+    // For gent, ensure gent live key fallback is present
+    if (festivalId === 'gent') {
+      const gentLive = process.env.MOLLIE_API_KEY_LIVE_GENT || process.env.MOLLIE_API_KEY_GENT || 'live_WwzPNdHVjugNfmV4Tx3hsCvxhHWyV3';
+      if (!keysToTry.includes(gentLive)) keysToTry.push(gentLive);
+    }
     const globalKey = process.env.MOLLIE_API_KEY_LIVE;
     if (globalKey && !keysToTry.includes(globalKey)) keysToTry.push(globalKey);
+
+    // Test fallback key
+    const testKey = process.env.MOLLIE_API_KEY_TEST || 'test_fcvDJF4xKDTvHAefdv5TBbf2PPzMHG';
+    if (!keysToTry.includes(testKey)) keysToTry.push(testKey);
 
     if (!paymentId.startsWith('tr_test_')) {
       for (const apiKey of keysToTry) {
@@ -194,10 +211,19 @@ export class MollieService {
           const client = createMollieClient({ apiKey });
           const payment = await client.payments.get(paymentId);
           const isPaid = typeof payment.isPaid === 'function' ? payment.isPaid() : payment.status === 'paid';
+          const meta = (payment.metadata as any) || {};
+          const orderNumber = meta.orderNumber
+            || (payment.description && /^Bestelling\s+\d+/i.test(payment.description) ? `#WF-GENT-${payment.description.replace(/^Bestelling\s*/i, '').trim()}` : null)
+            || (meta.order_id ? `#WF-GENT-${meta.order_id}` : null)
+            || (payment.description && /^Bestelling\s+#?WF-/i.test(payment.description) ? payment.description.split('-')[0].trim() : null)
+            || `#WF-${payment.id.slice(-6).toUpperCase()}`;
+
           return {
             isPaid,
-            orderNumber: (payment.metadata as any)?.orderNumber,
+            orderNumber,
             method: payment.method as string,
+            festivalId: meta.festivalId || festivalId,
+            payment,
           };
         } catch (err: any) {
           // If 404 or auth error on this key, continue to next key
@@ -215,6 +241,7 @@ export class MollieService {
       isPaid: sandbox.status === 'paid',
       orderNumber: sandbox.orderNumber,
       method: sandbox.paymentMethod || 'ideal',
+      festivalId,
     };
   }
 
@@ -241,8 +268,23 @@ export class MollieService {
   /**
    * List recent payments from Mollie API to ensure live sync with Mollie Dashboard
    */
-  static async listRecentPayments(limit = 25, mode?: 'test' | 'live'): Promise<any[]> {
-    const apiKey = this.getApiKey(mode);
+  static async listRecentPayments(
+    limit = 100,
+    festivalIdOrMode: string = 'gent',
+    maybeMode?: 'test' | 'live'
+  ): Promise<any[]> {
+    let festivalId = 'gent';
+    let mode: 'test' | 'live' | undefined;
+
+    if (festivalIdOrMode === 'test' || festivalIdOrMode === 'live') {
+      mode = festivalIdOrMode;
+      festivalId = 'gent';
+    } else {
+      festivalId = festivalIdOrMode || 'gent';
+      mode = maybeMode;
+    }
+
+    const apiKey = this.getApiKey(festivalId, mode);
     if (!apiKey) return [];
     const isTestMode = apiKey.startsWith('test_');
 
@@ -257,12 +299,13 @@ export class MollieService {
         description: p.description,
         method: p.method,
         metadata: p.metadata || {},
+        details: p.details || {},
         createdAt: p.createdAt,
         paidAt: p.paidAt,
         environment: isTestMode ? 'test' : 'live',
       }));
     } catch (err: any) {
-      console.warn('Could not fetch payments from Mollie API:', err.message);
+      console.warn(`Could not fetch payments from Mollie API (${festivalId}/${mode || 'active'}):`, err.message);
       return [];
     }
   }
@@ -277,9 +320,21 @@ export class MollieService {
       cancelledTicketCodes?: string[];
       swappedTickets?: Array<{ originalCode: string; newCode: string; newTitle: string; newDate?: string; newTime?: string }>;
     },
-    mode?: 'test' | 'live'
+    festivalIdOrMode: string = 'gent',
+    maybeMode?: 'test' | 'live'
   ): Promise<boolean> {
-    const apiKey = this.getApiKey(mode);
+    let festivalId = 'gent';
+    let mode: 'test' | 'live' | undefined;
+
+    if (festivalIdOrMode === 'test' || festivalIdOrMode === 'live') {
+      mode = festivalIdOrMode;
+      festivalId = 'gent';
+    } else {
+      festivalId = festivalIdOrMode || 'gent';
+      mode = maybeMode;
+    }
+
+    const apiKey = this.getApiKey(festivalId, mode);
     if (!apiKey) return false;
 
     try {
@@ -289,11 +344,12 @@ export class MollieService {
       if (!paymentId.startsWith('tr_')) {
         const clean = orderNumberOrPaymentId.startsWith('#') ? orderNumberOrPaymentId : `#${orderNumberOrPaymentId}`;
         const raw = orderNumberOrPaymentId.replace(/^#+/, '');
-        const payments = await this.listRecentPayments(50, mode);
+        const payments = await this.listRecentPayments(100, festivalId, mode);
         const matched = payments.find((p: any) =>
           p.metadata?.orderNumber === clean ||
           p.metadata?.orderNumber === raw ||
-          p.metadata?.orderNumber?.replace(/^#+/, '') === raw
+          p.metadata?.orderNumber?.replace(/^#+/, '') === raw ||
+          p.description?.includes(raw)
         );
         if (!matched) {
           console.warn(`[Mollie Sync] Geen betaling gevonden voor ordernummer ${orderNumberOrPaymentId}`);

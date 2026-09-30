@@ -85,7 +85,8 @@ export class GhlSyncService {
     try {
       const cityName = order.festivalId === 'gent' ? 'Gent' : order.festivalId === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
       const cleanOrderNumber = order.orderNumber.replace('#', '');
-      const downloadUrl = `${publicBaseUrl}/api/tickets/${encodeURIComponent(cleanOrderNumber)}-1/pdf?city=${order.festivalId}&orderNumber=${cleanOrderNumber}`;
+      const downloadUrl = `${publicBaseUrl}/api/orders/${encodeURIComponent(cleanOrderNumber)}/pdf?city=${order.festivalId}`;
+      const festivalYear = (order.festivalId === 'gent' || order.festivalId === 'amsterdam') ? '2027' : '2026';
 
       // Bepaal de dynamische portaallink (website domein / preview / live)
       let portalBase = order.portalBaseUrl;
@@ -131,7 +132,7 @@ export class GhlSyncService {
           { id: 'eT6a9aXU8Cow0ksysTrO', key: 'contact.totale_omzet_eur', field_value: (order.totalCents / 100).toFixed(2) },
           { id: '3wg1nud85Z3AyqpZCAPl', key: 'contact.klantstatus', field_value: 'Betaald' },
           { id: 'oYqgbCgnbUC7iD7oiYCI', key: 'contact.laatste_besteldatum', field_value: new Date().toISOString().split('T')[0] },
-          { id: 'Et1sgi7Z7bE8jcJGGS02', key: 'contact.meest_recente_editie', field_value: `${cityName} 2026` },
+          { id: 'Et1sgi7Z7bE8jcJGGS02', key: 'contact.meest_recente_editie', field_value: `${cityName} ${festivalYear}` },
         ],
       };
 

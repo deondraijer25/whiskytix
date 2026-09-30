@@ -222,7 +222,47 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       }
 
       if (!orderNumber) {
-        return reply.status(404).send({ error: 'Ordernummer niet gevonden bij deze betaling.' });
+        orderNumber = `#WF-GENT-${paymentId.slice(-6).toUpperCase()}`;
+      }
+
+      // If order not found in memory (e.g. cold start), reconstruct from Mollie payment
+      if (!order) {
+        order = await OrdersRepository.findOrder(orderNumber);
+      }
+      if (!order && (verification as any).payment) {
+        const p = (verification as any).payment;
+        const valEur = parseFloat(p.amount?.value || '0');
+        const amountCents = Math.round(valEur * 100);
+        const festId = ((verification as any).festivalId || 'gent') as 'gent' | 'denhaag' | 'amsterdam';
+        const meta = p.metadata || {};
+        const itemsSummary = meta.itemsSummary || (amountCents === 4250 ? '1x Entreeticket Gent Whisky Festival' : `${Math.max(1, Math.round(amountCents / 4250))}x Entreetickets`);
+        const customerName = meta.customerName || p.details?.consumerName || 'Website Klant';
+        const customerEmail = meta.customerEmail || meta.billingEmail || '';
+
+        order = await OrdersRepository.createOrder({
+          id: meta.orderId || paymentId,
+          orderNumber,
+          festivalId: festId,
+          customerName,
+          customerEmail,
+          customerPhone: meta.customerPhone || '',
+          subtotalCents: amountCents,
+          discountCents: 0,
+          totalCents: amountCents,
+          status: 'pending',
+          molliePaymentId: paymentId,
+          paymentMethod: verification.method || 'ideal',
+          createdAt: p.createdAt || new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          items: [{
+            id: crypto.randomUUID(),
+            orderId: meta.orderId || paymentId,
+            ticketTypeId: `${festId}-entree`,
+            title: itemsSummary,
+            quantity: Math.max(1, Math.round(amountCents / 4250)),
+            unitPriceCents: 4250,
+          }],
+        });
       }
 
       // Mark order paid and issue tickets with HMAC QR codes!
@@ -816,6 +856,44 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   });
 
   /**
+   * 4c. GET ORDERS BY EMAIL API
+   * GET /api/checkout/orders-by-email?email=...&festivalId=...
+   */
+  server.get('/api/checkout/orders-by-email', async (request, reply) => {
+    const query = (request.query || {}) as { email?: string; festivalId?: string };
+    const email = query.email?.trim().toLowerCase();
+
+    if (!email) {
+      return reply.status(400).send({ error: 'E-mailadres is verplicht.' });
+    }
+
+    try {
+      const orders = await OrdersRepository.findOrdersByEmail(email, query.festivalId);
+      return reply.send({
+        success: true,
+        count: orders.length,
+        orders: orders.map((o) => ({
+          orderNumber: o.orderNumber,
+          customerName: o.customerName,
+          customerEmail: o.customerEmail,
+          customerPhone: o.customerPhone,
+          festivalId: o.festivalId,
+          totalCents: o.totalCents,
+          status: o.status,
+          items: o.items,
+          tickets: o.tickets,
+          activeTickets: (o.tickets || []).filter((t) => t.status === 'valid' || t.status === 'checked_in'),
+          cancelledTickets: (o.tickets || []).filter((t) => t.status === 'cancelled'),
+          swappedTickets: (o.tickets || []).filter((t) => t.status === 'swapped'),
+          createdAt: o.createdAt,
+        })),
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ error: 'Fout bij ophalen bestellingen: ' + err.message });
+    }
+  });
+
+  /**
    * GET /api/checkout/order/:orderNumber/pdf
    * Direct alias to bundled PDF download
    */
@@ -1257,7 +1335,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
    }
 
    const getSyncedOrders = async (query: { city?: string; festivalId?: string; env?: string }) => {
-     const allOrders = OrdersRepository.listOrders() || [];
+     const allOrders = (await OrdersRepository.listOrdersAsync()) || OrdersRepository.listOrders() || [];
      
      const formattedOrders = allOrders.map((o) => {
        const city = o.festivalId || 'gent';
@@ -1346,32 +1424,48 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
      // Live Sync with Mollie API: Fetch payments for specified environment or active mode
      try {
-       const targetMode = (query.env === 'live' ? 'live' : query.env === 'test' ? 'test' : MollieService.getActiveMode());
-       const molliePayments = await MollieService.listRecentPayments(50, targetMode);
+       const targetFest = (query.festivalId || query.city || 'gent').toLowerCase();
+       const targetMode = (query.env === 'live' ? 'live' : query.env === 'test' ? 'test' : MollieService.getActiveMode(targetFest));
+       const molliePayments = await MollieService.listRecentPayments(100, targetFest, targetMode);
        
        for (const p of molliePayments) {
-         const metaOrderNumber = p.metadata?.orderNumber;
+         const metaOrderNumber = p.metadata?.orderNumber
+           || (p.description && /^Bestelling\s+\d+/i.test(p.description) ? `#WF-GENT-${p.description.replace(/^Bestelling\s*/i, '').trim()}` : null)
+           || (p.metadata?.order_id ? `#WF-GENT-${p.metadata.order_id}` : null)
+           || (p.description && /^Bestelling\s+#?WF-/i.test(p.description) ? p.description.split('-')[0].trim() : null)
+           || `#WF-${p.id.slice(-6).toUpperCase()}`;
          if (metaOrderNumber) {
            const existing = formattedOrders.find((o) => o.orderNumber === metaOrderNumber);
            if (!existing) {
-             // The currently configured Mollie account is Gent's account.
-             // Den Haag & Amsterdam ticket sales are not yet launched.
-             const festId: 'denhaag' | 'amsterdam' | 'gent' = 'gent';
-             const cityName = 'Gent';
-             const valEur = parseFloat(p.amountValue || '0');
+             const festId: 'denhaag' | 'amsterdam' | 'gent' = (p.metadata?.festivalId || (targetFest === 'denhaag' ? 'denhaag' : targetFest === 'amsterdam' ? 'amsterdam' : 'gent')) as any;
+             const cityName = festId === 'gent' ? 'Gent' : festId === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
+             const valEur = parseFloat(p.amountValue || p.amount?.value || '0');
              const amountCents = Math.round(valEur * 100);
-             const cleanNum = metaOrderNumber.replace('#', '');
+             const cleanNum = metaOrderNumber.replace(/^#+/, '');
 
              const itemsSummaryFromMeta = p.metadata?.itemsSummary;
              let cleanSummary = itemsSummaryFromMeta;
              if (!cleanSummary) {
                if (amountCents === 4400) cleanSummary = '1x Entreeticket Vrijdag';
                else if (amountCents === 25950) cleanSummary = '6x Entreeticket Vrijdag';
-               else cleanSummary = p.description ? p.description.replace(/^Bestelling\s+#WF-[^\s-]+\s*-\s*/i, '') : 'Festival Entreetickets';
+               else if (amountCents === 4250) cleanSummary = '1x Entreeticket Gent Whisky Festival';
+               else if (amountCents === 8500) cleanSummary = '2x Entreeticket Gent Whisky Festival';
+               else if (amountCents === 12750) cleanSummary = '3x Entreeticket Gent Whisky Festival';
+               else if (amountCents === 17000) cleanSummary = '4x Entreeticket Gent Whisky Festival';
+               else if (amountCents === 2000) cleanSummary = '1x BOB Toegangsticket';
+               else if (p.description && !p.description.startsWith('Bestelling')) cleanSummary = p.description;
+               else {
+                 const guessedQty = Math.max(1, Math.round(amountCents / 4250));
+                 cleanSummary = `${guessedQty}x Entreeticket ${cityName} Whisky Festival`;
+               }
              }
 
-             const resolvedName = p.metadata?.customerName || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'Deon Draijer' : 'Klant (' + (p.method ? p.method.toUpperCase() : 'iDEAL') + ')');
-             const resolvedEmail = p.metadata?.customerEmail || (metaOrderNumber.includes('12233') || metaOrderNumber.includes('76464') ? 'deondraijer@gmail.com' : 'deondraijer@gmail.com');
+             const resolvedName = p.metadata?.customerName 
+               || p.details?.consumerName 
+               || (p.metadata?.order_id ? `Website Klant #${p.metadata.order_id}` : (p.method ? 'Klant (' + p.method.toUpperCase() + ')' : 'Bezoeker'));
+             const resolvedEmail = p.metadata?.customerEmail 
+               || p.metadata?.billingEmail 
+               || (p.details?.consumerAccount ? `${p.details.consumerAccount.slice(0, 8)}...` : '');
 
              const parsedItems = p.metadata?.itemsJson
                ? (() => {
@@ -1660,8 +1754,16 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
    // GET /api/admin/mollie/status
    server.get('/api/admin/mollie/status', async (request, reply) => {
      const activeMode = MollieService.getActiveMode();
-     const hasLiveKey = !!(process.env.MOLLIE_API_KEY_LIVE && process.env.MOLLIE_API_KEY_LIVE.startsWith('live_') && process.env.MOLLIE_API_KEY_LIVE !== 'live_placeholder');
-     const hasTestKey = !!(process.env.MOLLIE_API_KEY_TEST && process.env.MOLLIE_API_KEY_TEST.startsWith('test_') && process.env.MOLLIE_API_KEY_TEST !== 'test_placeholder');
+     const hasLiveKey = !!(
+       (process.env.MOLLIE_API_KEY_LIVE && process.env.MOLLIE_API_KEY_LIVE.startsWith('live_') && process.env.MOLLIE_API_KEY_LIVE !== 'live_placeholder') ||
+       (process.env.MOLLIE_API_KEY_LIVE_GENT && process.env.MOLLIE_API_KEY_LIVE_GENT.startsWith('live_') && process.env.MOLLIE_API_KEY_LIVE_GENT !== 'live_placeholder') ||
+       (process.env.MOLLIE_API_KEY_GENT && process.env.MOLLIE_API_KEY_GENT.startsWith('live_') && process.env.MOLLIE_API_KEY_GENT !== 'live_placeholder') ||
+       MollieService.getApiKey('gent', 'live')
+     );
+     const hasTestKey = !!(
+       (process.env.MOLLIE_API_KEY_TEST && process.env.MOLLIE_API_KEY_TEST.startsWith('test_') && process.env.MOLLIE_API_KEY_TEST !== 'test_placeholder') ||
+       MollieService.getApiKey('gent', 'test')
+     );
      return reply.send({
        success: true,
        activeMode,

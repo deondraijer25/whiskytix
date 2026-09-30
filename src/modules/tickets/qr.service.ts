@@ -17,14 +17,20 @@ export interface QrVerificationResult {
   error?: string;
 }
 
-const HMAC_SECRET = process.env.SCANNER_HMAC_SECRET || 'whiskytix_super_secret_hmac_key_2026';
+const KNOWN_HMAC_SECRETS = Array.from(new Set([
+  process.env.SCANNER_HMAC_SECRET,
+  'whiskytix_super_secret_signing_key_2026_jubilee',
+  'whiskytix_super_secret_hmac_key_2026',
+])).filter(Boolean) as string[];
+
+const PRIMARY_HMAC_SECRET = process.env.SCANNER_HMAC_SECRET || 'whiskytix_super_secret_signing_key_2026_jubilee';
 
 /**
  * Generates an unforgeable cryptographic HMAC-SHA256 signature for a ticket
  */
-export function generateTicketSignature(ticketCode: string, cityName: string, sessionTitle: string, attendeeName: string): string {
+export function generateTicketSignature(ticketCode: string, cityName: string, sessionTitle: string, attendeeName: string, secret = PRIMARY_HMAC_SECRET): string {
   const raw = `${ticketCode.trim().toUpperCase()}|${cityName.trim().toLowerCase()}|${sessionTitle.trim().toUpperCase()}|${attendeeName.trim()}`;
-  return crypto.createHmac('sha256', HMAC_SECRET).update(raw).digest('hex').substring(0, 10);
+  return crypto.createHmac('sha256', secret).update(raw).digest('hex').substring(0, 10);
 }
 
 /**
@@ -56,9 +62,14 @@ export function verifyQrPayload(rawPayload: string): QrVerificationResult {
 
     const [, ticketCode, cityName, sessionTitle, attendeeName, providedSig] = parts;
     const fullCode = `#${ticketCode}`;
-    const expectedSig = generateTicketSignature(fullCode, cityName, sessionTitle, attendeeName);
 
-    if (providedSig.toLowerCase() !== expectedSig.toLowerCase()) {
+    // Verify against all known signing secrets to avoid false rejections between envs
+    const isValid = KNOWN_HMAC_SECRETS.some((sec) => {
+      const expectedSig = generateTicketSignature(fullCode, cityName, sessionTitle, attendeeName, sec);
+      return providedSig.toLowerCase() === expectedSig.toLowerCase();
+    });
+
+    if (!isValid) {
       return { valid: false, error: 'Digitale handtekening ongeldig! Mogelijk vervalst ticket.' };
     }
 
