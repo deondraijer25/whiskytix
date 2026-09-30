@@ -494,8 +494,13 @@ export async function buildServer(): Promise<FastifyInstance> {
 
     // SPA fallback route
     server.setNotFoundHandler((request, reply) => {
-      if (request.raw.url && request.raw.url.startsWith('/api')) {
-        return reply.status(404).send({ error: 'API endpoint niet gevonden' });
+      const url = request.raw.url || '';
+      if (
+        url.startsWith('/api') ||
+        url.startsWith('/assets') ||
+        url.match(/\.(js|css|map|json|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot)$/i)
+      ) {
+        return reply.status(404).send({ error: 'Niet gevonden' });
       }
       reply.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
       reply.header('Pragma', 'no-cache');
