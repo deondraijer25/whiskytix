@@ -581,7 +581,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     // Auto-verify with Mollie if pending
     if (order.status !== 'paid' && order.molliePaymentId) {
       try {
-        const verification = await MollieService.verifyPayment(order.molliePaymentId);
+        const verification = await MollieService.verifyPayment(order.molliePaymentId, order.festivalId || 'gent');
         if (verification.isPaid) {
           const updated = await OrdersRepository.markOrderPaid(order.orderNumber, {
             paymentMethod: verification.method || 'ideal'
@@ -966,7 +966,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     // Auto-verify with Mollie if order is still pending (webhook may not have arrived yet)
     if (order.status !== 'paid' && order.molliePaymentId) {
       try {
-        const verification = await MollieService.verifyPayment(order.molliePaymentId);
+        const verification = await MollieService.verifyPayment(order.molliePaymentId, order.festivalId || 'gent');
         if (verification.isPaid) {
           const updated = await OrdersRepository.markOrderPaid(order.orderNumber, {
             paymentMethod: verification.method || 'ideal',
