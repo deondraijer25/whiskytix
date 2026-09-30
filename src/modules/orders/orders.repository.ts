@@ -78,6 +78,7 @@ export interface StoredOrder {
   items: StoredOrderItem[];
   tickets: StoredIssuedTicket[];
   itemsSummary?: string;
+  environment?: 'test' | 'live';
 }
 
 import os from 'os';
@@ -150,12 +151,28 @@ export class OrdersRepository {
       memoryOrders.set(order.id, order);
       saveLocalStore();
     } else {
+      if (order.environment) {
+        existing.environment = order.environment;
+      }
+      if (order.festivalId) {
+        existing.festivalId = order.festivalId;
+      }
+      if (order.customerName && (existing.customerName === 'Klant' || existing.customerName === 'Bezoeker')) {
+        existing.customerName = order.customerName;
+      }
+      if (order.customerEmail && !existing.customerEmail) {
+        existing.customerEmail = order.customerEmail;
+      }
       if (order.status === 'paid') {
         existing.status = 'paid';
         if (order.paidAt) existing.paidAt = order.paidAt;
-        // Preserve ticket cancellation & swap statuses during sync
-        saveLocalStore();
+      } else if (order.status === 'cancelled') {
+        existing.status = 'cancelled';
       }
+      if (Array.isArray(order.tickets) && order.tickets.length > 0) {
+        existing.tickets = order.tickets;
+      }
+      saveLocalStore();
     }
   }
 

@@ -1435,9 +1435,9 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
            || (p.description && /^Bestelling\s+#?WF-/i.test(p.description) ? p.description.split('-')[0].trim() : null)
            || `#WF-${p.id.slice(-6).toUpperCase()}`;
          if (metaOrderNumber) {
-           const existing = formattedOrders.find((o) => o.orderNumber === metaOrderNumber);
-           if (!existing) {
-             const festId: 'denhaag' | 'amsterdam' | 'gent' = (p.metadata?.festivalId || (targetFest === 'denhaag' ? 'denhaag' : targetFest === 'amsterdam' ? 'amsterdam' : 'gent')) as any;
+           const cleanMeta = metaOrderNumber.replace(/^#+/, '');
+           const existing = formattedOrders.find((o) => o.orderNumber === metaOrderNumber || (o.orderNumber && o.orderNumber.replace(/^#+/, '') === cleanMeta));
+           const festId: 'denhaag' | 'amsterdam' | 'gent' = (p.metadata?.festivalId || (targetFest === 'denhaag' ? 'denhaag' : targetFest === 'amsterdam' ? 'amsterdam' : 'gent')) as any;
              const cityName = festId === 'gent' ? 'Gent' : festId === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
              const valEur = parseFloat(p.amountValue || p.amount?.value || '0');
              const amountCents = Math.round(valEur * 100);
@@ -1551,7 +1551,8 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 } catch {}
               }
 
-             formattedOrders.unshift({
+             if (!existing) {
+               formattedOrders.unshift({
                id: p.id,
                orderNumber: metaOrderNumber,
                customerName: resolvedName,
@@ -1612,6 +1613,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                   createdAt: p.createdAt || new Date().toISOString(),
                   paidAt: p.paidAt || null,
                   expiresAt: new Date(Date.now() + 86400000).toISOString(),
+                  environment: p.environment || targetMode,
                   items: effectiveItems.map((it) => ({
                     id: crypto.randomUUID(),
                     orderId: p.id,
@@ -1629,7 +1631,20 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 OrdersRepository.registerSyncedOrder(storedOrder);
               } catch (_) {}
            } else {
-              // Existing order found in local repository - ALWAYS sync Mollie metadata (cancellations, swaps, orderStatus)
+              // Existing order found in local repository - ALWAYS sync Mollie metadata, environment and city
+              existing.environment = p.environment || targetMode;
+              existing.city = festId;
+              existing.cityName = cityName;
+              if (resolvedName && (existing.customerName === 'Klant' || existing.customerName === 'Bezoeker')) {
+                existing.customerName = resolvedName;
+              }
+              if (resolvedEmail && !existing.customerEmail) {
+                existing.customerEmail = resolvedEmail;
+              }
+              if (tickets.length > 0 && (!existing.tickets || existing.tickets.length === 0)) {
+                existing.tickets = tickets;
+              }
+
               const rawCanc = p.metadata?.cancelledTicketCodes;
               const cancList = rawCanc
                 ? (typeof rawCanc === 'string' ? rawCanc.split(',') : Array.isArray(rawCanc) ? rawCanc : [rawCanc])
@@ -1684,9 +1699,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 } catch {}
               }
 
-              // Also persist cancellations and status back to OrdersRepository
+              // Also persist cancellations, status, environment and festivalId back to OrdersRepository
               const repoOrder = await OrdersRepository.findOrder(metaOrderNumber);
               if (repoOrder) {
+                repoOrder.environment = p.environment || targetMode;
+                repoOrder.festivalId = festId;
                 if (isOrderCancelled) {
                   repoOrder.status = 'cancelled';
                 } else if (p.status === 'paid') {
