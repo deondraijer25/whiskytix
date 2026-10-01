@@ -901,6 +901,20 @@ export class OrdersRepository {
     memoryOrders.set(order.id, order);
     saveLocalStore();
 
+    // Persist paid status to DB
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        await db.update(schema.orders).set({
+          status: 'paid',
+          paidAt: new Date(order.paidAt),
+          paymentMethod: order.paymentMethod || 'ideal',
+        }).where(eq(schema.orders.orderNumber, order.orderNumber));
+      }
+    } catch (err: any) {
+      // local store fallback handled
+    }
+
     // Trigger realtime sync to GoHighLevel in background
     GhlSyncService.syncPaidOrder(order).catch((err) => {
       console.warn('[GHL Sync] Fout bij achtergrond sync van order:', err.message);

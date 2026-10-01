@@ -136,7 +136,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
       // Initialize Payment via Mollie
       const host = request.headers.host || 'localhost:4000';
-      const protocol = request.protocol || 'http';
+      const protocol = host.includes('localhost') ? (request.protocol || 'http') : 'https';
       const baseUrl = `${protocol}://${host}`;
 
       const clientReturnUrl = body?.returnUrl || body?.redirectUrl;
