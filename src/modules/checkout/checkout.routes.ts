@@ -878,10 +878,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
     try {
       const orders = await OrdersRepository.findOrdersByEmail(email, query.festivalId);
+      const queryAny = query as any;
+      const effectiveOrders = queryAny.includeAll === 'true' ? orders : orders.filter((o) => o.status === 'paid');
       return reply.send({
         success: true,
-        count: orders.length,
-        orders: orders.map((o) => ({
+        count: effectiveOrders.length,
+        orders: effectiveOrders.map((o) => ({
           orderNumber: o.orderNumber,
           customerName: o.customerName,
           customerEmail: o.customerEmail,
