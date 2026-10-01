@@ -56,13 +56,13 @@ const FESTIVAL_THEMES: Record<string, FestivalTheme> = {
     transit: 'Tram 1 of 4: halte Gravensteen (1 min. lopen)',
     parking: 'Parking Vrijdagmarkt of Sint-Michiels (5-7 min.)',
     established: 'EST. 2004',
-    edition: '26e Editie',
+    edition: '25e Editie',
     email: 'info@whiskyfestival.be',
     watermark: 'GWF',
-    datesShort: '1, 2 en 3 Oktober 2027',
+    datesShort: '2, 3 en 4 Oktober 2026',
     defaultMonth: 'OKT',
-    defaultDay: '01',
-    year: '2027',
+    defaultDay: '02',
+    year: '2026',
     pillLocation: 'DE OUDE VISMIJN  \u2022  GENT',
     colors: {
       primary: '#1E3A8A',        // Gent Royal Blue (--whisky-gold-dark)
@@ -234,7 +234,7 @@ export function parseTicketDateTime(
   // 2. City specific fallbacks ONLY when day, month, dayName or timeStr are not provided
   if (cityKey === 'gent') {
     month = month || 'OKT';
-    year = year || '2027';
+    year = year || '2026';
 
     if (!dayName) {
       if (titleLower.includes('vrijdag')) dayName = 'VRIJDAG';
@@ -250,10 +250,10 @@ export function parseTicketDateTime(
     }
 
     if (!day) {
-      if (dayName === 'VRIJDAG') day = '01';
-      else if (dayName === 'ZATERDAG') day = '02';
-      else if (dayName === 'ZONDAG') day = '03';
-      else day = '01';
+      if (dayName === 'VRIJDAG') day = '02';
+      else if (dayName === 'ZATERDAG') day = '03';
+      else if (dayName === 'ZONDAG') day = '04';
+      else day = '02';
     }
 
     if (!timeStr) {

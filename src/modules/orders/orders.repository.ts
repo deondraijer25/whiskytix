@@ -215,13 +215,13 @@ export class OrdersRepository {
     if (!dateStr) {
       if (cityName === 'Gent') {
         if (titleLower.includes('zondag')) {
-          dateStr = 'Zondag 3 oktober 2027';
+          dateStr = 'Zondag 4 oktober 2026';
         } else if (titleLower.includes('vrijdag')) {
-          dateStr = 'Vrijdag 1 oktober 2027';
+          dateStr = 'Vrijdag 2 oktober 2026';
         } else if (titleLower.includes('botteling')) {
-          dateStr = 'Afhalen Festival (1-3 okt 2027)';
+          dateStr = 'Afhalen Festival (2-4 okt 2026)';
         } else {
-          dateStr = 'Zaterdag 2 oktober 2027';
+          dateStr = 'Zaterdag 3 oktober 2026';
         }
       } else if (cityName === 'Amsterdam') {
         dateStr = 'Zaterdag 16 januari 2027';
