@@ -370,8 +370,10 @@ export class OrdersRepository {
       tickets: [],
     };
 
-    // Immediately generate authentic tickets for all items
-    this.ensureOrderTickets(fullOrder);
+    // Only generate tickets if the order is already marked 'paid'
+    if (fullOrder.status === 'paid') {
+      this.ensureOrderTickets(fullOrder);
+    }
 
     // Store in local memory and file
     memoryOrders.set(fullOrder.orderNumber, fullOrder);

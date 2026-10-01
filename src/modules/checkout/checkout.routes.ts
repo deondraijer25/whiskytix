@@ -141,7 +141,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
       const clientReturnUrl = body?.returnUrl || body?.redirectUrl;
       const redirectUrl = clientReturnUrl 
-        ? `${clientReturnUrl}${clientReturnUrl.includes('?') ? '&' : '?'}orderNumber=${encodeURIComponent(orderNumber)}&status=success`
+        ? `${clientReturnUrl}${clientReturnUrl.includes('?') ? '&' : '?'}orderNumber=${encodeURIComponent(orderNumber)}`
         : `${baseUrl}/order/confirmation?orderNumber=${encodeURIComponent(orderNumber)}`;
       const webhookUrl = `${baseUrl}/api/payments/webhook`;
 
@@ -629,6 +629,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           if (updated) {
             order = updated;
           }
+        } else {
+          const mollieStatus = (verification as any).payment?.status;
+          if (mollieStatus === 'canceled' || mollieStatus === 'expired' || mollieStatus === 'failed') {
+            await OrdersRepository.cancelOrder(order.orderNumber, `Betaling ${mollieStatus} in Mollie`);
+            order.status = 'cancelled';
+          }
         }
       } catch (err: any) {
         server.log.warn('Could not verify payment on return: ' + err.message);
@@ -724,8 +730,9 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     const city = cityConfig[order.festivalId || 'gent'] || cityConfig.gent;
     const apiBase = `${request.protocol}://${request.headers.host || 'whiskytix-r1qq.vercel.app'}`;
 
+    const isPaid = order.status === 'paid';
     let ticketsHtml = '';
-    if (order.tickets && order.tickets.length > 0) {
+    if (isPaid && order.tickets && order.tickets.length > 0) {
       for (const ticket of order.tickets) {
         const cleanCode = (ticket.ticketCode || '').replace('#', '');
         const isSwapped = ticket.status === 'swapped';
@@ -828,13 +835,14 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       }
     }
 
-    const allTickets = order.tickets || [];
-    const activeTickets = allTickets.filter((t) => t.status === 'valid' || t.status === 'checked_in');
-    const cancelledTickets = allTickets.filter((t) => t.status === 'cancelled');
-    const swappedTickets = allTickets.filter((t) => t.status === 'swapped');
+    const allTickets = isPaid ? (order.tickets || []) : [];
+    const activeTickets = isPaid ? allTickets.filter((t) => t.status === 'valid' || t.status === 'checked_in') : [];
+    const cancelledTickets = isPaid ? allTickets.filter((t) => t.status === 'cancelled') : [];
+    const swappedTickets = isPaid ? allTickets.filter((t) => t.status === 'swapped') : [];
 
     return reply.send({
       success: true,
+      isPaid,
       order: {
         orderNumber: order.orderNumber,
         customerName: order.customerName,
@@ -843,6 +851,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         totalCents: order.totalCents,
         discountCents: order.discountCents,
         status: order.status,
+        isPaid,
         items: order.items,
         itemsSummary: (order as any).itemsSummary,
         tickets: allTickets,
