@@ -515,6 +515,40 @@ export async function buildServer(): Promise<FastifyInstance> {
     return reply.redirect(`/api/tickets/${encodeURIComponent(cleanCode)}/pdf${queryString ? `?${queryString}` : ''}`);
   });
 
+  // Direct redirect handler for WhatsApp buttons & universal redirects
+  server.get('/r', async (request, reply) => {
+    const query = (request.query || {}) as Record<string, string>;
+    const targetUrl = query.url || query.target || query.to;
+    if (targetUrl) {
+      return reply.redirect(targetUrl);
+    }
+    return reply.redirect('/api/health');
+  });
+
+  // Direct order PDF shortlink: /pdf/:orderNumber
+  server.get('/pdf/:orderNumber', async (request, reply) => {
+    const params = request.params as { orderNumber: string };
+    const query = (request.query || {}) as Record<string, string>;
+    const cleanOrderNumber = (params.orderNumber || '').replace(/^#+/, '').trim();
+    const queryString = new URLSearchParams(query).toString();
+    return reply.redirect(`/api/orders/${encodeURIComponent(cleanOrderNumber)}/pdf${queryString ? `?${queryString}` : ''}`);
+  });
+
+  // Direct download shortlink with hash fallback HTML
+  server.get('/download', async (request, reply) => {
+    reply.header('Content-Type', 'text/html; charset=utf-8');
+    return reply.send(`<!DOCTYPE html><html><head><title>E-Tickets Downloaden</title><script>
+      var h = window.location.hash.replace(/^#+/, '').trim();
+      var p = new URLSearchParams(window.location.search);
+      var code = p.get('order') || p.get('code') || h;
+      if (code) {
+        window.location.replace('/api/orders/' + encodeURIComponent(code.replace(/^#+/, '')) + '/pdf');
+      } else {
+        window.location.replace('https://whiskyfestival.be/inloggen');
+      }
+    </script></head><body><p style="font-family:sans-serif;text-align:center;padding:2rem;">Uw e-tickets worden geopend...</p></body></html>`);
+  });
+
   // 5. Catalog, Checkout & Payment Routes
   await registerCatalogRoutes(server);
   await registerCheckoutRoutes(server);
