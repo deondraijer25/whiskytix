@@ -242,6 +242,19 @@ export const INITIAL_SESSIONS: SessionCapacity[] = [
   },
 ];
 
-export const INITIAL_COUPONS: Coupon[] = [];
+export const INITIAL_COUPONS: Coupon[] = [
+  {
+    id: 'coup-new10',
+    code: 'NEW10',
+    city: 'Alle Festivals',
+    type: 'percentage',
+    value: 10,
+    usedCount: 0,
+    maxUses: 1000,
+    totalDiscountGrantedCents: 0,
+    validUntil: '2027-12-31',
+    isActive: true,
+  },
+];
 
 export const INITIAL_SCAN_LOGS: ScanLog[] = [];

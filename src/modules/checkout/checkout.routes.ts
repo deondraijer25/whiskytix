@@ -4,8 +4,46 @@ import { OrdersRepository, StoredOrderItem, StoredOrder, parseItemsSummary } fro
 import { MollieService, sandboxPayments } from '../payments/mollie.service.js';
 import { verifyQrPayload } from '../tickets/qr.service.js';
 import { GhlSyncService } from '../ghl/ghl.sync.service.js';
+import { CouponsRepository } from '../coupons/coupons.repository.js';
 
 export async function registerCheckoutRoutes(server: FastifyInstance): Promise<void> {
+  /**
+   * 0. COUPONS & PROMO CODES MANAGEMENT + VALIDATION
+   */
+  server.get('/api/coupons', async (request, reply) => {
+    const query = (request.query || {}) as { festivalId?: string };
+    const coupons = CouponsRepository.getAll(query.festivalId);
+    return reply.send({ success: true, coupons });
+  });
+
+  server.post('/api/coupons', async (request, reply) => {
+    const body = (request.body || {}) as any;
+    if (!body.code || typeof body.code !== 'string') {
+      return reply.status(400).send({ error: 'Kortingscode is verplicht.' });
+    }
+    const coupon = CouponsRepository.create({
+      code: body.code,
+      city: body.city || 'Alle Festivals',
+      type: body.type === 'fixed_amount' ? 'fixed_amount' : 'percentage',
+      value: Number(body.value) || 0,
+      maxUses: Number(body.maxUses) || 500,
+      validUntil: body.validUntil || '2027-12-31',
+    });
+    return reply.send({ success: true, coupon });
+  });
+
+  server.delete('/api/coupons/:id', async (request, reply) => {
+    const params = request.params as { id: string };
+    const deleted = CouponsRepository.deleteById(params.id);
+    return reply.send({ success: deleted });
+  });
+
+  server.post('/api/coupons/validate', async (request, reply) => {
+    const body = (request.body || {}) as { code?: string; festivalId?: string };
+    const result = CouponsRepository.validate(body.code || '', body.festivalId);
+    return reply.send(result);
+  });
+
   /**
    * 1. CREATE ORDER & INITIALIZE PAYMENT
    * POST /api/checkout/create-order
@@ -22,6 +60,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         customerPhone = '',
         items = [],
         discountCents = 0,
+        promoCode = '',
         shippingAddress,
         ageVerification,
         portalBaseUrl,
@@ -101,8 +140,26 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       }
 
       const shippingCents = hasShipping ? 1250 : 0; // €12,50 shipping fee
-      const finalDiscountCents = Number(discountCents) || 0;
-      const totalCents = Math.max(0, subtotalCents + feeCents + shippingCents - finalDiscountCents);
+
+      // Discount is ALWAYS calculated over the subtotal (excluding service fees and shipping)
+      let finalDiscountCents = Math.min(subtotalCents, Math.max(0, Number(discountCents) || 0));
+      if (promoCode && typeof promoCode === 'string' && promoCode.trim()) {
+        const couponCheck = CouponsRepository.validate(promoCode.trim(), festivalId);
+        if (couponCheck.valid) {
+          if (couponCheck.type === 'percentage' && couponCheck.value) {
+            finalDiscountCents = Math.min(
+              subtotalCents,
+              Math.round(subtotalCents * (couponCheck.value / 100))
+            );
+          } else if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
+            finalDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
+          }
+          CouponsRepository.recordRedemption(promoCode.trim(), finalDiscountCents);
+        }
+      }
+
+      const discountedSubtotalCents = Math.max(0, subtotalCents - finalDiscountCents);
+      const totalCents = discountedSubtotalCents + feeCents + shippingCents;
 
       const finalCustomerName = (firstName && lastName)
         ? `${firstName} ${lastName}`.trim()

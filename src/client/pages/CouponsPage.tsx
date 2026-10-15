@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Ticket, Plus, CheckCircle, Clock, X, Percent, Euro } from 'lucide-react';
 import { INITIAL_COUPONS, INITIAL_FESTIVALS, Coupon } from '../data/mockData';
@@ -15,22 +15,59 @@ export const CouponsPage: React.FC = () => {
   const [newType, setNewType] = useState<'percentage' | 'fixed_amount'>('percentage');
   const [newValue, setNewValue] = useState(10);
   const [newMaxUses, setNewMaxUses] = useState(200);
-  const [newValidUntil, setNewValidUntil] = useState('2026-12-31');
+  const [newValidUntil, setNewValidUntil] = useState('2027-12-31');
 
-  const handleCreateCoupon = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetch('/api/coupons')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.coupons) && data.coupons.length > 0) {
+          setCoupons(data.coupons);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleCreateCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCode) return;
 
-    const newCoupon: Coupon = {
-      id: `coup-${Date.now()}`,
+    const payload = {
       code: newCode.toUpperCase().trim(),
       city: newCity,
       type: newType,
       value: newType === 'percentage' ? newValue : newValue * 100,
-      usedCount: 0,
       maxUses: newMaxUses,
-      totalDiscountGrantedCents: 0,
       validUntil: newValidUntil,
+    };
+
+    try {
+      const res = await fetch('/api/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.coupon) {
+          setCoupons((prev) => [data.coupon, ...prev.filter((c) => c.code !== data.coupon.code)]);
+          setIsModalOpen(false);
+          setNewCode('');
+          return;
+        }
+      }
+    } catch {}
+
+    const newCoupon: Coupon = {
+      id: `coup-${Date.now()}`,
+      code: payload.code,
+      city: payload.city,
+      type: payload.type,
+      value: payload.value,
+      usedCount: 0,
+      maxUses: payload.maxUses,
+      totalDiscountGrantedCents: 0,
+      validUntil: payload.validUntil,
       isActive: true,
     };
 
