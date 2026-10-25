@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { FestivalBadgeLogo } from './FestivalBadgeLogo';
 import { Footer } from './Footer';
-import { MollieEnvToggle } from './MollieEnvToggle';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -100,7 +99,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             <nav className="hidden lg:flex items-center gap-1.5 xl:gap-2 ml-4">
               <Link
                 to="/admin"
-                className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-extrabold uppercase tracking-wider transition-all ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition-all ${
                   location.pathname === '/admin'
                     ? 'bg-[#006448] text-white border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
                     : 'text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] border border-transparent'
@@ -112,7 +111,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
               <Link
                 to="/admin/tickets"
-                className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-extrabold uppercase tracking-wider transition-all ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-bold transition-all ${
                   location.pathname === '/admin/tickets'
                     ? 'bg-[#006448] text-white border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
                     : 'text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] border border-transparent'
@@ -136,7 +135,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                   <Link
                     key={fest.id}
                     to={fest.path}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded text-xs font-extrabold uppercase tracking-wider transition-all ${
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded text-xs font-bold transition-all ${
                       isActive
                         ? 'bg-[#006448] text-white border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
                         : 'text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] border border-transparent'
@@ -149,21 +148,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               })}
             </nav>
 
-            {/* Right: Environment Toggle, Quick Tools & Profile Dropdown */}
+            {/* Right: Profile Dropdown */}
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              {/* Mollie Test / Live Switcher */}
-              <MollieEnvToggle compact className="hidden sm:inline-flex" />
-
-              {/* Quick Scanner PWA Button */}
-              <Link
-                to="/scan"
-                className="hidden md:flex h-10 items-center gap-2 px-3 rounded border-2 border-[#1D1C1A] bg-[#FAF7F2] hover:bg-[#d8e7e2] text-[#1D1C1A] text-xs font-extrabold uppercase tracking-wider shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer shrink-0"
-                title="Mobiele Deurscanner PWA"
-              >
-                <QrCode className="w-4 h-4 text-[#006448]" />
-                <span>Scanner</span>
-              </Link>
-
               {/* User Profile & Settings Dropdown */}
               <div className="relative" ref={dropdownRef}>
                 <button
@@ -225,20 +211,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                           </div>
                         </div>
                       </Link>
-
-                      <Link
-                        to="/scan"
-                        onClick={() => setUserDropdownOpen(false)}
-                        className="flex md:hidden items-center gap-2.5 px-4 py-2.5 text-xs font-bold text-[#1D1C1A] hover:bg-[#FAF7F2] hover:text-[#006448] transition-colors"
-                      >
-                        <QrCode className="w-4 h-4 text-[#006448]" />
-                        <div className="flex-1">
-                          <div className="font-extrabold">Deurscanner PWA</div>
-                          <div className="text-[10px] text-[#4c5752] font-normal">
-                            Mobiele camera ticket scanner
-                          </div>
-                        </div>
-                      </Link>
                     </div>
 
                     {/* Divider */}
@@ -276,13 +248,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         {/* Mobile menu dropdown */}
         {mobileMenuOpen && (
           <div className="lg:hidden border-t-2 border-[#1D1C1A] bg-[#FCFAF7] p-4 space-y-2 shadow-xl">
-            <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce]">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752]">
-                Omgeving:
-              </span>
-              <MollieEnvToggle compact />
-            </div>
-
             <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752] mb-1">
               Navigatie:
             </div>

@@ -30,6 +30,11 @@
       window.addEventListener('vite:preloadError', function () {
         window.location.reload(true);
       });
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function () {});
+        });
+      }
     </script>
   </head>
   <body class="bg-[#FAF7F2] text-[#1D1C1A] antialiased selection:bg-[#006448] selection:text-white min-h-screen">

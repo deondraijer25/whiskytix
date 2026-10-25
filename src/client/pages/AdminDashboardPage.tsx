@@ -239,19 +239,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* 1. Header & Live Mode Switcher */}
       <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-6 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
-              Centrale Festival Cockpit
-            </span>
-            <span className="text-xs text-[#4c5752] font-semibold">
-              • Realtime transacties via Mollie • Leadfabriek CRM Actief
-            </span>
-          </div>
           <h1 className="text-xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
             3-Steden Festival Cockpit
           </h1>
           <p className="text-xs sm:text-sm text-[#4c5752] mt-0.5 font-medium">
-            Overkoepelend inzicht in omzet, zaalcapaciteiten en live tickets rechtstreeks uit het Leadfabriek CRM.
+            Overkoepelend inzicht in omzet, zaalcapaciteit en tickets.
           </p>
         </div>
 
@@ -266,10 +258,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             title="Herlaad live tickets en zaalcapaciteiten direct uit het Leadfabriek CRM"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-[#006448] ${ghlLoading ? 'animate-spin' : ''}`} />
-            <span>{ghlLoading ? 'CRM Laden...' : 'Leadfabriek CRM Sync'}</span>
+            <span>{ghlLoading ? 'CRM laden...' : 'Leadfabriek CRM Sync'}</span>
           </button>
 
-          {/* Mollie Test / Live Mode Schakelaar */}
           <MollieEnvToggle />
 
           <button
@@ -286,32 +277,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* 2. FINANCIEEL OVERZICHT (4 kolommen met echte Mollie data) */}
       <div>
         <div className="flex items-center justify-between mb-2.5 sm:mb-3">
-          <h2 className="text-xs font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-1.5 sm:gap-2">
+          <h2 className="text-sm font-extrabold text-[#1D1C1A] flex items-center gap-1.5 sm:gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
-            Financieel Overzicht{' '}
+            Financieel overzicht{' '}
             <span className="text-[#4c5752] font-semibold">
-              {selectedCity === 'all' ? '(Totaal Alle Steden)' : `(${displayedFestivals[0]?.name})`}
+              {selectedCity === 'all' ? '(Alle steden)' : `(${displayedFestivals[0]?.name})`}
             </span>
           </h2>
-          <div className="flex items-center gap-2">
-            <span
-              className={`text-[10px] sm:text-xs font-extrabold px-2 py-0.5 rounded-full border ${
-                mollieEnv === 'live'
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                  : 'bg-amber-100 text-amber-800 border-amber-300'
-              }`}
-            >
-              {mollieEnv === 'live' ? 'Mollie Live Modus' : 'Mollie Testmodus'}
-            </span>
-          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           {/* KPI 1: Totale Omzet */}
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)] sm:shadow-[4px_4px_0px_rgba(29,28,26,0.9)]">
             <div className="flex items-center justify-between text-[#4c5752] mb-1">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
-                Bruto Omzet
+              <span className="text-xs font-bold truncate">
+                Bruto omzet
               </span>
               <div className="w-6 h-6 sm:w-7 sm:h-7 rounded bg-[#d8e7e2] text-[#006448] flex items-center justify-center font-bold text-xs border border-[#8ba198]">
                 €
@@ -320,16 +300,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-[#006448] tracking-tight truncate">
               € {(totalRevenueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="mt-1 sm:mt-2 text-[10px] sm:text-[11px] font-medium text-[#4c5752] truncate">
-              {mollieEnv === 'live' ? 'Geverifieerd via Mollie Live' : `${paidOrders.length} testbetalingen`}
+            <div className="mt-1 sm:mt-2 text-xs font-medium text-[#4c5752] truncate">
+              {paidOrders.length} transacties
             </div>
           </div>
 
           {/* KPI 2: Tickets Verkocht */}
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)] sm:shadow-[4px_4px_0px_rgba(29,28,26,0.9)]">
             <div className="flex items-center justify-between text-[#4c5752] mb-1">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
-                Tickets Verkocht
+              <span className="text-xs font-bold truncate">
+                Tickets verkocht
               </span>
               <div className="w-6 h-6 sm:w-7 sm:h-7 rounded bg-[#d8e7e2] text-[#006448] flex items-center justify-center font-bold text-xs border border-[#8ba198]">
                 <Ticket className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#006448]" />
@@ -346,15 +326,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 style={{ width: `${Math.min(100, Math.max(0.5, parseFloat(soldPercentage)))}%` }}
               ></div>
             </div>
-            <div className="mt-1 text-[9px] sm:text-[11px] font-bold text-[#4c5752] text-right">
-              {soldPercentage}% van zaalcapaciteit
+            <div className="mt-1 text-xs font-medium text-[#4c5752] text-right">
+              {soldPercentage}% bezet
             </div>
           </div>
 
           {/* KPI 3: Actieve Bestellingen */}
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)] sm:shadow-[4px_4px_0px_rgba(29,28,26,0.9)]">
             <div className="flex items-center justify-between text-[#4c5752] mb-1">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
+              <span className="text-xs font-bold truncate">
                 Bestellingen
               </span>
               <div className="w-6 h-6 sm:w-7 sm:h-7 rounded bg-[#d8e7e2] text-[#006448] flex items-center justify-center font-bold text-xs border border-[#8ba198]">
@@ -365,7 +345,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               {totalOrdersCount}{' '}
               <span className="text-xs sm:text-sm font-semibold text-[#4c5752]">betaald</span>
             </div>
-            <div className="mt-1 sm:mt-2 text-[9px] sm:text-[11px] font-medium text-[#4c5752] truncate">
+            <div className="mt-1 sm:mt-2 text-xs font-medium text-[#4c5752] truncate">
               {paidOrders[0]?.orderNumber ? (
                 <>Laatste: <span className="font-bold text-[#006448]">{paidOrders[0].orderNumber}</span></>
               ) : (
@@ -374,11 +354,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
           </div>
 
-          {/* KPI 4: Gemiddelde Orderwaarde (AOV) - Standaard CreditCard / Receipt icon */}
+          {/* KPI 4: Gemiddelde Orderwaarde (AOV) */}
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)] sm:shadow-[4px_4px_0px_rgba(29,28,26,0.9)]">
             <div className="flex items-center justify-between text-[#4c5752] mb-1">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
-                Gem. Order (AOV)
+              <span className="text-xs font-bold truncate">
+                Gem. bestelling
               </span>
               <div className="w-6 h-6 sm:w-7 sm:h-7 rounded bg-[#caac8e] text-[#1D1C1A] flex items-center justify-center font-bold text-xs border border-[#1D1C1A]">
                 <CreditCard className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#1D1C1A]" />
@@ -387,32 +367,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
               € {(averageOrderValueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="mt-1 sm:mt-2 text-[9px] sm:text-[11px] font-medium text-[#4c5752] truncate">
-              Per voltooide transactie
+            <div className="mt-1 sm:mt-2 text-xs font-medium text-[#4c5752] truncate">
+              Per bestelling
             </div>
           </div>
         </div>
       </div>
 
-      {/* 3. FESTIVAL LOCATIES OVERZICHT (Gent Live Mollie + Den Haag & Amsterdam in voorbereiding) */}
+      {/* 3. FESTIVAL LOCATIES OVERZICHT */}
       <div>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-          <div>
-            <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
-              Festival Edities:
-            </h2>
-            <p className="text-[11px] sm:text-xs text-[#4c5752] font-medium mt-0.5">
-              Klik op een festival om de bestellingen, zaalcapaciteit en scanner voor die locatie te beheren.
-            </p>
-          </div>
-          <span className="text-[11px] sm:text-xs text-[#1D1C1A] font-extrabold bg-[#FCFAF7] px-2.5 py-1 rounded border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.8)] shrink-0 flex items-center gap-2 self-start sm:self-auto">
-            <span className="flex items-center gap-1 text-[#1E3A8A]"><span className="w-2 h-2 rounded-full bg-[#1E3A8A]"></span> Gent</span>
-            <span className="text-[#c1d4ce]">•</span>
-            <span className="flex items-center gap-1 text-[#006448]"><span className="w-2 h-2 rounded-full bg-[#006448]"></span> Den Haag</span>
-            <span className="text-[#c1d4ce]">•</span>
-            <span className="flex items-center gap-1 text-[#8C0223]"><span className="w-2 h-2 rounded-full bg-[#8C0223]"></span> Amsterdam</span>
-          </span>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-extrabold text-[#1D1C1A] flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
+            Festivals
+          </h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
@@ -425,20 +393,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               >
                 <div className="p-4 sm:p-5 flex flex-col flex-1 justify-between">
                   <div>
-                    {/* City Badge & Status */}
-                    <div className="flex items-center justify-between mb-2.5 sm:mb-3">
-                      <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest bg-[#FCFAF7] text-[#1D1C1A] px-2.5 py-0.5 rounded border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]">
-                        {fest.edition}
-                      </span>
-                      <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#FCFAF7] text-[#1D1C1A] border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)] flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          fest.statusType === 'live' ? 'bg-emerald-600' : fest.statusType === 'test' ? 'bg-amber-500' : 'bg-gray-400'
-                        }`}></span>
-                        {fest.statusLabel}
-                      </span>
-                    </div>
-
-                    <h3 className="font-extrabold text-base sm:text-lg text-white tracking-tight mb-1.5 drop-shadow-sm">
+                    <h3 className="font-extrabold text-base sm:text-lg text-white tracking-tight mb-2 drop-shadow-sm">
                       {fest.name}
                     </h3>
 
@@ -451,22 +406,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <MapPin className="w-3.5 h-3.5 text-[#caac8e] shrink-0" />
                         <span className="truncate">{fest.location}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-[11px] text-[#e4d5c4] font-bold">
-                        <Building2 className="w-3.5 h-3.5 shrink-0" />
-                        <span>{fest.accountInfo}</span>
-                      </div>
                     </div>
 
                     {/* Financial & Ticket Line Details (Enclosed card) */}
                     <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3 space-y-2 mb-3 sm:mb-4 shadow-[2px_2px_0px_rgba(29,28,26,0.9)] text-[#1D1C1A]">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-[#4c5752] font-bold">Omzet:</span>
+                        <span className="text-[#4c5752] font-bold">Omzet</span>
                         <span className="font-extrabold text-[#1D1C1A]">
                           € {(fest.revenueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-[#4c5752] font-bold">Tickets:</span>
+                        <span className="text-[#4c5752] font-bold">Tickets</span>
                         <span className="font-extrabold text-[#1D1C1A]">
                           {fest.ticketsSold.toLocaleString('nl-NL')} / {fest.ticketsTotal.toLocaleString('nl-NL')} ({fest.pct}%)
                         </span>
@@ -477,12 +428,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           style={{ width: `${Math.min(100, Math.max(fest.ticketsSold > 0 ? 1 : 0, parseFloat(fest.pct)))}%` }}
                         ></div>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] sm:text-[11px] pt-1 border-t border-[#c1d4ce]/60">
-                        <span className="text-[#4c5752] font-medium truncate mr-2">Leadfabriek CRM:</span>
-                        <span className="font-bold text-[#006448]">
-                          {fest.ticketTypesCount} types ({fest.ticketsTotal.toLocaleString('nl-NL')} pl.)
-                        </span>
-                      </div>
                     </div>
                   </div>
 
@@ -491,9 +436,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     onClick={() => {
                       navigate(`/admin/festival/${fest.id}`);
                     }}
-                    className="w-full py-2.5 px-3 rounded text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] active:translate-y-0.5 group"
+                    className="w-full py-2.5 px-3 rounded text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] active:translate-y-0.5 group"
                   >
-                    <span>Open Hub: {fest.id === 'denhaag' ? 'Den Haag' : fest.id === 'amsterdam' ? 'Amsterdam' : 'Gent'}</span>
+                    <span>Open {fest.id === 'denhaag' ? 'Den Haag' : fest.id === 'amsterdam' ? 'Amsterdam' : 'Gent'}</span>
                     <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
                 </div>
@@ -503,26 +448,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         </div>
       </div>
 
-      {/* 4. RECENTE BESTELLINGEN (Live Mollie transacties) */}
+      {/* 4. RECENTE BESTELLINGEN */}
       <div>
         <div className="flex items-center justify-between mb-2.5 sm:mb-3">
-          <div>
-            <h2 className="text-xs font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-1.5 sm:gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
-              Recente Bestellingen
-            </h2>
-            <p className="text-[11px] sm:text-xs text-[#4c5752] font-medium hidden xs:block">
-              {mollieEnv === 'live' 
-                ? 'Geverifieerde live Mollie bestellingen.' 
-                : 'Mollie testtransacties voor verificatie en controle.'}
-            </p>
-          </div>
+          <h2 className="text-sm font-extrabold text-[#1D1C1A] flex items-center gap-1.5 sm:gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#006448]"></span>
+            Recente bestellingen
+          </h2>
 
           <Link
             to="/admin/festival/gent/orders"
-            className="text-xs font-extrabold text-[#006448] hover:underline flex items-center gap-1"
+            className="text-xs font-bold text-[#006448] hover:underline flex items-center gap-1"
           >
-            <span>Alle Bestellingen</span>
+            <span>Alle bestellingen</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>

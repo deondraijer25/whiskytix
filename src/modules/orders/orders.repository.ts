@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { db, checkDbConnection } from '../../db/index.js';
 import * as schema from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { buildQrPayload, generateTicketSignature } from '../tickets/qr.service.js';
 import { GhlSyncService } from '../ghl/ghl.sync.service.js';
 import { MollieService } from '../payments/mollie.service.js';
@@ -79,6 +79,9 @@ export interface StoredOrder {
   tickets: StoredIssuedTicket[];
   itemsSummary?: string;
   environment?: 'test' | 'live';
+  ghlSynced?: boolean;
+  ghlContactId?: string;
+  ghlSyncedAt?: string;
 }
 
 import os from 'os';
@@ -87,8 +90,9 @@ const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_N
 const DATA_DIR = isVercel ? path.join(os.tmpdir(), '.data') : path.join(process.cwd(), '.data');
 const STORE_FILE = path.join(DATA_DIR, 'orders-store.json');
 
-// Memory cache
+// Memory cache & concurrency locks
 const memoryOrders: Map<string, StoredOrder> = new Map();
+const inFlightPaidLocks: Map<string, Promise<StoredOrder | null>> = new Map();
 
 function ensureDataFile() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -143,16 +147,39 @@ function loadLocalStore() {
   }
 }
 
-function saveLocalStore() {
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let isWritingStore = false;
+let pendingStoreWrite = false;
+
+async function flushStoreToDisk(): Promise<void> {
+  if (isWritingStore) {
+    pendingStoreWrite = true;
+    return;
+  }
+  isWritingStore = true;
   try {
     ensureDataFile();
     const uniqueOrders = Array.from(
       new Map(Array.from(memoryOrders.values()).map((o) => [o.orderNumber, o])).values()
     ).filter((o) => !o.orderNumber.startsWith('#WF-GENT-'));
-    fs.writeFileSync(STORE_FILE, JSON.stringify({ orders: uniqueOrders }, null, 2), 'utf8');
+    await fs.promises.writeFile(STORE_FILE, JSON.stringify({ orders: uniqueOrders }, null, 2), 'utf8');
   } catch (err) {
     console.warn('Could not save local orders store:', err);
+  } finally {
+    isWritingStore = false;
+    if (pendingStoreWrite) {
+      pendingStoreWrite = false;
+      void flushStoreToDisk();
+    }
   }
+}
+
+function saveLocalStore() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void flushStoreToDisk();
+  }, 60);
 }
 
 // Initial load
@@ -836,130 +863,195 @@ export class OrdersRepository {
   }
 
   /**
-   * Mark order paid and issue tickets with cryptographic HMAC QR codes
+   * Mark order paid and issue tickets with cryptographic HMAC QR codes.
+   * 100% Idempotent & Concurrency-Safe: gelijktijdige aanroepen vanuit Mollie Webhook
+   * en de Bedankpagina wacht netjes op elkaar en verwerken de bestelling exact 1 keer.
    */
-  static async markOrderPaid(orderNumber: string, paymentDetails?: { paymentMethod?: string }): Promise<StoredOrder | null> {
-    const order = await this.findOrder(orderNumber);
-    if (!order) return null;
+  static async markOrderPaid(
+    orderNumber: string,
+    paymentDetails?: { paymentMethod?: string }
+  ): Promise<StoredOrder | null> {
+    const normalizedKey = (orderNumber || '').trim().startsWith('#')
+      ? (orderNumber || '').trim()
+      : `#${(orderNumber || '').trim()}`;
 
-    order.status = 'paid';
-    order.paidAt = new Date().toISOString();
-    // Preserve explicit cancellation statuses upon payment confirmation
-    if (paymentDetails?.paymentMethod) {
-      order.paymentMethod = paymentDetails.paymentMethod;
+    // Als een gelijktijdige request (bijv. Webhook + Redirect tegelijk) al bezig is met deze order, wacht daarop!
+    const existingLock = inFlightPaidLocks.get(normalizedKey);
+    if (existingLock) {
+      return existingLock;
     }
 
-    // Generate individual tickets if not yet issued
-    if (order.tickets.length === 0) {
-      let ticketCounter = 1;
-      const cleanOrderNumber = order.orderNumber.replace('#', '');
+    const workPromise = (async (): Promise<StoredOrder | null> => {
+      const order = await this.findOrder(orderNumber);
+      if (!order) return null;
 
-      for (const item of order.items) {
-        for (let q = 0; q < item.quantity; q++) {
-          const ticketCode = `#${cleanOrderNumber}-${ticketCounter}`;
-          ticketCounter++;
+      // Als de order al betaald is, al tickets heeft én al naar het CRM is gesynchroniseerd -> direct klaar!
+      const alreadyFullyPaidAndSynced =
+        order.status === 'paid' && order.tickets.length > 0 && order.ghlSynced === true;
+      if (alreadyFullyPaidAndSynced) {
+        return order;
+      }
 
-          let sessionTitle = item.title || 'ENTREE SESSIE';
-          if (/^[a-f0-9]{24}$/i.test(sessionTitle) || sessionTitle === item.ticketTypeId) {
-            if (item.metadata) {
-              try {
-                const meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
-                if (meta.title && !/^[a-f0-9]{24}$/i.test(meta.title)) sessionTitle = meta.title;
-              } catch {}
+      const wasAlreadyPaidWithTickets = order.status === 'paid' && order.tickets.length > 0;
+      order.status = 'paid';
+      if (!order.paidAt) {
+        order.paidAt = new Date().toISOString();
+      }
+      if (paymentDetails?.paymentMethod) {
+        order.paymentMethod = paymentDetails.paymentMethod;
+      }
+
+      // Generate individual tickets if not yet issued
+      if (order.tickets.length === 0) {
+        let ticketCounter = 1;
+        const cleanOrderNumber = order.orderNumber.replace('#', '');
+
+        for (const item of order.items) {
+          for (let q = 0; q < item.quantity; q++) {
+            const ticketCode = `#${cleanOrderNumber}-${ticketCounter}`;
+            ticketCounter++;
+
+            let sessionTitle = item.title || 'ENTREE SESSIE';
+            if (/^[a-f0-9]{24}$/i.test(sessionTitle) || sessionTitle === item.ticketTypeId) {
+              if (item.metadata) {
+                try {
+                  const meta =
+                    typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+                  if (meta.title && !/^[a-f0-9]{24}$/i.test(meta.title)) sessionTitle = meta.title;
+                } catch {}
+              }
             }
-          }
-          sessionTitle = sessionTitle
-            .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
-            .trim() || 'Festival Entreeticket';
-          const cityName = order.festivalId;
-          const attendeeName = order.customerName;
+            sessionTitle =
+              sessionTitle
+                .replace(
+                  /\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi,
+                  ''
+                )
+                .trim() || 'Festival Entreeticket';
+            const cityName = order.festivalId;
+            const attendeeName = order.customerName;
 
-          const qrPayload = buildQrPayload({
-            ticketCode,
-            cityName,
-            sessionTitle,
-            attendeeName,
-          });
+            const qrPayload = buildQrPayload({
+              ticketCode,
+              cityName,
+              sessionTitle,
+              attendeeName,
+            });
 
-          // Infer exact festival date and time via intelligent session resolver
-          const resolved = OrdersRepository.resolveSessionDateTime(
-            cityName,
-            sessionTitle,
-            item.date,
-            item.timeslot || item.time
-          );
-          const inferredDate = resolved.dateStr;
-          const inferredTime = resolved.timeStr;
+            const resolved = OrdersRepository.resolveSessionDateTime(
+              cityName,
+              sessionTitle,
+              item.date,
+              item.timeslot || item.time
+            );
+            const inferredDate = resolved.dateStr;
+            const inferredTime = resolved.timeStr;
 
-          const signature = generateTicketSignature(ticketCode, cityName, sessionTitle, attendeeName);
-          const cleanCode = ticketCode.replace('#', '');
-          const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${cityName}&orderNumber=${cleanOrderNumber}&name=${encodeURIComponent(attendeeName)}&title=${encodeURIComponent(sessionTitle)}&time=${encodeURIComponent(inferredTime)}&date=${encodeURIComponent(inferredDate)}`;
+            const signature = generateTicketSignature(
+              ticketCode,
+              cityName,
+              sessionTitle,
+              attendeeName
+            );
+            const cleanCode = ticketCode.replace('#', '');
+            const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${cityName}&orderNumber=${cleanOrderNumber}&name=${encodeURIComponent(attendeeName)}&title=${encodeURIComponent(sessionTitle)}&time=${encodeURIComponent(inferredTime)}&date=${encodeURIComponent(inferredDate)}`;
 
-          const ticket: StoredIssuedTicket = {
-            id: crypto.randomUUID(),
-            orderId: order.id,
-            ticketCode,
-            qrPayload,
-            qrPayloadHash: signature,
-            attendeeName,
-            status: 'valid',
-            sessionTitle,
-            cityName,
-            dateStr: inferredDate,
-            timeStr: inferredTime,
-            pdfUrl,
-            createdAt: new Date().toISOString(),
-          };
+            const ticket: StoredIssuedTicket = {
+              id: crypto.randomUUID(),
+              orderId: order.id,
+              ticketCode,
+              qrPayload,
+              qrPayloadHash: signature,
+              attendeeName,
+              status: 'valid',
+              sessionTitle,
+              cityName,
+              dateStr: inferredDate,
+              timeStr: inferredTime,
+              pdfUrl,
+              createdAt: new Date().toISOString(),
+            };
 
-          order.tickets.push(ticket);
+            order.tickets.push(ticket);
 
-          // Save to DB if available
-          try {
-            const dbStatus = await checkDbConnection();
-            if (dbStatus.ok) {
-              await db.insert(schema.issuedTickets).values({
-                id: ticket.id,
-                orderItemId: item.id,
-                orderId: order.id,
-                ticketCode: ticket.ticketCode,
-                qrPayloadHash: ticket.qrPayloadHash,
-                attendeeName: ticket.attendeeName,
-                status: ticket.status,
-                pdfUrl: ticket.pdfUrl,
-                createdAt: new Date(ticket.createdAt),
-              });
+            // Save to DB if available
+            try {
+              const dbStatus = await checkDbConnection();
+              if (dbStatus.ok) {
+                await db
+                  .insert(schema.issuedTickets)
+                  .values({
+                    id: ticket.id,
+                    orderItemId: item.id,
+                    orderId: order.id,
+                    ticketCode: ticket.ticketCode,
+                    qrPayloadHash: ticket.qrPayloadHash,
+                    attendeeName: ticket.attendeeName,
+                    status: ticket.status,
+                    pdfUrl: ticket.pdfUrl,
+                    createdAt: new Date(ticket.createdAt),
+                  })
+                  .onConflictDoNothing();
+              }
+            } catch (err: any) {
+              // local store fallback handled
             }
-          } catch (err: any) {
-            // local store fallback handled
           }
         }
       }
-    }
 
-    memoryOrders.set(order.orderNumber, order);
-    memoryOrders.set(order.id, order);
-    saveLocalStore();
+      memoryOrders.set(order.orderNumber, order);
+      memoryOrders.set(order.id, order);
+      saveLocalStore();
 
-    // Persist paid status to DB
-    try {
-      const dbStatus = await checkDbConnection();
-      if (dbStatus.ok) {
-        await db.update(schema.orders).set({
-          status: 'paid',
-          paidAt: new Date(order.paidAt),
-          paymentMethod: order.paymentMethod || 'ideal',
-        }).where(eq(schema.orders.orderNumber, order.orderNumber));
+      // Persist paid status to DB
+      try {
+        const dbStatus = await checkDbConnection();
+        if (dbStatus.ok) {
+          await db
+            .update(schema.orders)
+            .set({
+              status: 'paid',
+              paidAt: new Date(order.paidAt),
+              paymentMethod: order.paymentMethod || 'ideal',
+            })
+            .where(eq(schema.orders.orderNumber, order.orderNumber));
+        }
+      } catch (err: any) {
+        // local store fallback handled
       }
-    } catch (err: any) {
-      // local store fallback handled
+
+      // Serverless-Safe AWAIT op de gedoseerde CRM-sync zodat Vercel het proces nooit halverwege bevriest!
+      if (!order.ghlSynced) {
+        try {
+          const syncRes = await GhlSyncService.syncPaidOrder(order, undefined, {
+            skipInventoryIncrement: wasAlreadyPaidWithTickets,
+          });
+          order.ghlSynced = syncRes.success;
+          if (syncRes.contactId) {
+            order.ghlContactId = syncRes.contactId;
+          }
+          if (syncRes.success) {
+            order.ghlSyncedAt = new Date().toISOString();
+          }
+          memoryOrders.set(order.orderNumber, order);
+          memoryOrders.set(order.id, order);
+          saveLocalStore();
+        } catch (err: any) {
+          order.ghlSynced = false;
+          console.warn('[CRM Sync] Fout bij sync van order:', err.message);
+        }
+      }
+
+      return order;
+    })();
+
+    inFlightPaidLocks.set(normalizedKey, workPromise);
+    try {
+      return await workPromise;
+    } finally {
+      inFlightPaidLocks.delete(normalizedKey);
     }
-
-    // Trigger realtime sync to GoHighLevel in background
-    GhlSyncService.syncPaidOrder(order).catch((err) => {
-      console.warn('[GHL Sync] Fout bij achtergrond sync van order:', err.message);
-    });
-
-    return order;
   }
 
   /**
@@ -1745,46 +1837,168 @@ export class OrdersRepository {
     return { success: true, order };
   }
 
+  private static inFlightCheckInCodes = new Set<string>();
+
   /**
-   * Check in a ticket (scanner verification)
+   * Check in a ticket (scanner verification) with atomic DB update & multi-door race protection
    */
-  static async checkInTicket(ticketCode: string): Promise<{
+  static async checkInTicket(
+    ticketCode: string,
+    options?: { gate?: string; scannerDevice?: string; scannedAtIso?: string; isOfflineSync?: boolean }
+  ): Promise<{
     success: boolean;
     ticket?: StoredIssuedTicket;
     error?: string;
   }> {
-    const match = await this.findTicket(ticketCode);
-    if (!match) {
-      return { success: false, error: 'Ticket niet gevonden in systeem.' };
+    const cleanLockKey = (ticketCode || '').trim().replace(/^#/, '').toUpperCase();
+    if (!cleanLockKey) {
+      return { success: false, error: 'Geen geldige ticketcode opgegeven.' };
     }
 
-    const { order, ticket } = match;
-
-    if (ticket.status === 'checked_in') {
+    // Synchrone lock vóór de allereerste await: als twee deurscanners exact in dezelfde milliseconde scannen,
+    // wint alleen de eerste en wordt de tweede direct tegengehouden.
+    if (this.inFlightCheckInCodes.has(cleanLockKey)) {
       return {
         success: false,
-        ticket,
-        error: `AL GESCAND! Dit ticket is al ingecheckt op ${ticket.checkedInAt || 'eerder moment'}.`,
+        error: 'AL GESCAND! Dit ticket wordt op dit moment al bij een deur ingecheckt.',
       };
     }
+    this.inFlightCheckInCodes.add(cleanLockKey);
 
-    if (ticket.status === 'swapped') {
-      return {
-        success: false,
-        ticket,
-        error: `TICKET VERVALLEN! Dit ticket is omgeruild (${ticket.swapReason || 'Niet meer geldig'}).`,
-      };
+    try {
+      const match = await this.findTicket(ticketCode);
+      if (!match) {
+        return { success: false, error: 'Ticket niet gevonden in systeem.' };
+      }
+
+      const { order, ticket } = match;
+
+      if (ticket.status === 'checked_in') {
+        return {
+          success: false,
+          ticket,
+          error: `AL GESCAND! Dit ticket is al ingecheckt op ${ticket.checkedInAt || 'eerder moment'}.`,
+        };
+      }
+
+      if (ticket.status === 'swapped') {
+        return {
+          success: false,
+          ticket,
+          error: `TICKET VERVALLEN! Dit ticket is omgeruild (${ticket.swapReason || 'Niet meer geldig'}).`,
+        };
+      }
+
+      if (ticket.status === 'cancelled') {
+        return {
+          success: false,
+          ticket,
+          error: 'TICKET GEANNULEERD! Dit ticket is ongeldig gemaakt.',
+        };
+      }
+
+      const checkInTimestamp = options?.scannedAtIso || new Date().toISOString();
+
+      // Zet status synchroon in-memory op checked_in vóór de async DB-operatie
+      ticket.status = 'checked_in';
+      ticket.checkedInAt = checkInTimestamp;
+      memoryOrders.set(order.orderNumber, order);
+      memoryOrders.set(order.id, order);
+
+      // Atomaire update in PostgreSQL/Supabase indien gekoppeld (voorkomt race condition tussen verschillende Vercel instances)
+      try {
+        const dbStatus = await checkDbConnection();
+        if (dbStatus.ok) {
+          const updatedRows = await db
+            .update(schema.issuedTickets)
+            .set({
+              status: 'checked_in',
+              checkedInAt: new Date(checkInTimestamp),
+            })
+            .where(
+              and(
+                eq(schema.issuedTickets.ticketCode, ticket.ticketCode),
+                eq(schema.issuedTickets.status, 'valid')
+              )
+            )
+            .returning();
+
+          if (updatedRows.length === 0) {
+            const existingDbRows = await db
+              .select()
+              .from(schema.issuedTickets)
+              .where(eq(schema.issuedTickets.ticketCode, ticket.ticketCode));
+            if (existingDbRows.length > 0 && existingDbRows[0].status === 'checked_in') {
+              ticket.checkedInAt = existingDbRows[0].checkedInAt
+                ? existingDbRows[0].checkedInAt.toISOString()
+                : checkInTimestamp;
+              saveLocalStore();
+              return {
+                success: false,
+                ticket,
+                error: `AL GESCAND! Dit ticket is zojuist al bij een andere deur ingecheckt.`,
+              };
+            }
+          } else {
+            await db
+              .insert(schema.scanLogs)
+              .values({
+                ticketId: updatedRows[0].id,
+                scannerDevice: options?.scannerDevice || 'PWA Scanner',
+                entranceGate: options?.gate || 'Hoofdingang · Deur 1',
+                scannedAt: new Date(checkInTimestamp),
+                isOfflineSync: Boolean(options?.isOfflineSync),
+              })
+              .catch(() => {});
+          }
+        }
+      } catch (dbErr: any) {
+        // Fallback naar in-memory store
+      }
+
+      saveLocalStore();
+      return { success: true, ticket };
+    } finally {
+      this.inFlightCheckInCodes.delete(cleanLockKey);
     }
+  }
 
-    if (ticket.status === 'cancelled') {
-      return { success: false, ticket, error: 'TICKET GEANNULEERD! Dit ticket is ongeldig gemaakt.' };
+  /**
+   * Controleert en herstelt betaalde bestellingen die tijdens een piek nog niet naar het CRM zijn gesynchroniseerd
+   */
+  static async retryUnsyncedOrders(festivalId?: string): Promise<{
+    checked: number;
+    retried: number;
+    succeeded: number;
+  }> {
+    const all = this.listOrders().filter(
+      (o) =>
+        o.status === 'paid' &&
+        o.ghlSynced === false &&
+        (!festivalId || o.festivalId === festivalId)
+    );
+    let succeeded = 0;
+    for (const order of all) {
+      const res = await GhlSyncService.syncPaidOrder(order, undefined, {
+        skipInventoryIncrement: true,
+      });
+      if (res.success) {
+        order.ghlSynced = true;
+        order.ghlContactId = res.contactId;
+        order.ghlSyncedAt = new Date().toISOString();
+        memoryOrders.set(order.orderNumber, order);
+        memoryOrders.set(order.id, order);
+        succeeded++;
+      }
     }
-
-    ticket.status = 'checked_in';
-    ticket.checkedInAt = new Date().toISOString();
-    saveLocalStore();
-
-    return { success: true, ticket };
+    if (succeeded > 0) {
+      saveLocalStore();
+    }
+    return {
+      checked: all.length,
+      retried: all.length,
+      succeeded,
+    };
   }
 
   /**

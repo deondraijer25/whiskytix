@@ -38,28 +38,28 @@ export const MollieEnvToggle: React.FC<MollieEnvToggleProps> = ({
       <button
         type="button"
         onClick={() => handleSelect('test')}
-        className={`${buttonPadding} rounded font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+        className={`${buttonPadding} rounded font-bold transition-all cursor-pointer ${
           env === 'test'
-            ? 'bg-[#caac8e] text-[#1D1C1A] border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
+            ? 'bg-[#caac8e] text-[#1D1C1A] border border-[#1D1C1A]'
             : 'text-[#4c5752] hover:text-[#1D1C1A]'
         }`}
         title="Schakel naar de testmodus: bekijk testorders en proefbetalingen"
       >
-        <span className={compact ? 'inline' : 'hidden sm:inline'}>Mollie </span>Test
+        Testmodus
       </button>
 
       {/* Live Modus Knop */}
       <button
         type="button"
         onClick={() => handleSelect('live')}
-        className={`${buttonPadding} rounded font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+        className={`${buttonPadding} rounded font-bold transition-all cursor-pointer ${
           env === 'live'
-            ? 'bg-[#006448] text-white border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]'
+            ? 'bg-[#006448] text-white border border-[#1D1C1A]'
             : 'text-[#4c5752] hover:text-[#1D1C1A]'
         }`}
         title="Schakel naar de live modus: bekijk echte betaalde festivaltickets en omzet"
       >
-        <span className={compact ? 'inline' : 'hidden sm:inline'}>Mollie </span>Live
+        Live verkoop
       </button>
     </div>
   );

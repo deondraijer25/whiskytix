@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { TrendingUp, TrendingDown, Calendar, BarChart3, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Order } from '../data/mockData';
 
 interface YoYPoint {
@@ -170,13 +169,13 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
 
   const isAhead = metricMode === 'orders' ? ordersDiff >= 0 : revenueDiff >= 0;
 
-  // SVG Chart Geometry
-  const svgWidth = 920;
-  const svgHeight = 250;
-  const padLeft = 56;
-  const padRight = 24;
-  const padTop = 22;
-  const padBottom = 36;
+  // SVG Chart Geometry (wide aspect ratio so it fills the full card width)
+  const svgWidth = 1140;
+  const svgHeight = 220;
+  const padLeft = 48;
+  const padRight = 56;
+  const padTop = 20;
+  const padBottom = 32;
   const plotW = svgWidth - padLeft - padRight;
   const plotH = svgHeight - padTop - padBottom;
 
@@ -248,54 +247,52 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
   const formatMetric = (val: number | null | undefined) => {
     if (val === null || val === undefined) return '—';
     if (metricMode === 'orders') {
-      return `${val} sales`;
+      return `${val}`;
     }
-    return `€ ${val.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `€ ${val.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   };
 
+  const lastCurPoint = validCurPoints.length > 0 ? validCurPoints[validCurPoints.length - 1] : null;
+  const lastPrevIdx = points.length - 1;
+  const lastPrevVal =
+    lastPrevIdx >= 0
+      ? metricMode === 'orders'
+        ? points[lastPrevIdx].prevOrders
+        : points[lastPrevIdx].prevRevenueEur
+      : null;
+
   return (
-    <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-6 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] space-y-5 font-sans">
-      {/* 1. Header & Mode Switches */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#c1d4ce] pb-4">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span
-              className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border ${accent.badgeBg} ${accent.badgeText} ${accent.badgeBorder}`}
-            >
-              Jaar-op-Jaar Verkoopanalyse (YoY)
-            </span>
-            <span className="text-[11px] font-semibold text-[#4c5752] flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-[#006448]" />
-              Stand tot vandaag (25 okt) t.o.v. vorig jaar
-            </span>
+    <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)] space-y-4 font-sans">
+      {/* 1. Compact Header & Switches */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span
+            className="w-2.5 h-2.5 rounded-full shrink-0"
+            style={{ backgroundColor: accent.primaryHex }}
+          />
+          <div>
+            <h2 className="text-sm sm:text-base font-extrabold text-[#1D1C1A]">
+              Verkoop t.o.v. vorig jaar
+            </h2>
           </div>
-          <h2 className="text-base sm:text-xl font-extrabold text-[#1D1C1A] tracking-tight flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-[#006448] shrink-0" />
-            <span>Verkoopcurve & Benchmark: {festivalName}</span>
-          </h2>
-          <p className="text-xs text-[#4c5752] font-medium mt-0.5">
-            Vergelijk het aantal sales en de omzet tot de dag van vandaag direct met exact hetzelfde punt vorig jaar.
-          </p>
         </div>
 
-        {/* Controls: Period & Metric */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {/* Period Switcher */}
-          <div className="inline-flex bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg p-0.5 shadow-[2px_2px_0px_rgba(29,28,26,0.9)]">
+        {/* Clean Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded p-0.5">
             <button
               type="button"
               onClick={() => {
                 setPeriodMode('season');
                 setHoverIndex(null);
               }}
-              className={`px-2.5 py-1 rounded text-[11px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
                 periodMode === 'season'
-                  ? `${accent.btnActiveBg} shadow-[1px_1px_0px_rgba(29,28,26,0.9)]`
+                  ? accent.btnActiveBg
                   : 'text-[#4c5752] hover:text-[#1D1C1A]'
               }`}
-              title="Alle actieve Whiskytix bestellingen tot vandaag vergeleken met dezelfde dagen vorig jaar"
             >
-              Tot Vandaag ({liveKpiOrdersCount})
+              Tot vandaag
             </button>
             {cityId === 'gent' && (
               <button
@@ -304,14 +301,13 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
                   setPeriodMode('post_event');
                   setHoverIndex(null);
                 }}
-                className={`px-2.5 py-1 rounded text-[11px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
                   periodMode === 'post_event'
-                    ? `${accent.btnActiveBg} shadow-[1px_1px_0px_rgba(29,28,26,0.9)]`
+                    ? accent.btnActiveBg
                     : 'text-[#4c5752] hover:text-[#1D1C1A]'
                 }`}
-                title="Puur de verkopen sinds het einde van het festivalweekend (5 okt t/m vandaag)"
               >
-                Na Event (Sinds 5 okt)
+                Na event
               </button>
             )}
             <button
@@ -320,207 +316,184 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
                 setPeriodMode('full_year');
                 setHoverIndex(null);
               }}
-              className={`px-2.5 py-1 rounded text-[11px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
                 periodMode === 'full_year'
-                  ? `${accent.btnActiveBg} shadow-[1px_1px_0px_rgba(29,28,26,0.9)]`
+                  ? accent.btnActiveBg
                   : 'text-[#4c5752] hover:text-[#1D1C1A]'
               }`}
-              title="Bekijk de volledige 12-maanden verkoopcurve van vorig jaar richting het festival"
             >
-              12-Mnd Cyclus
+              Heel jaar
             </button>
           </div>
 
-          {/* Metric Switcher */}
-          <div className="inline-flex bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg p-0.5 shadow-[2px_2px_0px_rgba(29,28,26,0.9)]">
+          <div className="inline-flex bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded p-0.5">
             <button
               type="button"
               onClick={() => setMetricMode('orders')}
-              className={`px-2.5 py-1 rounded text-[11px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
                 metricMode === 'orders'
-                  ? 'bg-[#caac8e] text-[#1D1C1A] border border-[#1D1C1A]'
+                  ? 'bg-[#caac8e] text-[#1D1C1A]'
                   : 'text-[#4c5752] hover:text-[#1D1C1A]'
               }`}
             >
-              Aantal Sales
+              Sales
             </button>
             <button
               type="button"
               onClick={() => setMetricMode('revenue')}
-              className={`px-2.5 py-1 rounded text-[11px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
                 metricMode === 'revenue'
-                  ? 'bg-[#caac8e] text-[#1D1C1A] border border-[#1D1C1A]'
+                  ? 'bg-[#caac8e] text-[#1D1C1A]'
                   : 'text-[#4c5752] hover:text-[#1D1C1A]'
               }`}
             >
-              Omzet (€)
+              Omzet
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. Three Summary Benchmark Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-        {/* Card 1: Dit Jaar tot Vandaag */}
-        <div className="bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg p-3.5 shadow-[2px_2px_0px_rgba(29,28,26,0.9)]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#4c5752]">
-              {periodMode === 'post_event'
-                ? 'Dit Jaar (Na Event: 5–25 okt)'
-                : 'Dit Jaar (Tot Vandaag)'}
-            </span>
-            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: accent.primaryHex }}></span>
+      {/* 2. Three Clear Number Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Dit Jaar */}
+        <div className="bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-4">
+          <div className="flex items-center justify-between text-xs font-bold text-[#4c5752]">
+            <span>Dit jaar</span>
+            <span
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ backgroundColor: accent.primaryHex }}
+            />
           </div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-xl sm:text-2xl font-extrabold text-[#1D1C1A]">
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl sm:text-4xl font-extrabold text-[#1D1C1A] tracking-tight leading-none">
               {metricMode === 'orders'
-                ? `${curOrders} bestellingen`
-                : `€ ${curRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                ? curOrders
+                : `€ ${curRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
             </span>
-          </div>
-          <div className="mt-1 text-[11px] font-semibold text-[#4c5752]">
-            {metricMode === 'orders'
-              ? `Omzet: € ${curRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${activeSeries?.currentTickets ?? liveKpiTicketsCount} tickets)`
-              : `${curOrders} betaalde bestellingen (${activeSeries?.currentTickets ?? liveKpiTicketsCount} tickets)`}
-          </div>
-        </div>
-
-        {/* Card 2: Vorig Jaar op exact dit punt */}
-        <div className="bg-[#FAF7F2] border-2 border-[#c1d4ce] rounded-lg p-3.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#4c5752]">
-              {periodMode === 'post_event'
-                ? 'Vorig Jaar (Na Event: 5–25 okt 2025)'
-                : periodMode === 'full_year'
-                ? 'Vorig Jaar (Volledige 12 mnd)'
-                : 'Vorig Jaar (Zelfde periode t/m 25 okt)'}
-            </span>
-            <span className="w-4 h-0.5 border-t-2 border-dashed border-[#4c5752]"></span>
-          </div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-xl sm:text-2xl font-extrabold text-[#4c5752]">
-              {metricMode === 'orders'
-                ? `${prevOrders} bestellingen`
-                : `€ ${prevRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] font-medium text-[#4c5752]">
-            {metricMode === 'orders'
-              ? `Omzet vorig jaar op dit punt: € ${prevRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-              : `${prevOrders} betaalde bestellingen vorig jaar op dit punt`}
-          </div>
-        </div>
-
-        {/* Card 3: Delta & Marketing Actie-Signaal */}
-        <div
-          className={`border-2 border-[#1D1C1A] rounded-lg p-3.5 shadow-[2px_2px_0px_rgba(29,28,26,0.9)] ${
-            isAhead ? 'bg-[#d8e7e2]/70' : 'bg-amber-50'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#1D1C1A]">
-              Verschil t.o.v. Vorig Jaar
-            </span>
-            {isAhead ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-[#006448] text-white">
-                <TrendingUp className="w-3 h-3" /> Vóór op schema
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-500">
-                <TrendingDown className="w-3 h-3" /> Actie vereist
-              </span>
+            {metricMode === 'orders' && (
+              <span className="text-xs sm:text-sm font-bold text-[#4c5752]">sales</span>
             )}
           </div>
-          <div className="mt-1 flex items-baseline gap-2">
+          <div className="mt-1.5 text-xs font-bold text-[#4c5752]">
+            {metricMode === 'orders'
+              ? `€ ${curRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${activeSeries?.currentTickets ?? liveKpiTicketsCount} tickets`
+              : `${curOrders} sales · ${activeSeries?.currentTickets ?? liveKpiTicketsCount} tickets`}
+          </div>
+        </div>
+
+        {/* Vorig Jaar */}
+        <div className="bg-[#FAF7F2] border-2 border-[#c1d4ce] rounded p-3.5 sm:p-4">
+          <div className="flex items-center justify-between text-xs font-bold text-[#4c5752]">
+            <span>{periodMode === 'full_year' ? 'Vorig jaar (totaal)' : 'Vorig jaar (zelfde datum)'}</span>
+            <span className="w-4 h-0.5 border-t-2 border-dashed border-[#4c5752]" />
+          </div>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl sm:text-4xl font-extrabold text-[#4c5752] tracking-tight leading-none">
+              {metricMode === 'orders'
+                ? prevOrders
+                : `€ ${prevRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+            </span>
+            {metricMode === 'orders' && (
+              <span className="text-xs sm:text-sm font-bold text-[#4c5752]">sales</span>
+            )}
+          </div>
+          <div className="mt-1.5 text-xs font-bold text-[#4c5752]">
+            {metricMode === 'orders'
+              ? `€ ${prevRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : `${prevOrders} sales`}
+          </div>
+        </div>
+
+        {/* Verschil */}
+        <div className="bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-4">
+          <div className="flex items-center justify-between text-xs font-bold text-[#4c5752]">
+            <span>Verschil</span>
             <span
-              className={`text-xl sm:text-2xl font-extrabold ${
+              className={`px-2 py-0.5 rounded text-[11px] font-extrabold ${
+                isAhead
+                  ? 'bg-[#d8e7e2] text-[#006448]'
+                  : 'bg-red-100 text-red-800'
+              }`}
+            >
+              {metricMode === 'orders'
+                ? `${ordersPctDiff >= 0 ? '+' : ''}${ordersPctDiff}%`
+                : `${revenuePctDiff >= 0 ? '+' : ''}${revenuePctDiff}%`}
+            </span>
+          </div>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span
+              className={`text-2xl sm:text-4xl font-extrabold tracking-tight leading-none ${
                 isAhead ? 'text-[#006448]' : 'text-red-800'
               }`}
             >
               {metricMode === 'orders'
-                ? `${ordersDiff >= 0 ? '+' : ''}${ordersDiff} sales (${ordersPctDiff >= 0 ? '+' : ''}${ordersPctDiff}%)`
+                ? `${ordersDiff >= 0 ? '+' : ''}${ordersDiff}`
                 : `${revenueDiff >= 0 ? '+ € ' : '- € '}${Math.abs(revenueDiff).toLocaleString('nl-NL', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })} (${revenuePctDiff >= 0 ? '+' : ''}${revenuePctDiff}%)`}
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                  })}`}
             </span>
-          </div>
-          <div className="mt-1 text-[11px] font-bold text-[#1D1C1A] flex items-center gap-1.5">
-            {isAhead ? (
-              <>
-                <CheckCircle2 className="w-3.5 h-3.5 text-[#006448] shrink-0" />
-                <span>Verkoop loopt voor op vorig jaar op dit punt!</span>
-              </>
-            ) : (
-              <>
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                <span>
-                  {Math.abs(ordersDiff)} sales minder dan vorig jaar — tip: zet een mailing of actie uit.
-                </span>
-              </>
+            {metricMode === 'orders' && (
+              <span className={`text-xs sm:text-sm font-bold ${isAhead ? 'text-[#006448]' : 'text-red-800'}`}>
+                sales
+              </span>
             )}
+          </div>
+          <div className="mt-1.5 text-xs font-bold text-[#4c5752]">
+            {metricMode === 'orders'
+              ? `${revenueDiff >= 0 ? '+ € ' : '- € '}${Math.abs(revenueDiff).toLocaleString('nl-NL', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })} omzet`
+              : `${ordersDiff >= 0 ? '+' : ''}${ordersDiff} sales`}
           </div>
         </div>
       </div>
 
-      {/* 3. Full-Width Interactive SVG Comparison Chart */}
-      <div className="relative bg-[#FAF7F2] border-2 border-[#c1d4ce] rounded-lg p-3 sm:p-4">
-        {/* Legend & Hover Readout Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2 text-xs">
-          <div className="flex items-center gap-4 flex-wrap">
+      {/* 3. Clean Interactive Chart */}
+      <div className="bg-[#FAF7F2] border border-[#c1d4ce] rounded p-3 sm:p-4">
+        {/* Minimal Legend + Hover Readout */}
+        <div className="flex items-center justify-between gap-2 mb-2 min-h-[24px] text-xs">
+          <div className="flex items-center gap-4">
             <span className="inline-flex items-center gap-1.5 font-extrabold text-[#1D1C1A]">
               <span
-                className="w-3 h-3 rounded-sm border border-[#1D1C1A]"
+                className="w-2.5 h-2.5 rounded-full"
                 style={{ backgroundColor: accent.primaryHex }}
-              ></span>
-              Dit Jaar ({periodMode === 'post_event' ? 'Nieuwe Editie sinds 5 okt' : 'Actieve Verkoop'})
+              />
+              Dit jaar
             </span>
             <span className="inline-flex items-center gap-1.5 font-bold text-[#4c5752]">
-              <span className="w-4 h-0.5 border-t-2 border-dashed border-[#4c5752]"></span>
-              Vorig Jaar (Zelfde punt in de tijd)
+              <span className="w-4 h-0.5 border-t-2 border-dashed border-[#4c5752]" />
+              Vorig jaar
             </span>
           </div>
 
-          {hoveredPoint ? (
-            <div className="bg-[#FCFAF7] border border-[#1D1C1A] rounded px-2.5 py-1 text-[11px] font-bold flex items-center gap-3 shadow-sm">
-              <span className="text-[#1D1C1A] font-extrabold">{hoveredPoint.label}:</span>
+          {hoveredPoint && (
+            <div className="bg-[#FCFAF7] border border-[#1D1C1A] rounded px-2.5 py-0.5 text-xs font-extrabold flex items-center gap-3">
+              <span className="text-[#1D1C1A]">{hoveredPoint.label}</span>
               <span style={{ color: accent.primaryHex }}>
-                Dit jaar:{' '}
-                <strong>
-                  {formatMetric(
-                    metricMode === 'orders' ? hoveredPoint.curOrders : hoveredPoint.curRevenueEur
-                  )}
-                </strong>
+                Dit jaar: {formatMetric(metricMode === 'orders' ? hoveredPoint.curOrders : hoveredPoint.curRevenueEur)}
               </span>
               <span className="text-[#4c5752]">
-                Vorig jaar:{' '}
-                <strong>
-                  {formatMetric(
-                    metricMode === 'orders' ? hoveredPoint.prevOrders : hoveredPoint.prevRevenueEur
-                  )}
-                </strong>
+                Vorig jaar: {formatMetric(metricMode === 'orders' ? hoveredPoint.prevOrders : hoveredPoint.prevRevenueEur)}
               </span>
             </div>
-          ) : (
-            <span className="text-[11px] text-[#4c5752] font-medium">
-              Beweeg met je muis over de grafiek voor dag-tot-dag cijfers
-            </span>
           )}
         </div>
 
         {loading && points.length === 0 ? (
-          <div className="h-[230px] flex items-center justify-center text-xs font-bold text-[#4c5752]">
-            Historische vergelijking laden...
+          <div className="h-[200px] flex items-center justify-center text-xs font-bold text-[#4c5752]">
+            Grafiek laden...
           </div>
         ) : (
-          <div className="w-full overflow-x-auto">
+          <div className="w-full">
             <svg
               viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-              className="w-full h-[220px] sm:h-[250px] select-none overflow-visible"
+              className="w-full h-auto max-h-[230px] select-none overflow-visible"
               onMouseLeave={() => setHoverIndex(null)}
             >
-              {/* Horizontal Grid Lines & Y-Axis Labels */}
-              {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
+              {/* Grid Lines & Y-Axis Numbers */}
+              {[0, 0.5, 1].map((ratio, idx) => {
                 const val = Math.round(maxVal * ratio);
                 const y = getY(val);
                 return (
@@ -531,14 +504,14 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
                       x2={svgWidth - padRight}
                       y2={y}
                       stroke="#c1d4ce"
-                      strokeDasharray={ratio === 0 ? undefined : '3 3'}
+                      strokeDasharray={ratio === 0 ? undefined : '4 4'}
                       strokeWidth={ratio === 0 ? 1.5 : 1}
                     />
                     <text
-                      x={padLeft - 8}
+                      x={padLeft - 10}
                       y={y + 4}
                       textAnchor="end"
-                      className="fill-[#4c5752] text-[10px] font-bold"
+                      className="fill-[#1D1C1A] text-[12px] font-extrabold"
                     >
                       {metricMode === 'orders' ? val : `€${val}`}
                     </text>
@@ -546,7 +519,7 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
                 );
               })}
 
-              {/* Current Year Shaded Area */}
+              {/* Current Year Area */}
               {curAreaPath && <path d={curAreaPath} fill={accent.primaryFill} />}
 
               {/* Previous Year Dashed Line */}
@@ -555,7 +528,7 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
                   d={prevPath}
                   fill="none"
                   stroke="#6b7872"
-                  strokeWidth={2.25}
+                  strokeWidth={2.5}
                   strokeDasharray="6 4"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -568,83 +541,118 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
                   d={curPath}
                   fill="none"
                   stroke={accent.primaryHex}
-                  strokeWidth={3.25}
+                  strokeWidth={3.5}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               )}
 
-              {/* Previous Year Data Dots */}
-              {points.map((p, idx) => {
-                const val = metricMode === 'orders' ? p.prevOrders : p.prevRevenueEur;
-                const x = getX(idx);
-                const y = getY(val);
-                const showDot =
-                  hoverIndex === idx || idx === 0 || idx === points.length - 1 || idx % 4 === 0;
-                if (!showDot) return null;
-                return (
+              {/* End-of-line value callout for Vorig Jaar */}
+              {lastPrevVal !== null && lastPrevIdx >= 0 && (
+                <g>
                   <circle
-                    key={`prev-${idx}`}
-                    cx={x}
-                    cy={y}
-                    r={hoverIndex === idx ? 5 : 3}
+                    cx={getX(lastPrevIdx)}
+                    cy={getY(lastPrevVal)}
+                    r={4.5}
                     fill="#FCFAF7"
-                    stroke="#6b7872"
-                    strokeWidth={2}
+                    stroke="#4c5752"
+                    strokeWidth={2.5}
                   />
-                );
-              })}
+                  <text
+                    x={getX(lastPrevIdx) + 8}
+                    y={getY(lastPrevVal) + 4}
+                    className="fill-[#4c5752] text-[12px] font-extrabold"
+                  >
+                    {formatMetric(lastPrevVal)}
+                  </text>
+                </g>
+              )}
 
-              {/* Current Year Data Dots */}
-              {validCurPoints.map((v) => {
-                const isLast = v.idx === validCurPoints[validCurPoints.length - 1]?.idx;
-                const isHovered = hoverIndex === v.idx;
-                if (!isLast && !isHovered && v.idx % 3 !== 0) return null;
-                return (
+              {/* End-of-line value callout for Dit Jaar */}
+              {lastCurPoint && (
+                <g>
                   <circle
-                    key={`cur-${v.idx}`}
-                    cx={v.x}
-                    cy={v.y}
-                    r={isHovered || isLast ? 5.5 : 3.5}
+                    cx={lastCurPoint.x}
+                    cy={lastCurPoint.y}
+                    r={5.5}
                     fill={accent.primaryHex}
                     stroke="#FCFAF7"
                     strokeWidth={2}
                   />
-                );
-              })}
+                  <text
+                    x={lastCurPoint.x + 8}
+                    y={lastCurPoint.y + 4}
+                    style={{ fill: accent.primaryHex }}
+                    className="text-[13px] font-extrabold"
+                  >
+                    {formatMetric(lastCurPoint.val)}
+                  </text>
+                </g>
+              )}
+
+              {/* Hovered Day Dots & Vertical Line */}
+              {hoverIndex !== null && points[hoverIndex] && (
+                <g>
+                  <line
+                    x1={getX(hoverIndex)}
+                    y1={padTop}
+                    x2={getX(hoverIndex)}
+                    y2={padTop + plotH}
+                    stroke="#1D1C1A"
+                    strokeWidth={1.5}
+                    strokeDasharray="2 2"
+                  />
+                  <circle
+                    cx={getX(hoverIndex)}
+                    cy={getY(
+                      metricMode === 'orders'
+                        ? points[hoverIndex].prevOrders
+                        : points[hoverIndex].prevRevenueEur
+                    )}
+                    r={5}
+                    fill="#FCFAF7"
+                    stroke="#4c5752"
+                    strokeWidth={2.5}
+                  />
+                  {(() => {
+                    const cVal =
+                      metricMode === 'orders'
+                        ? points[hoverIndex].curOrders
+                        : points[hoverIndex].curRevenueEur;
+                    if (cVal === null || cVal === undefined) return null;
+                    return (
+                      <circle
+                        cx={getX(hoverIndex)}
+                        cy={getY(cVal)}
+                        r={5.5}
+                        fill={accent.primaryHex}
+                        stroke="#FCFAF7"
+                        strokeWidth={2}
+                      />
+                    );
+                  })()}
+                </g>
+              )}
 
               {/* X-Axis Labels */}
               {points.map((p, idx) => {
-                const step = points.length > 16 ? 3 : points.length > 10 ? 2 : 1;
+                const step = points.length > 18 ? 4 : points.length > 10 ? 2 : 1;
                 if (idx !== 0 && idx !== points.length - 1 && idx % step !== 0) return null;
                 const x = getX(idx);
                 return (
                   <text
                     key={`lbl-${idx}`}
                     x={x}
-                    y={svgHeight - 10}
+                    y={svgHeight - 8}
                     textAnchor="middle"
-                    className="fill-[#4c5752] text-[10px] font-bold"
+                    className="fill-[#4c5752] text-[11px] font-bold"
                   >
                     {p.label}
                   </text>
                 );
               })}
 
-              {/* Hover Vertical Indicator Line */}
-              {hoverIndex !== null && points[hoverIndex] && (
-                <line
-                  x1={getX(hoverIndex)}
-                  y1={padTop}
-                  x2={getX(hoverIndex)}
-                  y2={padTop + plotH}
-                  stroke="#1D1C1A"
-                  strokeWidth={1.5}
-                  strokeDasharray="2 2"
-                />
-              )}
-
-              {/* Invisible Hover Columns for Smooth Scrubbing */}
+              {/* Hover Hit Areas */}
               {points.map((_, idx) => {
                 const colW = plotW / Math.max(1, points.length);
                 const x = getX(idx) - colW / 2;
@@ -668,3 +676,4 @@ export const SalesYoYChartCard: React.FC<SalesYoYChartCardProps> = ({
     </div>
   );
 };
+

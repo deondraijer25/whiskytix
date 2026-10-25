@@ -1374,13 +1374,14 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       };
 
       // Validate city match before checking in ticket
-      if (expectedCity) {
-        const normExpected = normalizeCitySlug(expectedCity);
-        let foundTicket = await OrdersRepository.findTicket(ticketCode);
-        if (!foundTicket) {
-          await getSyncedOrders({});
-          foundTicket = await OrdersRepository.findTicket(ticketCode);
-        }
+      const normExpected = expectedCity ? normalizeCitySlug(expectedCity) : '';
+      let foundTicket = await OrdersRepository.findTicket(ticketCode);
+      if (!foundTicket && !body.fastOnly) {
+        await getSyncedOrders(normExpected ? { city: normExpected } : {});
+        foundTicket = await OrdersRepository.findTicket(ticketCode);
+      }
+
+      if (normExpected) {
         const actualCity = normalizeCitySlug(
           qrCity || foundTicket?.order?.festivalId || foundTicket?.ticket?.cityName || ''
         );
@@ -1399,11 +1400,15 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         }
       }
 
-      // Check-in ticket in database/store
-      let checkInResult = await OrdersRepository.checkInTicket(ticketCode);
-      if (!checkInResult.success && checkInResult.error?.includes('niet gevonden')) {
-        await getSyncedOrders({});
-        checkInResult = await OrdersRepository.checkInTicket(ticketCode);
+      // Check-in ticket in database/store with atomic update & audit log
+      const checkInMeta = {
+        gate: body.gate || 'Hoofdingang · Deur 1',
+        scannerDevice: body.scannerDevice || 'Whiskytix Door Scanner PWA',
+      };
+      let checkInResult = await OrdersRepository.checkInTicket(ticketCode, checkInMeta);
+      if (!checkInResult.success && checkInResult.error?.includes('niet gevonden') && !body.fastOnly) {
+        await getSyncedOrders(normExpected ? { city: normExpected } : {});
+        checkInResult = await OrdersRepository.checkInTicket(ticketCode, checkInMeta);
       }
 
       if (!checkInResult.success) {
@@ -1412,6 +1417,10 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           valid: false,
           alreadyScanned: isDuplicate,
           ticketCode,
+          attendeeName: checkInResult.ticket?.attendeeName,
+          sessionTitle: checkInResult.ticket?.sessionTitle,
+          cityName: checkInResult.ticket?.cityName,
+          checkedInAt: checkInResult.ticket?.checkedInAt,
           error: checkInResult.error,
         });
       }
@@ -1429,6 +1438,140 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       });
     } catch (err: any) {
       return reply.status(500).send({ valid: false, error: err.message });
+    }
+  });
+
+  /**
+   * 6B. OFFLINE SCANNER MANIFEST API (LOCAL TICKET VAULT)
+   * GET /api/scanner/manifest?city=denhaag
+   * Preloads all valid/checked-in/cancelled/swapped tickets onto the door scanner phone (~150 KB)
+   * so the scanner works in <10ms even when venue WiFi or 4G drops out completely.
+   */
+  server.get('/api/scanner/manifest', async (request, reply) => {
+    try {
+      const query = (request.query || {}) as { city?: string; festivalId?: string };
+      const rawCity = (query.city || query.festivalId || '').toLowerCase().trim();
+      const normalizeCitySlug = (val: string) => {
+        const s = (val || '').toLowerCase();
+        if (s.includes('haag')) return 'denhaag';
+        if (s.includes('amsterdam')) return 'amsterdam';
+        if (s.includes('gent')) return 'gent';
+        return '';
+      };
+      const targetCity = normalizeCitySlug(rawCity);
+
+      let allTickets = await OrdersRepository.listAllTickets();
+      if (allTickets.length === 0) {
+        await getSyncedOrders(targetCity ? { city: targetCity } : {});
+        allTickets = await OrdersRepository.listAllTickets();
+      }
+
+      const filtered = targetCity
+        ? allTickets.filter((t) => normalizeCitySlug(t.cityName) === targetCity)
+        : allTickets;
+
+      const vault = filtered.map((t) => ({
+        code: t.ticketCode,
+        name: t.attendeeName,
+        session: t.sessionTitle,
+        city: normalizeCitySlug(t.cityName) || targetCity || 'gent',
+        status: t.status || (t.checkedInAt ? 'checked_in' : 'valid'),
+        checkedInAt: t.checkedInAt || undefined,
+        swapReason: t.swapReason || undefined,
+      }));
+
+      return reply.send({
+        success: true,
+        city: targetCity || 'all',
+        updatedAt: new Date().toISOString(),
+        count: vault.length,
+        tickets: vault,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message, tickets: [] });
+    }
+  });
+
+  /**
+   * 6C. OFFLINE SCANNER BATCH SYNC API
+   * POST /api/scanner/sync-batch
+   * Flushes queued offline door scans back to the server as soon as WiFi/4G returns.
+   */
+  server.post('/api/scanner/sync-batch', async (request, reply) => {
+    try {
+      const body = (request.body || {}) as {
+        festivalId?: string;
+        scans?: Array<{ ticketCode: string; scannedAt?: string; gate?: string; scannerDevice?: string }>;
+      };
+      const scans = Array.isArray(body.scans) ? body.scans : [];
+      if (scans.length === 0) {
+        return reply.send({ success: true, syncedCount: 0, results: [] });
+      }
+
+      const results: Array<{ ticketCode: string; synced: boolean; alreadyCheckedIn?: boolean; error?: string }> = [];
+      let syncedCount = 0;
+
+      const CHUNK_SIZE = 15;
+      for (let i = 0; i < scans.length; i += CHUNK_SIZE) {
+        const chunk = scans.slice(i, i + CHUNK_SIZE);
+        const chunkResults = await Promise.all(
+          chunk.map(async (scan) => {
+            if (!scan.ticketCode) return null;
+            const res = await OrdersRepository.checkInTicket(scan.ticketCode, {
+              gate: scan.gate || 'Hoofdingang · Deur 1',
+              scannerDevice: scan.scannerDevice || 'Whiskytix Offline Batch Sync',
+              scannedAtIso: scan.scannedAt,
+              isOfflineSync: true,
+            });
+
+            if (res.success || res.error?.includes('AL GESCAND')) {
+              return {
+                ticketCode: scan.ticketCode,
+                synced: true,
+                alreadyCheckedIn: !res.success,
+              };
+            }
+            return {
+              ticketCode: scan.ticketCode,
+              synced: false,
+              error: res.error,
+            };
+          })
+        );
+
+        for (const r of chunkResults) {
+          if (!r) continue;
+          if (r.synced) syncedCount++;
+          results.push(r);
+        }
+      }
+
+      return reply.send({
+        success: true,
+        syncedCount,
+        totalSubmitted: scans.length,
+        results,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * 6D. AUTO-HEAL UNSYNCED CRM ORDERS API
+   * POST /api/admin/orders/retry-unsynced
+   * Retries any paid orders whose Leadfabriek CRM sync was interrupted.
+   */
+  server.post('/api/admin/orders/retry-unsynced', async (request, reply) => {
+    try {
+      const body = (request.body || {}) as { festivalId?: string };
+      const stats = await OrdersRepository.retryUnsyncedOrders(body.festivalId);
+      return reply.send({
+        success: true,
+        ...stats,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, error: err.message });
     }
   });
 

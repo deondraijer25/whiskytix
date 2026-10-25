@@ -19,7 +19,6 @@ import { INITIAL_FESTIVALS } from '../data/mockData';
 import { FestivalBadgeLogo } from './FestivalBadgeLogo';
 import { Footer } from './Footer';
 import { useEnvironment } from '../context/EnvironmentContext';
-import { MollieEnvToggle } from './MollieEnvToggle';
 
 const CITY_THEMES: Record<string, {
   primary: string;
@@ -190,7 +189,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
               <div className="flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-3 border-l-2 border-[#c1d4ce]">
                 <Link
                   to="/admin"
-                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded text-xs font-extrabold uppercase tracking-wider text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] transition-all group"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded text-xs font-bold text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] transition-all group"
                   title="Terug naar Centrale Cockpit"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform text-[#006448]" />
@@ -201,36 +200,24 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                   <span className={`w-2 h-2 rounded-full ${theme.dotColor}`}></span>
                   <span className="hidden md:inline">{currentFestival.name}</span>
                   <span className="md:hidden">{cityId === 'denhaag' ? 'Den Haag' : cityId === 'amsterdam' ? 'Amsterdam' : 'Gent'} Hub</span>
-                  <span
-                    className={`ml-1 hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider border ${
-                      mollieEnv === 'live'
-                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                        : 'bg-amber-100 text-amber-800 border-amber-300'
-                    }`}
-                  >
-                    {mollieEnv === 'live' ? 'Live' : 'Test'}
-                  </span>
                 </span>
               </div>
             </div>
 
-            {/* Right: Environment Toggle, City Switcher, Quick Scanner & Profile Dropdown */}
+            {/* Right: City Switcher, Quick Scanner & Profile Dropdown */}
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              {/* Mollie Test / Live Switcher */}
-              <MollieEnvToggle compact className="hidden sm:inline-flex" />
-
               {/* Fast City Switcher */}
               <div className="relative" ref={cityDropdownRef}>
                 <button
                   type="button"
                   onClick={() => setCityDropdownOpen(!cityDropdownOpen)}
                   aria-expanded={cityDropdownOpen}
-                  className="h-10 bg-[#FAF7F2] hover:bg-[#d8e7e2] border-2 border-[#1D1C1A] px-3 rounded font-extrabold text-xs text-[#1D1C1A] flex items-center gap-2 shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer transition-all shrink-0"
+                  className="h-10 bg-[#FAF7F2] hover:bg-[#d8e7e2] border-2 border-[#1D1C1A] px-3 rounded font-bold text-xs text-[#1D1C1A] flex items-center gap-2 shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer transition-all shrink-0"
                   title="Wissel van festival locatie"
                 >
                   <Building2 className="w-4 h-4 text-[#006448]" />
                   <span className="text-[#4c5752] font-semibold">Editie:</span>
-                  <span className="text-[#006448]">
+                  <span className="text-[#006448] font-extrabold">
                     {cityId === 'denhaag' ? 'Den Haag' : cityId === 'amsterdam' ? 'Amsterdam' : 'Gent'}
                   </span>
                   <ChevronDown className="w-3.5 h-3.5 text-[#4c5752]" />
@@ -238,8 +225,8 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
 
                 {cityDropdownOpen && (
                   <div className="absolute right-0 mt-2 w-64 bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                    <div className="px-3 py-2 border-b border-[#c1d4ce] text-[10px] font-extrabold uppercase tracking-wider text-[#4c5752]">
-                      Kies festival editie:
+                    <div className="px-3 py-2 border-b border-[#c1d4ce] text-xs font-bold text-[#4c5752]">
+                      Kies festival editie
                     </div>
                     {INITIAL_FESTIVALS.map((fest: any) => (
                       <button
@@ -254,10 +241,10 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                       >
                         <div>
                           <div className="font-extrabold">{fest.name}</div>
-                          <div className="text-[10px] text-[#4c5752]">{fest.dates}</div>
+                          <div className="text-[11px] text-[#4c5752]">{fest.dates}</div>
                         </div>
                         {fest.id === cityId && (
-                          <span className="text-[10px] bg-[#006448] text-white px-1.5 py-0.5 rounded font-extrabold">
+                          <span className="text-[10px] bg-[#006448] text-white px-1.5 py-0.5 rounded font-bold">
                             Actief
                           </span>
                         )}
@@ -269,11 +256,11 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
 
               {/* Quick Scanner PWA Button */}
               <Link
-                to={`/scan?festival=${cityId}`}
-                className="hidden md:flex h-10 items-center gap-2 px-3 rounded border-2 border-[#1D1C1A] bg-[#FAF7F2] hover:bg-[#d8e7e2] text-[#1D1C1A] text-xs font-extrabold uppercase tracking-wider shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer shrink-0"
-                title="Mobiele Deurscanner PWA"
+                to={`/admin/festival/${cityId}/scan`}
+                className={`hidden md:flex h-10 items-center gap-2 px-3 rounded border-2 border-[#1D1C1A] ${theme.activeTabBg} text-xs font-bold shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all cursor-pointer shrink-0`}
+                title={`Deurscanner ${currentFestival.name}`}
               >
-                <QrCode className="w-4 h-4 text-[#006448]" />
+                <QrCode className={`w-4 h-4 ${theme.iconActiveColor}`} />
                 <span>Scanner</span>
               </Link>
 
@@ -337,13 +324,13 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                       </Link>
 
                       <Link
-                        to={`/scan?festival=${cityId}`}
+                        to={`/admin/festival/${cityId}/scan`}
                         onClick={() => setUserDropdownOpen(false)}
                         className="flex md:hidden items-center gap-2.5 px-4 py-2.5 text-xs font-bold text-[#1D1C1A] hover:bg-[#FAF7F2] hover:text-[#006448] transition-colors"
                       >
-                        <QrCode className="w-4 h-4 text-[#006448]" />
+                        <QrCode className={`w-4 h-4 ${theme.iconColor}`} />
                         <div className="flex-1">
-                          <div className="font-extrabold">Deurscanner PWA</div>
+                          <div className="font-extrabold">Deurscanner {currentFestival.city}</div>
                           <div className="text-[10px] text-[#4c5752] font-normal">
                             Mobiele camera ticket scanner
                           </div>
@@ -396,7 +383,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-extrabold uppercase tracking-wider transition-all shrink-0 ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all shrink-0 ${
                       isActive
                         ? `${theme.activeTabBg} border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]`
                         : 'text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] border border-transparent'
@@ -415,28 +402,21 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
         {mobileMenuOpen && (
           <div className="lg:hidden border-t-2 border-[#1D1C1A] bg-[#FCFAF7] p-4 space-y-2 shadow-xl">
             <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce]">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752]">
-                Modus:
-              </span>
-              <MollieEnvToggle compact />
-            </div>
-
-            <div className="flex items-center justify-between pb-2 border-b border-[#c1d4ce]">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752]">
+              <span className="text-xs font-bold text-[#4c5752]">
                 Navigatie {currentFestival.edition}:
               </span>
-              <span className={`text-[10px] text-white px-2 py-0.5 rounded font-extrabold ${theme.dotColor}`}>
-                {mollieEnv === 'live' ? 'Live Verkoop' : 'Testomgeving'}
+              <span className={`text-[10px] text-white px-2 py-0.5 rounded font-bold ${theme.dotColor}`}>
+                {mollieEnv === 'live' ? 'Live verkoop' : 'Testomgeving'}
               </span>
             </div>
 
             <Link
               to="/admin"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded font-extrabold text-xs uppercase tracking-wider text-[#1D1C1A] bg-[#FAF7F2] border-2 border-[#c1d4ce]"
+              className="flex items-center gap-2.5 px-3 py-2 rounded font-bold text-xs text-[#1D1C1A] bg-[#FAF7F2] border-2 border-[#c1d4ce]"
             >
               <ArrowLeft className="w-4 h-4 text-[#006448]" />
-              <span>← Terug naar Centrale Cockpit</span>
+              <span>Terug naar Centrale Cockpit</span>
             </Link>
 
             {festivalNavItems.map((item) => {
@@ -449,7 +429,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                   key={item.path}
                   to={item.path}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded font-extrabold text-xs uppercase tracking-wider border-2 transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded font-bold text-xs border-2 transition-all ${
                     isActive
                       ? `${theme.activeTabBg} border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]`
                       : 'bg-[#FAF7F2] text-[#4c5752] border-[#c1d4ce]'
@@ -463,12 +443,12 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
 
             <div className="pt-2 border-t border-[#c1d4ce] space-y-2">
               <Link
-                to={`/scan?festival=${cityId}`}
+                to={`/admin/festival/${cityId}/scan`}
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-2 px-3 py-2 rounded font-extrabold text-xs text-[#006448] bg-[#caac8e]/20 border border-[#caac8e]"
+                className={`flex items-center gap-2 px-3 py-2 rounded font-extrabold text-xs ${theme.activeTabBg} border-2 border-[#1D1C1A]`}
               >
                 <QrCode className="w-4 h-4" />
-                <span>Open Deurscanner PWA</span>
+                <span>Open scanner {currentFestival.city}</span>
               </Link>
               <button
                 type="button"
@@ -500,7 +480,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
           to={`/admin/festival/${cityId}`}
           className={`flex flex-col items-center py-1 px-2 rounded font-extrabold text-[10px] ${
             location.pathname === `/admin/festival/${cityId}` || location.pathname === `/admin/festival/${cityId}/overview`
-              ? 'text-[#006448]'
+              ? theme.iconColor
               : 'text-[#4c5752]'
           }`}
         >
@@ -510,7 +490,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
         <Link
           to={`/admin/festival/${cityId}/orders`}
           className={`flex flex-col items-center py-1 px-2 rounded font-extrabold text-[10px] ${
-            location.pathname.includes('/orders') ? 'text-[#006448]' : 'text-[#4c5752]'
+            location.pathname.includes('/orders') ? theme.iconColor : 'text-[#4c5752]'
           }`}
         >
           <ShoppingBag className="w-4 h-4 mb-0.5" />
@@ -519,7 +499,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
         <Link
           to={`/admin/festival/${cityId}/inventory`}
           className={`flex flex-col items-center py-1 px-2 rounded font-extrabold text-[10px] ${
-            location.pathname.includes('/inventory') ? 'text-[#006448]' : 'text-[#4c5752]'
+            location.pathname.includes('/inventory') ? theme.iconColor : 'text-[#4c5752]'
           }`}
         >
           <Layers className="w-4 h-4 mb-0.5" />
@@ -528,15 +508,15 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
         <Link
           to={`/admin/festival/${cityId}/door`}
           className={`flex flex-col items-center py-1 px-2 rounded font-extrabold text-[10px] ${
-            location.pathname.includes('/door') ? 'text-[#006448]' : 'text-[#4c5752]'
+            location.pathname.includes('/door') ? theme.iconColor : 'text-[#4c5752]'
           }`}
         >
           <Activity className="w-4 h-4 mb-0.5" />
           <span>Deur</span>
         </Link>
         <Link
-          to={`/scan?festival=${cityId}`}
-          className="flex flex-col items-center py-1 px-3 rounded-lg font-black text-[10px] bg-[#006448] text-white border border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]"
+          to={`/admin/festival/${cityId}/scan`}
+          className={`flex flex-col items-center py-1 px-3 rounded-lg font-extrabold text-[10px] ${theme.activeTabBg} border border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]`}
         >
           <QrCode className="w-4 h-4 mb-0.5" />
           <span>Scanner</span>

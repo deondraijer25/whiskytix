@@ -157,7 +157,9 @@ export const App: React.FC = () => {
       <Route path="/admin/door" element={<Navigate to="/admin/festival/denhaag/door" replace />} />
       <Route path="/admin/coupons" element={<Navigate to="/admin/festival/denhaag/coupons" replace />} />
 
-      {/* 4. Mobiele Deurscanner PWA & Audit Log */}
+      {/* 4. Mobiele Deurscanner PWA & Audit Log (per Festival Hub) */}
+      <Route path="/admin/festival/:cityId/scan" element={<ScannerPwaPage />} />
+      <Route path="/admin/festival/:cityId/scan/history" element={<ScanHistoryPage />} />
       <Route path="/scan" element={<ScannerPwaPage />} />
       <Route path="/scan/history" element={<ScanHistoryPage />} />
 

@@ -1,6 +1,7 @@
 /**
  * GoHighLevel (GHL) Festival Catalog Service
  * Realtime ophalen en synchroniseren van festival tickets, zaalcapaciteiten en sessies uit GHL Custom Objects
+ * Met In-Flight Request Deduplicatie & In-Memory Atomic Sold Updates voor piekbelasting (Zondagnacht 00:00).
  */
 
 export interface LiveCatalogItem {
@@ -58,6 +59,13 @@ let inMemoryCache: {
   stats: Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats>;
 } | null = null;
 
+// Deduplicatie van gelijktijdige catalogus-aanvragen tijdens piekbelasting (bijv. 500 bezoekers om 00:00 uur)
+let inFlightCatalogPromise: Promise<{
+  items: LiveCatalogItem[];
+  stats: Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats>;
+  timestamp: number;
+}> | null = null;
+
 function parseGhlBoolean(val: any): boolean {
   if (typeof val === 'boolean') return val;
   if (typeof val === 'string') {
@@ -81,7 +89,9 @@ function resolveCategory(rawCategory: string): 'entree' | 'masterclass' | 'speci
   return 'special';
 }
 
-function calculateCityStats(items: LiveCatalogItem[]): Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats> {
+function calculateCityStats(
+  items: LiveCatalogItem[]
+): Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats> {
   const cities: ('gent' | 'denhaag' | 'amsterdam')[] = ['gent', 'denhaag', 'amsterdam'];
   const cityNames = {
     gent: 'Gents Whisky Festival',
@@ -113,153 +123,38 @@ function calculateCityStats(items: LiveCatalogItem[]): Record<'gent' | 'denhaag'
 export class GhlCatalogService {
   /**
    * Haalt de live tickets en capaciteiten op uit GoHighLevel Custom Objects
+   * met In-Flight Request Deduplicatie zodat honderden gelijktijdige bezoekers
+   * slechts 1 achterliggende CRM-call veroorzaken.
    */
   static async getCatalog(cityFilter?: string, forceRefresh = false): Promise<CatalogResponse> {
     const now = Date.now();
 
-    // Check in-memory cache
+    // 1. Direct uit geheugen serveren als cache vers is (< 60s)
     if (!forceRefresh && inMemoryCache && now - inMemoryCache.timestamp < CACHE_TTL_MS) {
-      let filtered = inMemoryCache.items;
-      if (cityFilter && cityFilter !== 'all') {
-        const resolved = resolveCity(cityFilter);
-        filtered = filtered.filter((i) => i.city === resolved);
-      }
-      return {
-        success: true,
-        source: 'cache',
-        timestamp: new Date(inMemoryCache.timestamp).toISOString(),
-        totalRecords: filtered.length,
-        stats: inMemoryCache.stats,
-        items: filtered,
-      };
+      return this.formatCatalogResponse(inMemoryCache.items, inMemoryCache.stats, inMemoryCache.timestamp, 'cache', cityFilter);
     }
 
+    // 2. Stale-While-Revalidate bij lopend verzoek: als er al een refresh bezig is, wacht op diezelfde belofte
     try {
-      const url = `${GHL_API_BASE}/objects/${GHL_TICKETS_OBJECT_KEY}/records/search`;
-      const records: any[] = [];
-      let page = 1;
-      while (page <= 5) {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${GHL_API_KEY}`,
-            Version: '2021-07-28',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            locationId: GHL_LOCATION_ID,
-            page,
-            pageLimit: 100,
-            searchAfter: [],
-          }),
+      if (!inFlightCatalogPromise) {
+        inFlightCatalogPromise = this.fetchLiveCatalogFromGhl().finally(() => {
+          inFlightCatalogPromise = null;
         });
-
-        if (!response.ok) {
-          throw new Error(`GHL Search endpoint status ${response.status} ${response.statusText}`);
-        }
-
-        const json = (await response.json()) as any;
-        const pageRecs = json.customObjectRecords || json.records || [];
-        records.push(...pageRecs);
-        if (pageRecs.length < 100 || records.length >= (json.total || 0)) break;
-        page++;
       }
 
-      if (!Array.isArray(records) || records.length === 0) {
-        throw new Error('Geen records ontvangen uit GHL Custom Objects');
-      }
-
-      const parsedItems: LiveCatalogItem[] = records.map((r: any) => {
-        const p = r.properties || r;
-        const capacity = parseInt(p.capacity, 10) || 0;
-        const sold = parseInt(p.sold, 10) || 0;
-        const isSoldOut = parseGhlBoolean(p.is_sold_out) || (capacity > 0 && sold >= capacity);
-
-        const rawCity = p.festival_city || p.festival_slug || p.city || 'gent';
-        const city = resolveCity(rawCity);
-        const category = resolveCategory(p.category);
-
-        const cleanTitle = (p.title || 'Ticket')
-          .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
-          .trim();
-
-        const price = typeof p.price === 'number' ? p.price : (parseFloat(p.price) || parseFloat(p.ticket_price) || 0);
-
-        let tastingLineup: string[] | undefined = undefined;
-        if (p.tasting_lineup) {
-          tastingLineup = Array.isArray(p.tasting_lineup)
-            ? p.tasting_lineup
-            : String(p.tasting_lineup).split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean);
-        }
-
-        return {
-          id: r.id || `ghl-tix-${Math.random().toString(36).substring(2, 9)}`,
-          city,
-          category,
-          rawCategory: p.category,
-          title: cleanTitle,
-          dateStr: p.date_label || 'Datum volgt',
-          timeStr: p.time_label || 'Tijd volgt',
-          originalPriceEur: price,
-          location: p.location || (city === 'gent' ? 'De Oude Vismijn, Gent' : city === 'denhaag' ? 'Grote Kerk Den Haag' : 'De Hallen, Amsterdam'),
-          description: p.ticket_description || p.description || '',
-          extra: p.ticket_description || p.description || '',
-          capacity,
-          sold,
-          isSoldOut,
-          statusText: isSoldOut ? 'Uitverkocht' : p.status_badge === 'hidden' ? 'Concept (Verborgen)' : p.status_badge || undefined,
-          bookingType: p.booking_type || 'vrij_te_boeken',
-          day: p.day || 'all',
-          daypart: p.daypart || 'all',
-          ambassadorName: p.ambassador_name || undefined,
-          ambassadorTitle: p.ambassador_title || undefined,
-          tastingLineup,
-        };
-      });
-
-      // Bereken statistieken per festival
-      const stats = calculateCityStats(parsedItems);
-
-      // Cache opslaan
-      inMemoryCache = {
-        timestamp: now,
-        items: parsedItems,
-        stats,
-      };
-
-      console.info(`[GHL Catalog] Succesvol ${parsedItems.length} live tickets ingeladen uit GHL (Gent: ${stats.gent.totalCapacity}, DH: ${stats.denhaag.totalCapacity}, Ams: ${stats.amsterdam.totalCapacity})`);
-
-      let filtered = parsedItems;
-      if (cityFilter && cityFilter !== 'all') {
-        const resolved = resolveCity(cityFilter);
-        filtered = filtered.filter((i) => i.city === resolved);
-      }
-
-      return {
-        success: true,
-        source: 'ghl_live',
-        timestamp: new Date(now).toISOString(),
-        totalRecords: filtered.length,
-        stats,
-        items: filtered,
-      };
+      const fresh = await inFlightCatalogPromise;
+      return this.formatCatalogResponse(fresh.items, fresh.stats, fresh.timestamp, 'ghl_live', cityFilter);
     } catch (err: any) {
       console.warn('[GHL Catalog] Kon live tickets niet ophalen uit GHL, gebruik cache of fallback:', err.message);
 
       if (inMemoryCache) {
-        let filtered = inMemoryCache.items;
-        if (cityFilter && cityFilter !== 'all') {
-          const resolved = resolveCity(cityFilter);
-          filtered = filtered.filter((i) => i.city === resolved);
-        }
-        return {
-          success: true,
-          source: 'cache',
-          timestamp: new Date(inMemoryCache.timestamp).toISOString(),
-          totalRecords: filtered.length,
-          stats: inMemoryCache.stats,
-          items: filtered,
-        };
+        return this.formatCatalogResponse(
+          inMemoryCache.items,
+          inMemoryCache.stats,
+          inMemoryCache.timestamp,
+          'cache',
+          cityFilter
+        );
       }
 
       return {
@@ -268,17 +163,214 @@ export class GhlCatalogService {
         timestamp: new Date().toISOString(),
         totalRecords: 0,
         stats: {
-          gent: { city: 'gent', cityName: 'Gents Whisky Festival', totalCapacity: 2360, totalSold: 0, ticketTypesCount: 16, soldPercentage: '0.0' },
-          denhaag: { city: 'denhaag', cityName: 'International Whisky Festival Den Haag', totalCapacity: 7663, totalSold: 0, ticketTypesCount: 118, soldPercentage: '0.0' },
-          amsterdam: { city: 'amsterdam', cityName: 'Whisky Weekend Amsterdam', totalCapacity: 2860, totalSold: 0, ticketTypesCount: 22, soldPercentage: '0.0' },
+          gent: {
+            city: 'gent',
+            cityName: 'Gents Whisky Festival',
+            totalCapacity: 2360,
+            totalSold: 0,
+            ticketTypesCount: 16,
+            soldPercentage: '0.0',
+          },
+          denhaag: {
+            city: 'denhaag',
+            cityName: 'International Whisky Festival Den Haag',
+            totalCapacity: 7663,
+            totalSold: 0,
+            ticketTypesCount: 118,
+            soldPercentage: '0.0',
+          },
+          amsterdam: {
+            city: 'amsterdam',
+            cityName: 'Whisky Weekend Amsterdam',
+            totalCapacity: 2860,
+            totalSold: 0,
+            ticketTypesCount: 22,
+            soldPercentage: '0.0',
+          },
         },
         items: [],
       };
     }
   }
 
+  private static formatCatalogResponse(
+    items: LiveCatalogItem[],
+    stats: Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats>,
+    timestamp: number,
+    source: 'ghl_live' | 'cache',
+    cityFilter?: string
+  ): CatalogResponse {
+    let filtered = items;
+    if (cityFilter && cityFilter !== 'all') {
+      const resolved = resolveCity(cityFilter);
+      filtered = filtered.filter((i) => i.city === resolved);
+    }
+    return {
+      success: true,
+      source,
+      timestamp: new Date(timestamp).toISOString(),
+      totalRecords: filtered.length,
+      stats,
+      items: filtered,
+    };
+  }
+
+  private static async fetchLiveCatalogFromGhl(): Promise<{
+    items: LiveCatalogItem[];
+    stats: Record<'gent' | 'denhaag' | 'amsterdam', CityCatalogStats>;
+    timestamp: number;
+  }> {
+    const url = `${GHL_API_BASE}/objects/${GHL_TICKETS_OBJECT_KEY}/records/search`;
+    const records: any[] = [];
+    let page = 1;
+    while (page <= 5) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${GHL_API_KEY}`,
+          Version: '2021-07-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          locationId: GHL_LOCATION_ID,
+          page,
+          pageLimit: 100,
+          searchAfter: [],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`GHL Search endpoint status ${response.status} ${response.statusText}`);
+      }
+
+      const json = (await response.json()) as any;
+      const pageRecs = json.customObjectRecords || json.records || [];
+      records.push(...pageRecs);
+      if (pageRecs.length < 100 || records.length >= (json.total || 0)) break;
+      page++;
+    }
+
+    if (!Array.isArray(records) || records.length === 0) {
+      throw new Error('Geen records ontvangen uit GHL Custom Objects');
+    }
+
+    const parsedItems: LiveCatalogItem[] = records.map((r: any) => {
+      const p = r.properties || r;
+      const capacity = parseInt(p.capacity, 10) || 0;
+      const sold = parseInt(p.sold, 10) || 0;
+      const isSoldOut = parseGhlBoolean(p.is_sold_out) || (capacity > 0 && sold >= capacity);
+
+      const rawCity = p.festival_city || p.festival_slug || p.city || 'gent';
+      const city = resolveCity(rawCity);
+      const category = resolveCategory(p.category);
+
+      const cleanTitle = (p.title || 'Ticket')
+        .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
+        .trim();
+
+      const price =
+        typeof p.price === 'number'
+          ? p.price
+          : parseFloat(p.price) || parseFloat(p.ticket_price) || 0;
+
+      let tastingLineup: string[] | undefined = undefined;
+      if (p.tasting_lineup) {
+        tastingLineup = Array.isArray(p.tasting_lineup)
+          ? p.tasting_lineup
+          : String(p.tasting_lineup)
+              .split(/[\n,]+/)
+              .map((s: string) => s.trim())
+              .filter(Boolean);
+      }
+
+      return {
+        id: r.id || `ghl-tix-${Math.random().toString(36).substring(2, 9)}`,
+        city,
+        category,
+        rawCategory: p.category,
+        title: cleanTitle,
+        dateStr: p.date_label || 'Datum volgt',
+        timeStr: p.time_label || 'Tijd volgt',
+        originalPriceEur: price,
+        location:
+          p.location ||
+          (city === 'gent'
+            ? 'De Oude Vismijn, Gent'
+            : city === 'denhaag'
+            ? 'Grote Kerk Den Haag'
+            : 'De Hallen, Amsterdam'),
+        description: p.ticket_description || p.description || '',
+        extra: p.ticket_description || p.description || '',
+        capacity,
+        sold,
+        isSoldOut,
+        statusText: isSoldOut
+          ? 'Uitverkocht'
+          : p.status_badge === 'hidden'
+          ? 'Concept (Verborgen)'
+          : p.status_badge || undefined,
+        bookingType: p.booking_type || 'vrij_te_boeken',
+        day: p.day || 'all',
+        daypart: p.daypart || 'all',
+        ambassadorName: p.ambassador_name || undefined,
+        ambassadorTitle: p.ambassador_title || undefined,
+        tastingLineup,
+      };
+    });
+
+    const stats = calculateCityStats(parsedItems);
+    const now = Date.now();
+
+    inMemoryCache = {
+      timestamp: now,
+      items: parsedItems,
+      stats,
+    };
+
+    console.info(
+      `[GHL Catalog] Succesvol ${parsedItems.length} live tickets ingeladen uit GHL (Gent: ${stats.gent.totalCapacity}, DH: ${stats.denhaag.totalCapacity}, Ams: ${stats.amsterdam.totalCapacity})`
+    );
+
+    return inMemoryCache;
+  }
+
   /**
-   * Leegt de catalogus cache (bijvoorbeeld na webhook of ticketverkoop)
+   * Geeft een gecachet catalogus-item terug (indien aanwezig) om extra CRM GET-calls te besparen
+   */
+  static getCachedTicketItem(ticketRecordId: string): LiveCatalogItem | undefined {
+    if (!inMemoryCache || !ticketRecordId) return undefined;
+    return inMemoryCache.items.find((it) => it.id === ticketRecordId);
+  }
+
+  /**
+   * Werkt de verkoopteller van een specifiek ticket direct in-memory bij zonder de hele cache te wissen!
+   * Hierdoor blijft /api/catalog bij 500 gelijktijdige kopers altijd < 10ms snel.
+   */
+  static incrementCachedSold(
+    ticketRecordId: string,
+    addedQty: number
+  ): { newSold: number; capacity: number; isSoldOut: boolean } | null {
+    if (!inMemoryCache || !ticketRecordId) return null;
+    const item = inMemoryCache.items.find((it) => it.id === ticketRecordId);
+    if (!item) return null;
+
+    const currentSold = item.sold || 0;
+    const capacity = item.capacity || 0;
+    const newSold = currentSold + addedQty;
+    const isSoldOut = capacity > 0 && newSold >= capacity;
+
+    item.sold = newSold;
+    item.isSoldOut = isSoldOut;
+    if (isSoldOut) {
+      item.statusText = 'Uitverkocht';
+    }
+
+    inMemoryCache.stats = calculateCityStats(inMemoryCache.items);
+    return { newSold, capacity, isSoldOut };
+  }
+
+  /**
+   * Leegt de catalogus cache (alleen bij handmatige admin refresh)
    */
   static clearCache() {
     inMemoryCache = null;

@@ -173,33 +173,12 @@ export const OrdersPage: React.FC = () => {
       {/* Page Title & Stats */}
       <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-6 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-widest px-2 py-0.5 rounded border ${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`}>
-              {activeFestival ? `${activeFestival.edition} • Klantenbeheer` : 'Klanten & Bestellingen'}
-            </span>
-            <span
-              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                mollieEnv === 'live'
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                  : 'bg-amber-100 text-amber-800 border-amber-300'
-              }`}
-            >
-              {mollieEnv === 'live' ? 'Mollie Live Modus' : 'Mollie Testmodus'}
-            </span>
-            <span className="text-xs text-[#4c5752] font-semibold">
-              • Realtime Mollie Transacties
-            </span>
-          </div>
-          <h1 className="text-xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
-            {activeFestival ? `Bestellingen ${activeFestival.name}` : 'Bestellingen Beheer'}
+          <h1 className="text-xl sm:text-2xl font-extrabold text-[#1D1C1A] tracking-tight">
+            {activeFestival ? `Bestellingen ${activeFestival.name}` : 'Bestellingen'}
           </h1>
-          <p className="text-xs sm:text-sm text-[#4c5752] mt-0.5 font-medium">
-            Zoek op klantnaam, e-mail of #WF-ordernummer om kaartvragen direct op te lossen.
-          </p>
         </div>
 
         <div className="flex items-center gap-2 text-xs font-bold text-[#4c5752] w-full md:w-auto justify-between md:justify-end flex-wrap">
-          {/* Mollie Test / Live Mode Schakelaar */}
           <MollieEnvToggle />
 
           <button

@@ -38,9 +38,9 @@ export async function buildServer(): Promise<FastifyInstance> {
     parseOptions: {},
   });
 
-  // 3. Rate-limiting plugin (Brute-force protection)
+  // 3. Rate-limiting plugin (Peak-ready protection; login route has its own strict 5/min limit)
   await server.register(rateLimit, {
-    max: 100,
+    max: 1500,
     timeWindow: '1 minute',
   });
 

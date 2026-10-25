@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   Activity,
   ShieldAlert,
@@ -8,7 +8,8 @@ import {
   VolumeX,
   AlertTriangle,
   RefreshCw,
-  Info
+  Info,
+  QrCode,
 } from 'lucide-react';
 import { INITIAL_FESTIVALS } from '../data/mockData';
 import { useEnvironment } from '../context/EnvironmentContext';
@@ -24,9 +25,36 @@ interface ScannedTicket {
   checkedInAt?: string | null;
 }
 
+const DOOR_THEMES: Record<
+  string,
+  {
+    primaryBg: string;
+    primaryHover: string;
+    textAccent: string;
+  }
+> = {
+  gent: {
+    primaryBg: 'bg-[#1E3A8A]',
+    primaryHover: 'hover:bg-[#172554]',
+    textAccent: 'text-[#1E3A8A]',
+  },
+  denhaag: {
+    primaryBg: 'bg-[#006448]',
+    primaryHover: 'hover:bg-[#00503a]',
+    textAccent: 'text-[#006448]',
+  },
+  amsterdam: {
+    primaryBg: 'bg-[#8C0223]',
+    primaryHover: 'hover:bg-[#6c011b]',
+    textAccent: 'text-[#8C0223]',
+  },
+};
+
 export const DoorMonitorPage: React.FC = () => {
   const { cityId = 'denhaag' } = useParams<{ cityId?: string }>();
-  const activeFestival = INITIAL_FESTIVALS.find((f: any) => f.id === cityId) || INITIAL_FESTIVALS[0];
+  const activeFestival =
+    INITIAL_FESTIVALS.find((f: any) => f.id === cityId) || INITIAL_FESTIVALS[0];
+  const theme = DOOR_THEMES[activeFestival.id] || DOOR_THEMES.denhaag;
 
   const isPrelaunch = activeFestival.id === 'amsterdam';
 
@@ -37,7 +65,8 @@ export const DoorMonitorPage: React.FC = () => {
   const [alertTesting, setAlertTesting] = useState(false);
 
   // Maximum venue capacity per city
-  const maxCapacity = activeFestival.id === 'amsterdam' ? 950 : activeFestival.id === 'gent' ? 800 : 1250;
+  const maxCapacity =
+    activeFestival.id === 'amsterdam' ? 950 : activeFestival.id === 'gent' ? 800 : 1250;
 
   const fetchDoorData = async (targetEnv?: 'test' | 'live') => {
     try {
@@ -117,35 +146,34 @@ export const DoorMonitorPage: React.FC = () => {
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-[10px] uppercase font-extrabold tracking-widest text-red-200">
-                Luidspreker & Hardware Test
-              </div>
-              <div className="font-extrabold text-sm">
-                Alarmsignaal actief afgespeeld via audio-interface
-              </div>
+              <div className="text-xs font-bold text-red-200">Luidsprekertest</div>
+              <div className="font-extrabold text-sm">Alarmsignaal afgespeeld</div>
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setAlertTesting(false)}
-            className="bg-white text-red-900 px-3 py-1 rounded font-extrabold text-xs uppercase"
+            className="bg-white text-red-900 px-3 py-1 rounded font-extrabold text-xs cursor-pointer"
           >
             Sluiten
           </button>
         </div>
       )}
 
-      {/* Pre-launch Notification for Den Haag & Amsterdam */}
+      {/* Pre-launch Notification */}
       {isPrelaunch && (
         <div className="bg-[#FCFAF7] border-2 border-[#c1d4ce] rounded-lg p-4 shadow-[2px_2px_0px_rgba(29,28,26,0.06)] flex items-start gap-3">
-          <div className="p-2 rounded bg-[#FAF7F2] text-[#006448] shrink-0 border border-[#8ba198]/40 mt-0.5">
+          <div
+            className={`p-2 rounded bg-[#FAF7F2] ${theme.textAccent} shrink-0 border border-[#8ba198]/40 mt-0.5`}
+          >
             <Info className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#006448] block mb-0.5">
-              Festival In Voorbereiding
+            <span className={`text-xs font-extrabold ${theme.textAccent} block mb-0.5`}>
+              Festival in voorbereiding
             </span>
             <p className="text-xs text-[#4c5752] leading-relaxed">
-              De deuren voor <strong>{activeFestival.name}</strong> zijn momenteel gesloten. De live deurtelling en scannerpoorten worden automatisch actief zodra de kaartverkoop start en scanners inchecken.
+              De deuren voor <strong>{activeFestival.name}</strong> zijn momenteel gesloten.
             </p>
           </div>
         </div>
@@ -154,57 +182,51 @@ export const DoorMonitorPage: React.FC = () => {
       {/* Header */}
       <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-6 shadow-[5px_5px_0px_rgba(29,28,26,0.9)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className="text-xs font-extrabold uppercase tracking-widest text-[#006448] bg-[#d8e7e2] px-2 py-0.5 rounded border border-[#8ba198]">
-              {activeFestival.location} • Deurcontrole
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
-              <span className="text-[11px] text-[#006448] font-extrabold">
-                {isPrelaunch ? 'STANDBY' : 'LIVE VERBONDEN'}
-              </span>
-            </div>
-            <span
-              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                mollieEnv === 'live'
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                  : 'bg-amber-100 text-amber-800 border-amber-300'
-              }`}
-            >
-              {mollieEnv === 'live' ? 'Mollie Live Modus' : 'Mollie Testmodus'}
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
-            Live Deurmonitor: {activeFestival.name}
+          <h1 className="text-xl sm:text-2xl font-extrabold text-[#1D1C1A] tracking-tight">
+            Deur & Scanner ({activeFestival.city})
           </h1>
-          <p className="text-xs sm:text-sm text-[#4c5752] mt-0.5 font-medium">
-            Volg live de binnenkomst van bezoekers aan de ingangsdeuren en inspecteer realtime check-ins.
+          <p className="text-xs text-[#4c5752] mt-0.5 font-medium">
+            {activeFestival.name} · {activeFestival.location}
           </p>
         </div>
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          {/* Mollie Test / Live Mode Schakelaar */}
+          <Link
+            to={`/admin/festival/${activeFestival.id}/scan`}
+            className={`px-3.5 py-2 rounded ${theme.primaryBg} ${theme.primaryHover} text-white border-2 border-[#1D1C1A] text-xs font-extrabold shadow-[2px_2px_0px_rgba(29,28,26,0.9)] flex items-center gap-1.5 transition-all`}
+          >
+            <QrCode className="w-4 h-4" />
+            <span>Open scanner {activeFestival.city}</span>
+          </Link>
+
           <MollieEnvToggle onEnvChange={(newEnv) => fetchDoorData(newEnv)} />
 
           <button
+            type="button"
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className="flex-1 sm:flex-initial p-2 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] flex items-center justify-center gap-1.5"
-            title={soundEnabled ? 'Geluid Uitschakelen' : 'Geluid Inschakelen'}
+            className="p-2 bg-[#FAF7F2] border-2 border-[#1D1C1A] rounded text-xs font-bold text-[#1D1C1A] flex items-center justify-center gap-1.5 cursor-pointer"
+            title={soundEnabled ? 'Geluid uitschakelen' : 'Geluid inschakelen'}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-[#006448]" /> : <VolumeX className="w-4 h-4 text-gray-500" />}
-            <span>{soundEnabled ? 'Geluid Aan' : 'Geluid Uit'}</span>
+            {soundEnabled ? (
+              <Volume2 className={`w-4 h-4 ${theme.textAccent}`} />
+            ) : (
+              <VolumeX className="w-4 h-4 text-gray-500" />
+            )}
+            <span>{soundEnabled ? 'Geluid aan' : 'Geluid uit'}</span>
           </button>
 
           <button
+            type="button"
             onClick={handleTestAlertSound}
-            className="flex-1 sm:flex-initial bg-[#FAF7F2] hover:bg-[#EAE5DC] text-[#1D1C1A] border-2 border-[#1D1C1A] px-3.5 py-2 rounded text-xs font-extrabold tracking-wider shadow-[2px_2px_0px_rgba(29,28,26,0.8)] flex items-center justify-center gap-1.5 text-center"
+            className="bg-[#FAF7F2] hover:bg-[#EAE5DC] text-[#1D1C1A] border-2 border-[#1D1C1A] px-3 py-2 rounded text-xs font-bold shadow-[2px_2px_0px_rgba(29,28,26,0.8)] flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <AlertTriangle className="w-4 h-4 text-amber-700" />
-            <span>Test Audiosignaal</span>
+            <span>Test geluid</span>
           </button>
 
           <button
+            type="button"
             onClick={() => fetchDoorData(mollieEnv)}
             className="p-2 bg-[#FAF7F2] hover:bg-[#EAE5DC] text-[#1D1C1A] border-2 border-[#1D1C1A] rounded text-xs font-bold shadow-[2px_2px_0px_rgba(29,28,26,0.8)] cursor-pointer"
             title="Verversen"
@@ -215,71 +237,70 @@ export const DoorMonitorPage: React.FC = () => {
       </div>
 
       {/* Realtime Zaalbezetting Card */}
-      <div className="bg-[#006448] text-[#FAF7F2] border-3 border-[#1D1C1A] rounded-lg p-5 sm:p-8 shadow-[6px_6px_0px_rgba(29,28,26,0.9)]">
+      <div
+        className={`${theme.primaryBg} text-[#FAF7F2] border-2 border-[#1D1C1A] rounded-lg p-5 sm:p-7 shadow-[5px_5px_0px_rgba(29,28,26,0.9)]`}
+      >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6">
           <div>
-            <span className="text-xs font-extrabold uppercase tracking-widest text-[#e4d5c4] block mb-1">
-              Huidige Zaalbezetting ({activeFestival.name}):
+            <span className="text-xs font-bold text-white/80 block mb-1">
+              Zaalbezetting {activeFestival.city}
             </span>
-            <div className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight">
-              {insideCount.toLocaleString()} <span className="text-xl sm:text-3xl text-[#d8e7e2]">/ {maxCapacity.toLocaleString()}</span>
+            <div className="text-3xl sm:text-5xl font-black tracking-tight tabular-nums">
+              {insideCount.toLocaleString('nl-NL')}{' '}
+              <span className="text-xl sm:text-2xl text-white/75 font-bold">
+                / {maxCapacity.toLocaleString('nl-NL')}
+              </span>
             </div>
-            <p className="text-xs text-[#d8e7e2] mt-1 font-semibold">
+            <p className="text-xs text-white/85 mt-1 font-medium">
               {insideCount === 0
-                ? `Deuren zijn gereed voor maximaal ${maxCapacity.toLocaleString()} gelijktijdige bezoekers.`
-                : `Nog ${maxCapacity - insideCount} plaatsen beschikbaar voor deze sessie.`}
+                ? `Maximaal ${maxCapacity.toLocaleString('nl-NL')} bezoekers`
+                : `Nog ${maxCapacity - insideCount} plaatsen beschikbaar`}
             </p>
           </div>
 
           <div className="text-left sm:text-right border-t sm:border-t-0 pt-3 sm:pt-0 border-white/20">
-            <div className="text-3xl sm:text-5xl font-extrabold text-[#caac8e]">
+            <div className="text-3xl sm:text-5xl font-black text-[#e4d5c4] tabular-nums">
               {insidePercentage}%
             </div>
-            <span className="text-xs font-bold text-[#d8e7e2] uppercase tracking-wider">
-              Bezoekers Binnen
-            </span>
+            <span className="text-xs font-bold text-white/85">Binnen</span>
           </div>
         </div>
 
-        {/* Big Progress Bar */}
-        <div className="w-full bg-[#1D1C1A]/40 h-4 rounded-full mt-5 sm:mt-6 overflow-hidden border border-[#d8e7e2]/30">
+        {/* Progress Bar */}
+        <div className="w-full bg-[#1D1C1A]/40 h-3.5 rounded-full mt-5 overflow-hidden border border-white/25">
           <div
-            className="bg-[#caac8e] h-full rounded-full transition-all duration-500"
+            className="bg-[#e4d5c4] h-full rounded-full transition-all duration-500"
             style={{ width: `${Math.max(0, Math.min(100, Number(insidePercentage)))}%` }}
           ></div>
         </div>
       </div>
 
-      {/* Instroom per Kwartier & Live Scan Feed */}
+      {/* Instroom & Live Scan Feed */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Instroom per Kwartier */}
+        {/* Instroom */}
         <div className="lg:col-span-1 bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-5 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] space-y-4">
-          <h3 className="text-xs font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-[#006448]" /> Instroomverloop
+          <h3 className="text-sm font-extrabold text-[#1D1C1A] flex items-center gap-1.5">
+            <Clock className={`w-4 h-4 ${theme.textAccent}`} /> Instroom
           </h3>
 
           {checkedInTickets.length === 0 ? (
             <div className="p-6 text-center text-xs text-[#4c5752] bg-[#FAF7F2] rounded border border-[#c1d4ce] space-y-1.5">
               <Clock className="w-6 h-6 mx-auto opacity-40 text-[#4c5752]" />
-              <div className="font-extrabold text-[#1D1C1A]">Geen inloop geregistreerd</div>
-              <p className="text-[11px] text-[#7A7268]">
-                Zodra de deuren openen en bezoekers passeren, wordt de kwartierverdeling hier opgebouwd.
-              </p>
+              <div className="font-extrabold text-[#1D1C1A]">Nog geen inloop</div>
             </div>
           ) : (
             <div className="space-y-2 text-xs">
-              <div className="p-2.5 bg-[#FAF7F2] rounded border border-[#c1d4ce] space-y-1">
+              <div className="p-3 bg-[#FAF7F2] rounded border border-[#c1d4ce] space-y-1.5">
                 <div className="flex items-center justify-between font-extrabold">
-                  <span className="text-[#1D1C1A]">Actieve Sessie</span>
-                  <span className="text-[#006448]">{checkedInTickets.length} bezoekers</span>
+                  <span className="text-[#1D1C1A]">Ingecheckt</span>
+                  <span className={theme.textAccent}>{checkedInTickets.length} bezoekers</span>
                 </div>
                 <div className="w-full bg-[#c1d4ce] h-1.5 rounded-full overflow-hidden">
                   <div
-                    className="bg-[#006448] h-full rounded-full"
+                    className={`${theme.primaryBg} h-full rounded-full`}
                     style={{ width: `${insidePercentage}%` }}
                   ></div>
                 </div>
-                <div className="text-[10px] text-[#4c5752] font-semibold">Geregistreerde check-ins</div>
               </div>
             </div>
           )}
@@ -289,19 +310,21 @@ export const DoorMonitorPage: React.FC = () => {
         <div className="lg:col-span-2 bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-4 sm:p-5 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-[#006448]" /> Live Scanner Feed
+              <h3 className="text-sm font-extrabold text-[#1D1C1A] flex items-center gap-1.5">
+                <Activity className={`w-4 h-4 ${theme.textAccent}`} /> Recente scans
               </h3>
-              <span className="text-[11px] font-bold text-[#006448]">Realtime Audit Trail</span>
+              <Link
+                to={`/admin/festival/${activeFestival.id}/scan/history`}
+                className={`text-xs font-extrabold ${theme.textAccent} hover:underline`}
+              >
+                Volledige geschiedenis →
+              </Link>
             </div>
 
             {checkedInTickets.length === 0 ? (
-              <div className="py-12 text-center text-xs text-[#4c5752] space-y-2">
-                <Activity className="w-8 h-8 mx-auto opacity-30 text-[#006448]" />
-                <div className="font-extrabold text-[#1D1C1A] text-sm">Nog geen scans geregistreerd</div>
-                <p className="text-[11px] text-[#7A7268] max-w-sm mx-auto">
-                  De audit trail toont direct alle goedgekeurde en geweigerde barcodes zodra de scanners aan de poorten actief zijn.
-                </p>
+              <div className="py-10 text-center text-xs text-[#4c5752] space-y-2">
+                <Activity className={`w-7 h-7 mx-auto opacity-30 ${theme.textAccent}`} />
+                <div className="font-extrabold text-[#1D1C1A] text-sm">Nog geen scans</div>
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -311,28 +334,30 @@ export const DoorMonitorPage: React.FC = () => {
                     className="p-3 rounded border-2 bg-[#FAF7F2] border-[#1D1C1A] text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.1)] flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded flex items-center justify-center font-bold text-xs shrink-0 bg-[#006448] text-white">
+                      <div
+                        className={`w-8 h-8 rounded flex items-center justify-center font-bold text-xs shrink-0 ${theme.primaryBg} text-white`}
+                      >
                         ✓
                       </div>
                       <div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="font-extrabold text-xs">{t.attendeeName}</span>
-                          <span className="font-mono text-[10px] sm:text-[11px] font-bold bg-white px-1.5 py-0.2 rounded border border-gray-300">
+                          <span className="font-mono text-[11px] font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300">
                             {t.ticketCode}
                           </span>
                         </div>
-                        <div className="text-[11px] text-[#4c5752] mt-0.5">
-                          Hoofdingang • {t.sessionTitle}
+                        <div className="text-xs text-[#4c5752] mt-0.5">
+                          Hoofdingang · {t.sessionTitle}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between sm:justify-end sm:text-right shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-[#c1d4ce]/50">
-                      <span className="text-xs font-mono font-bold">
+                      <span className="text-xs font-bold">
                         {t.checkedInAt ? new Date(t.checkedInAt).toLocaleTimeString() : 'Zojuist'}
                       </span>
-                      <span className="ml-2 text-[10px] font-extrabold text-[#006448] uppercase">
-                        INGECHECKT
+                      <span className={`ml-2 text-xs font-extrabold ${theme.textAccent}`}>
+                        Ingecheckt
                       </span>
                     </div>
                   </div>
@@ -340,12 +365,10 @@ export const DoorMonitorPage: React.FC = () => {
               </div>
             )}
           </div>
-
-          <div className="mt-4 pt-3 border-t border-[#c1d4ce] text-center text-xs text-[#4c5752]">
-            Data wordt direct beveiligd en gesynchroniseerd over alle aangesloten poortscanners.
-          </div>
         </div>
       </div>
     </div>
   );
 };
+
+export default DoorMonitorPage;

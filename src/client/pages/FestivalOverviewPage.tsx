@@ -181,61 +181,28 @@ export const FestivalOverviewPage: React.FC = () => {
 
   return (
     <div className="space-y-6 sm:space-y-8 font-sans">
-      {/* 1. Header Hero Banner with Festival Gradient */}
+      {/* 1. Header Hero Banner */}
       <div className={`${theme.gradientClass} border-2 border-[#1D1C1A] rounded-lg p-5 sm:p-6 shadow-[4px_4px_0px_rgba(29,28,26,0.9)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-white`}>
         <div>
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest bg-[#FCFAF7] text-[#1D1C1A] px-2.5 py-0.5 rounded border-2 border-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)]">
-              {activeFestival.edition} • Directie Dashboard
-            </span>
-            <span className="text-xs text-[#FAF7F2]/90 font-semibold">
-              • {activeFestival.location}
-            </span>
-            <span
-              className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border-2 border-[#1D1C1A] bg-[#FCFAF7] text-[#1D1C1A] shadow-[1px_1px_0px_rgba(29,28,26,0.9)] flex items-center gap-1.5"
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${isPrelaunch ? 'bg-amber-500' : mollieEnv === 'live' ? 'bg-emerald-600' : 'bg-amber-500'}`}></span>
-              {isPrelaunch ? 'In Voorbereiding' : mollieEnv === 'live' ? 'Mollie Live Actief' : 'Mollie Testmodus'}
-            </span>
-          </div>
           <h1 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-sm">
-            Overzicht: {activeFestival.name}
+            {activeFestival.name}
           </h1>
           <p className="text-xs sm:text-sm text-[#FAF7F2]/90 mt-1 font-medium">
-            {isPrelaunch
-              ? 'Deze festivaleditie staat momenteel in voorbereiding. De kaartverkoop is nog niet gestart.'
-              : mollieEnv === 'live'
-              ? 'Realtime inzicht in live omzet, zaalcapaciteit en echte bestellingen via Mollie.'
-              : 'Testmodus actief: inzicht in proefbetalingen, testorders en voorlopige capaciteit.'}
+            {activeFestival.location} · {activeFestival.dates}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap">
-          {/* Mollie Test / Live Mode Schakelaar */}
+        <div className="flex items-center gap-2 shrink-0">
           <MollieEnvToggle />
 
           <button
             onClick={() => fetchOrders(mollieEnv)}
             disabled={isLoading}
-            className="p-2.5 rounded border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer disabled:opacity-50 transition-all active:translate-y-0.5"
+            className="p-2 rounded border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer disabled:opacity-50 transition-all active:translate-y-0.5"
             title="Ververs gegevens"
           >
             <RefreshCw className={`w-4 h-4 text-[#1D1C1A] ${isLoading ? 'animate-spin' : ''}`} />
           </button>
-          <Link
-            to={`/admin/festival/${cityId}/orders`}
-            className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded text-xs font-extrabold flex items-center justify-center gap-2 border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all active:translate-y-0.5"
-          >
-            <Search className="w-4 h-4 text-[#1D1C1A]" />
-            <span>Bestellingen</span>
-          </Link>
-          <Link
-            to={`/scan?festival=${cityId}`}
-            className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded text-xs font-extrabold flex items-center justify-center gap-2 border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-white text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all active:translate-y-0.5"
-          >
-            <QrCode className="w-4 h-4 text-[#1D1C1A]" />
-            <span>Deurscanner</span>
-          </Link>
         </div>
       </div>
 
@@ -247,8 +214,8 @@ export const FestivalOverviewPage: React.FC = () => {
               ℹ
             </div>
             <div>
-              <div className="text-xs font-extrabold text-[#1D1C1A] uppercase tracking-wider">
-                Verkoop Status: In Voorbereiding
+              <div className="text-xs font-extrabold text-[#1D1C1A]">
+                Verkoopstatus: In voorbereiding
               </div>
               <div className="text-xs text-[#4c5752] font-medium mt-0.5">
                 Voor {activeFestival.name} zijn nog geen tickets te koop aangeboden. Zodra het gezamenlijke Mollie account wordt geactiveerd, start de verkoop.
@@ -257,9 +224,9 @@ export const FestivalOverviewPage: React.FC = () => {
           </div>
           <Link
             to={`/admin/festival/${cityId}/inventory`}
-            className="btn-letterpress-gold px-3 py-1.5 rounded text-xs font-extrabold shrink-0 hidden sm:inline-block"
+            className="btn-letterpress-gold px-3 py-1.5 rounded text-xs font-bold shrink-0 hidden sm:inline-block"
           >
-            Zaalcapaciteit Inrichten
+            Zaalcapaciteit inrichten
           </Link>
         </div>
       )}
@@ -267,21 +234,18 @@ export const FestivalOverviewPage: React.FC = () => {
       {/* 2. TOP 4 FINANCIËLE & VERKOOP KPI'S */}
       <div>
         <div className="flex items-center justify-between mb-2.5 sm:mb-3">
-          <h2 className="text-xs font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
+          <h2 className="text-sm font-extrabold text-[#1D1C1A] flex items-center gap-2">
             <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
-            Totaalscore {activeFestival.name}
+            Kerncijfers
           </h2>
-          <span className="text-[10px] sm:text-xs text-[#4c5752] font-bold">
-            {isPrelaunch ? 'Pre-launch' : mollieEnv === 'live' ? 'Mollie Live Gekoppeld' : 'Mollie Testmodus'}
-          </span>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           {/* KPI 1: Omzet */}
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)]">
             <div className="flex items-center justify-between text-[#4c5752] mb-1">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
-                Bruto Omzet
+              <span className="text-xs font-bold truncate">
+                Bruto omzet
               </span>
               <div className={`w-6 h-6 rounded ${theme.badgeBg} ${theme.accentText} flex items-center justify-center font-bold text-xs border ${theme.badgeBorder}`}>
                 €
@@ -290,16 +254,16 @@ export const FestivalOverviewPage: React.FC = () => {
             <div className={`text-lg sm:text-2xl lg:text-3xl font-extrabold ${theme.accentText} tracking-tight`}>
               € {(totalRevenueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="mt-1 text-[10px] sm:text-[11px] font-medium text-[#4c5752] truncate">
-              {isPrelaunch ? 'Kaartverkoop opent binnenkort' : `${paidOrders.length} transacties via Mollie`}
+            <div className="mt-1 text-xs font-medium text-[#4c5752] truncate">
+              {isPrelaunch ? 'Kaartverkoop opent binnenkort' : `${paidOrders.length} transacties`}
             </div>
           </div>
 
           {/* KPI 2: Tickets Verkocht */}
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)]">
             <div className="flex items-center justify-between text-[#4c5752] mb-1">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
-                Tickets Verkocht
+              <span className="text-xs font-bold truncate">
+                Tickets verkocht
               </span>
               <div className={`w-6 h-6 rounded ${theme.badgeBg} ${theme.accentText} flex items-center justify-center font-bold text-xs border ${theme.badgeBorder}`}>
                 <Ticket className={`w-3.5 h-3.5 ${theme.accentText}`} />
@@ -317,16 +281,16 @@ export const FestivalOverviewPage: React.FC = () => {
                 style={{ width: `${Math.min(100, Math.max(totalTicketsSold > 0 ? 1 : 0, parseFloat(soldPct)))}%` }}
               ></div>
             </div>
-            <div className="mt-1 text-[10px] font-bold text-[#4c5752] text-right">
-              {soldPct}% van zaal bezet
+            <div className="mt-1 text-xs font-medium text-[#4c5752] text-right">
+              {soldPct}% bezet
             </div>
           </div>
 
           {/* KPI 3: Aantal Bestellingen */}
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)]">
             <div className="flex items-center justify-between text-[#4c5752] mb-1">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
-                Aantal Orders
+              <span className="text-xs font-bold truncate">
+                Bestellingen
               </span>
               <div className={`w-6 h-6 rounded ${theme.badgeBg} ${theme.accentText} flex items-center justify-center font-bold text-xs border ${theme.badgeBorder}`}>
                 <ShoppingBag className={`w-3.5 h-3.5 ${theme.accentText}`} />
@@ -336,16 +300,16 @@ export const FestivalOverviewPage: React.FC = () => {
               {totalOrdersCount}{' '}
               <span className="text-xs sm:text-sm font-semibold text-[#4c5752]">betaald</span>
             </div>
-            <div className="mt-1 text-[10px] sm:text-[11px] font-medium text-[#4c5752] truncate">
+            <div className="mt-1 text-xs font-medium text-[#4c5752] truncate">
               {paidOrders[0]?.orderNumber ? `Laatste: ${paidOrders[0].orderNumber}` : 'Geen actieve bestellingen'}
             </div>
           </div>
 
-          {/* KPI 4: Gemiddelde Orderwaarde (AOV) - Standaard CreditCard icon */}
+          {/* KPI 4: Gemiddelde Orderwaarde (AOV) */}
           <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded p-3.5 sm:p-5 shadow-[3px_3px_0px_rgba(29,28,26,0.9)]">
             <div className="flex items-center justify-between text-[#4c5752] mb-1">
-              <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider truncate">
-                Gem. Order (AOV)
+              <span className="text-xs font-bold truncate">
+                Gem. bestelling
               </span>
               <div className="w-6 h-6 rounded bg-[#caac8e] text-[#1D1C1A] flex items-center justify-center font-bold text-xs border border-[#1D1C1A]">
                 <CreditCard className="w-3.5 h-3.5 text-[#1D1C1A]" />
@@ -354,8 +318,8 @@ export const FestivalOverviewPage: React.FC = () => {
             <div className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
               € {(averageOrderValueCents / 100).toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="mt-1 text-[10px] sm:text-[11px] font-medium text-[#4c5752]">
-              Per voltooide transactie
+            <div className="mt-1 text-xs font-medium text-[#4c5752]">
+              Per bestelling
             </div>
           </div>
         </div>
@@ -372,21 +336,16 @@ export const FestivalOverviewPage: React.FC = () => {
       {/* 3. DE SESSIE-THERMOMETER: Voortgang per Dagdeel */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
-              Sessie-Thermometer (Voortgang per Dagdeel)
-            </h2>
-            <p className="text-[11px] sm:text-xs text-[#4c5752] font-medium mt-0.5">
-              Direct inzicht in zaalcapaciteit en verkochte kaarten per sessie.
-            </p>
-          </div>
+          <h2 className="text-sm font-extrabold text-[#1D1C1A] flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
+            Bezetting per sessie
+          </h2>
 
           <Link
             to={`/admin/festival/${cityId}/inventory`}
-            className={`text-xs font-extrabold ${theme.accentText} hover:underline flex items-center gap-1 shrink-0`}
+            className={`text-xs font-bold ${theme.accentText} hover:underline flex items-center gap-1 shrink-0`}
           >
-            <span>Zaalcapaciteit Beheren</span>
+            <span>Zaalcapaciteit beheren</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -404,16 +363,16 @@ export const FestivalOverviewPage: React.FC = () => {
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#4c5752] bg-[#FAF7F2] border border-[#c1d4ce] px-2 py-0.5 rounded">
+                    <span className="text-xs font-bold text-[#4c5752] bg-[#FAF7F2] border border-[#c1d4ce] px-2 py-0.5 rounded">
                       {session.day}
                     </span>
                     {isFull ? (
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
                         Uitverkocht
                       </span>
                     ) : (
-                      <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${theme.badgeBg} ${theme.accentText} border ${theme.badgeBorder}`}>
-                        {remaining} Beschikbaar
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${theme.badgeBg} ${theme.accentText} border ${theme.badgeBorder}`}>
+                        {remaining} vrij
                       </span>
                     )}
                   </div>
@@ -448,196 +407,109 @@ export const FestivalOverviewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. RECENTE BESTELLINGEN & DIRECTIE ACTIES */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Kolom 1 & 2: Recente Bestellingen */}
-        <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
-              Recente Bestellingen {activeFestival.name}
-            </h2>
-            <Link
-              to={`/admin/festival/${cityId}/orders`}
-              className={`text-xs font-extrabold ${theme.accentText} hover:underline flex items-center gap-1`}
-            >
-              <span>Alle Bestellingen</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-
-          {orders.length === 0 ? (
-            <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-8 text-center shadow-[3px_3px_0px_rgba(29,28,26,0.9)]">
-              <div className={`w-10 h-10 rounded-full ${theme.badgeBg} ${theme.accentText} flex items-center justify-center mx-auto mb-2 border ${theme.badgeBorder}`}>
-                <Receipt className="w-5 h-5" />
-              </div>
-              <div className="font-extrabold text-sm text-[#1D1C1A]">
-                Nog geen bestellingen voor {activeFestival.name}
-              </div>
-              <div className="text-xs text-[#4c5752] mt-1 font-medium max-w-sm mx-auto">
-                {isPrelaunch
-                  ? 'De kaartverkoop voor deze editie is nog in voorbereiding.'
-                  : mollieEnv === 'live'
-                  ? 'Zodra de eerste bezoeker via Mollie Live afrekent, verschijnt deze hier direct.'
-                  : 'Nog geen testbestellingen gevonden. Schakel naar Mollie Live of plaats een proeforder.'}
-              </div>
-            </div>
-          ) : (
-            <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-[3px_3px_0px_rgba(29,28,26,0.9)] overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-[#FAF7F2] border-b-2 border-[#1D1C1A] text-[#4c5752] font-extrabold uppercase tracking-wider">
-                    <th className="py-2.5 px-3">Order #</th>
-                    <th className="py-2.5 px-3">Klant</th>
-                    <th className="py-2.5 px-3 text-center">Items</th>
-                    <th className="py-2.5 px-3">Bedrag</th>
-                    <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3 text-right">Actie</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#c1d4ce]">
-                  {orders.slice(0, 8).map((order) => {
-                    const ticketCount = (() => {
-                      const tCount = order.tickets ? order.tickets.length : 0;
-                      const summaryCount = order.itemsSummary
-                        ? order.itemsSummary.split(',').reduce((sum: number, p: string) => {
-                            const m = p.match(/(\d+)x/i);
-                            return sum + (m ? parseInt(m[1], 10) : 1);
-                          }, 0)
-                        : 0;
-                      const itemsCount = Array.isArray(order.items)
-                        ? order.items.reduce((sum: number, it: any) => sum + (Number(it.quantity || it.qty) || 1), 0)
-                        : 0;
-                      return Math.max(tCount, summaryCount, itemsCount, 1);
-                    })();
-
-                    return (
-                    <tr
-                      key={order.id}
-                      className="hover:bg-[#FAF7F2] transition-colors cursor-pointer"
-                      onClick={() => setSelectedOrder(order)}
-                    >
-                      <td className={`py-2.5 px-3 font-mono font-extrabold ${theme.accentText}`}>
-                        {order.orderNumber}
-                      </td>
-                      <td className="py-2.5 px-3 font-bold text-[#1D1C1A]">
-                        {order.customerName}
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        <span className="font-mono font-extrabold text-xs bg-[#FAF7F2] border border-[#c1d4ce] px-2.5 py-0.5 rounded text-[#1D1C1A]">
-                          {ticketCount}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 font-extrabold text-[#1D1C1A]">
-                        € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        {order.status === 'paid' ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
-                            <CheckCircle2 className="w-3 h-3" /> Betaald
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
-                            In afwachting
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedOrder(order);
-                          }}
-                          className="btn-letterpress-gold px-2 py-0.5 rounded text-[10px] font-extrabold cursor-pointer"
-                        >
-                          Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Kolom 3: Directie Quick-Actions & Live Systeemstatus */}
-        <div className="space-y-4">
-          <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#1D1C1A] flex items-center gap-2">
+      {/* 4. RECENTE BESTELLINGEN */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-extrabold text-[#1D1C1A] flex items-center gap-2">
             <span className={`w-2.5 h-2.5 rounded-full ${theme.dotColor}`}></span>
-            Snelle Acties
+            Recente bestellingen
           </h2>
-
-          <div className="space-y-2">
-            <Link
-              to={`/admin/festival/${cityId}/orders`}
-              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#FAF7F2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
-            >
-              <div className="flex items-center gap-2.5">
-                <Search className={`w-4 h-4 ${theme.accentText}`} />
-                <span>Zoek Klant of Ticketnummer</span>
-              </div>
-              <ArrowRight className="w-4 h-4 text-[#4c5752] group-hover:translate-x-1 transition-transform" />
-            </Link>
-
-            <Link
-              to={`/admin/festival/${cityId}/inventory`}
-              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#FAF7F2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
-            >
-              <div className="flex items-center gap-2.5">
-                <Layers className={`w-4 h-4 ${theme.accentText}`} />
-                <span>Zaalcapaciteit & Masterclasses</span>
-              </div>
-              <ArrowRight className="w-4 h-4 text-[#4c5752] group-hover:translate-x-1 transition-transform" />
-            </Link>
-
-            <Link
-              to={`/admin/festival/${cityId}/door`}
-              className="w-full bg-[#FCFAF7] border-2 border-[#1D1C1A] hover:bg-[#FAF7F2] p-3 rounded-lg font-extrabold text-xs text-[#1D1C1A] flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group"
-            >
-              <div className="flex items-center gap-2.5">
-                <Activity className={`w-4 h-4 ${theme.accentText}`} />
-                <span>Live Deurmonitor & Check-ins</span>
-              </div>
-              <ArrowRight className="w-4 h-4 text-[#4c5752] group-hover:translate-x-1 transition-transform" />
-            </Link>
-
-            <Link
-              to={`/scan?festival=${cityId}`}
-              className={`w-full ${theme.buttonBg} text-white border-2 border-[#1D1C1A] hover:opacity-90 p-3 rounded-lg font-extrabold text-xs flex items-center justify-between shadow-[2px_2px_0px_rgba(29,28,26,0.9)] transition-all group`}
-            >
-              <div className="flex items-center gap-2.5">
-                <QrCode className="w-4 h-4 text-[#caac8e]" />
-                <span>Open Deurscanner PWA</span>
-              </div>
-              <ArrowRight className="w-4 h-4 text-[#caac8e] group-hover:translate-x-1 transition-transform" />
-            </Link>
-          </div>
-
-          {/* Systeemstatus Box */}
-          <div className="bg-[#FAF7F2] border border-[#c1d4ce] rounded-lg p-3.5 space-y-2 text-xs">
-            <div className="font-extrabold text-[#1D1C1A] text-[11px] uppercase tracking-wider">
-              Systeemstatus {activeFestival.edition}:
-            </div>
-            <div className="flex items-center justify-between text-[#4c5752]">
-              <span>Mollie Koppeling:</span>
-              <span className={`font-bold ${isPrelaunch ? 'text-[#4c5752]' : 'text-emerald-800'}`}>
-                {isPrelaunch ? 'In voorbereiding' : 'Actief'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[#4c5752]">
-              <span>Supabase RLS:</span>
-              <span className="font-bold text-emerald-800">Beveiligd</span>
-            </div>
-            <div className="flex items-center justify-between text-[#4c5752]">
-              <span>QR Verificatie:</span>
-              <span className="font-bold font-mono text-[10px] text-[#006448]">
-                HMAC-SHA256
-              </span>
-            </div>
-          </div>
+          <Link
+            to={`/admin/festival/${cityId}/orders`}
+            className={`text-xs font-bold ${theme.accentText} hover:underline flex items-center gap-1`}
+          >
+            <span>Alle bestellingen</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
+
+        {orders.length === 0 ? (
+          <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-8 text-center shadow-[3px_3px_0px_rgba(29,28,26,0.9)]">
+            <div className={`w-10 h-10 rounded-full ${theme.badgeBg} ${theme.accentText} flex items-center justify-center mx-auto mb-2 border ${theme.badgeBorder}`}>
+              <Receipt className="w-5 h-5" />
+            </div>
+            <div className="font-extrabold text-sm text-[#1D1C1A]">
+              Nog geen bestellingen
+            </div>
+          </div>
+        ) : (
+          <div className="bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-[3px_3px_0px_rgba(29,28,26,0.9)] overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-[#FAF7F2] border-b-2 border-[#1D1C1A] text-[#4c5752] font-bold">
+                  <th className="py-2.5 px-3">Order</th>
+                  <th className="py-2.5 px-3">Klant</th>
+                  <th className="py-2.5 px-3 text-center">Tickets</th>
+                  <th className="py-2.5 px-3">Bedrag</th>
+                  <th className="py-2.5 px-3">Status</th>
+                  <th className="py-2.5 px-3 text-right">Actie</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#c1d4ce]">
+                {orders.slice(0, 8).map((order) => {
+                  const ticketCount = (() => {
+                    const tCount = order.tickets ? order.tickets.length : 0;
+                    const summaryCount = order.itemsSummary
+                      ? order.itemsSummary.split(',').reduce((sum: number, p: string) => {
+                          const m = p.match(/(\d+)x/i);
+                          return sum + (m ? parseInt(m[1], 10) : 1);
+                        }, 0)
+                      : 0;
+                    const itemsCount = Array.isArray(order.items)
+                      ? order.items.reduce((sum: number, it: any) => sum + (Number(it.quantity || it.qty) || 1), 0)
+                      : 0;
+                    return Math.max(tCount, summaryCount, itemsCount, 1);
+                  })();
+
+                  return (
+                  <tr
+                    key={order.id}
+                    className="hover:bg-[#FAF7F2] transition-colors cursor-pointer"
+                    onClick={() => setSelectedOrder(order)}
+                  >
+                    <td className={`py-2.5 px-3 font-mono font-extrabold ${theme.accentText}`}>
+                      {order.orderNumber}
+                    </td>
+                    <td className="py-2.5 px-3 font-bold text-[#1D1C1A]">
+                      {order.customerName}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      <span className="font-extrabold text-xs bg-[#FAF7F2] border border-[#c1d4ce] px-2.5 py-0.5 rounded text-[#1D1C1A]">
+                        {ticketCount}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 font-extrabold text-[#1D1C1A]">
+                      € {(order.totalCents / 100).toFixed(2).replace('.', ',')}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {order.status === 'paid' ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                          <CheckCircle2 className="w-3 h-3" /> Betaald
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                          In afwachting
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedOrder(order);
+                        }}
+                        className="btn-letterpress-gold px-2.5 py-0.5 rounded text-xs font-bold cursor-pointer"
+                      >
+                        Details
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Order Detail Drawer */}

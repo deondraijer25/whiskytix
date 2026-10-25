@@ -1,6 +1,7 @@
 /**
- * GoHighLevel (GHL) Realtime Synchronization Service
- * Koppeling met de LeadConnector API v2 voor CRM, Multi-Channel notificaties en Custom Objects
+ * Leadfabriek CRM (GHL / LeadConnector API v2) Realtime Synchronization Service
+ * Uitgerust met Paced Concurrency Queue, Automatic Exponential Backoff Retry (429/5xx),
+ * en Atomic Sold-Aggregator voor piekbelasting (Zondagnacht 00:00).
  */
 
 import { StoredOrder } from '../orders/orders.repository.js';
@@ -15,54 +16,120 @@ export interface GhlSyncResult {
   success: boolean;
   contactId?: string;
   error?: string;
+  attempts?: number;
 }
+
+// --- 1. Paced Concurrency Limiter (voorkomt 429 burst-blokkades bij honderden orders om 00:00 uur) ---
+const MAX_CONCURRENT_SYNCS = 3;
+const MIN_START_INTERVAL_MS = 180;
+let activeSyncWorkers = 0;
+let lastTaskStartedAt = 0;
+const syncWaitQueue: Array<() => void> = [];
+
+async function acquireSyncSlot(): Promise<void> {
+  if (activeSyncWorkers >= MAX_CONCURRENT_SYNCS) {
+    await new Promise<void>((resolve) => syncWaitQueue.push(resolve));
+  }
+  activeSyncWorkers++;
+  const now = Date.now();
+  const elapsed = now - lastTaskStartedAt;
+  if (elapsed < MIN_START_INTERVAL_MS) {
+    const waitMs = MIN_START_INTERVAL_MS - elapsed;
+    lastTaskStartedAt = now + waitMs;
+    await new Promise((r) => setTimeout(r, waitMs));
+  } else {
+    lastTaskStartedAt = now;
+  }
+}
+
+function releaseSyncSlot(): void {
+  activeSyncWorkers = Math.max(0, activeSyncWorkers - 1);
+  const next = syncWaitQueue.shift();
+  if (next) next();
+}
+
+// --- 2. Atomic Per-Ticket Sold Accumulator (voorkomt dat gelijktijdige kopers elkaars voorraad overschrijven) ---
+const inMemorySoldTotals = new Map<string, { sold: number; capacity: number }>();
+const pendingSoldDeltas = new Map<string, number>();
+const activeTicketUpdaters = new Set<string>();
 
 export class GhlSyncService {
   private static getHeaders() {
     return {
-      'Authorization': `Bearer ${GHL_API_KEY}`,
-      'Version': '2021-07-28',
+      Authorization: `Bearer ${GHL_API_KEY}`,
+      Version: '2021-07-28',
       'Content-Type': 'application/json',
     };
   }
 
   /**
-   * Synchroniseert een betaalde bestelling direct naar GoHighLevel:
-   * 1. Contactpersoon aanmaken of bijwerken
-   * 2. Tags toekennen (Klant 2026, Stad, Sessies, Producten)
-   * 3. Custom Fields vullen met downloadlinks en ordernummer
-   * 4. GHL Custom Objects ticket-telling bijwerken
+   * Voert een HTTP request uit naar Leadfabriek CRM met automatische retry bij HTTP 429 of 5xx
    */
+  private static async fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    maxAttempts = 4
+  ): Promise<{ response: Response; attempts: number }> {
+    let lastError: any;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await fetch(url, init);
+        if (response.status !== 429 && response.status < 500) {
+          return { response, attempts: attempt };
+        }
+
+        // Bereken wachttijd bij 429 Too Many Requests of 5xx server drukte
+        if (attempt < maxAttempts) {
+          const retryAfterHeader = response.headers.get('retry-after');
+          const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+          const backoffMs = !isNaN(retryAfterSec) && retryAfterSec > 0
+            ? Math.min(retryAfterSec * 1000, 8000)
+            : 900 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250);
+          console.warn(
+            `[CRM Sync] Status ${response.status} op poging ${attempt}/${maxAttempts}. Automatische retry over ${backoffMs}ms...`
+          );
+          await new Promise((r) => setTimeout(r, backoffMs));
+          continue;
+        }
+        return { response, attempts: attempt };
+      } catch (networkErr: any) {
+        lastError = networkErr;
+        if (attempt < maxAttempts) {
+          const backoffMs = 800 * Math.pow(2, attempt - 1);
+          await new Promise((r) => setTimeout(r, backoffMs));
+          continue;
+        }
+      }
+    }
+    throw lastError || new Error('CRM verbinding mislukt na meerdere pogingen.');
+  }
+
   /**
    * Normaliseert telefoonnummers naar internationaal E.164 formaat (+31... of +32...)
    */
   static normalizePhoneNumber(rawPhone?: string, festivalId = 'denhaag'): string | undefined {
     if (!rawPhone || typeof rawPhone !== 'string') return undefined;
-    let clean = rawPhone.replace(/[\s\-\(\)\.]/g, '').trim();
+    const clean = rawPhone.replace(/[\s\-\(\)\.]/g, '').trim();
     if (!clean) return undefined;
 
-    // Al E.164 formaat (+...)
     if (clean.startsWith('+')) return clean;
-
-    // 00 prefix
     if (clean.startsWith('00')) return `+${clean.slice(2)}`;
 
-    // Nederlands mobiel (06...) of vast (0...)
-    if (clean.startsWith('06') || (clean.startsWith('0') && (festivalId === 'denhaag' || festivalId === 'amsterdam'))) {
+    if (
+      clean.startsWith('06') ||
+      (clean.startsWith('0') && (festivalId === 'denhaag' || festivalId === 'amsterdam'))
+    ) {
       return `+31${clean.slice(1)}`;
     }
 
-    // Belgisch mobiel (04...) of vast (0...)
     if (clean.startsWith('04') || (clean.startsWith('0') && festivalId === 'gent')) {
       return `+32${clean.slice(1)}`;
     }
 
-    // Nummers zonder voorloopnul maar met 9 cijfers (bijv. 612345678)
     if (clean.length === 9 && clean.startsWith('6')) {
       return `+31${clean}`;
     }
 
-    // Fallback op basis van festival stad
     if (festivalId === 'gent') {
       return clean.startsWith('0') ? `+32${clean.slice(1)}` : `+32${clean}`;
     } else {
@@ -71,11 +138,10 @@ export class GhlSyncService {
   }
 
   /**
-   * Synchroniseert een betaalde bestelling direct naar GoHighLevel:
-   * 1. Contactpersoon aanmaken of bijwerken
-   * 2. Maximaal 2 schone tags: 'Klant' en 'Nieuwe Bestelling' (trigger voor workflow)
-   * 3. Custom Fields vullen met ordernummer, downloadlink én portaallink
-   * 4. GHL Custom Objects ticket-telling bijwerken
+   * Synchroniseert een betaalde bestelling gedoseerd en met retry-garantie naar Leadfabriek CRM:
+   * 1. Contactpersoon aanmaken of bijwerken met alle Custom Fields
+   * 2. Trigger-tag 'nieuwe bestelling' zetten zodat de bevestigingsmail-workflow start
+   * 3. Voorraadteller atomair en gebundeld ophogen zonder de catalogus-cache te wissen
    */
   static async syncPaidOrder(
     order: StoredOrder,
@@ -83,17 +149,21 @@ export class GhlSyncService {
     options?: { skipInventoryIncrement?: boolean }
   ): Promise<GhlSyncResult> {
     if (!GHL_API_KEY) {
-      console.info('[GHL Sync] GHL_API_KEY niet ingesteld. Sync overgeslagen (mock mode).');
-      return { success: true, contactId: 'mock-ghl-contact' };
+      return { success: true, contactId: 'mock-ghl-contact', attempts: 1 };
     }
 
+    await acquireSyncSlot();
     try {
-      const cityName = order.festivalId === 'gent' ? 'Gent' : order.festivalId === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
+      const cityName =
+        order.festivalId === 'gent'
+          ? 'Gent'
+          : order.festivalId === 'amsterdam'
+          ? 'Amsterdam'
+          : 'Den Haag';
       const cleanOrderNumber = order.orderNumber.replace('#', '');
       const downloadUrl = `${publicBaseUrl}/api/orders/${encodeURIComponent(cleanOrderNumber)}/pdf?city=${order.festivalId}`;
       const festivalYear = '2027';
 
-      // Bepaal de dynamische portaallink (website domein / preview / live)
       let portalBase = order.portalBaseUrl;
       if (
         !portalBase ||
@@ -112,18 +182,15 @@ export class GhlSyncService {
       portalBase = portalBase.replace(/\/+$/, '');
       const portalUrl = `${portalBase}/inloggen`;
 
-      // Maximaal 2 tags toekennen (geen tag-wildgroei!)
-      const tags: string[] = [
-        'Klant'
-      ];
-
-      // Bepaal voor- en achternaam
-      const firstName = order.firstName || (order.customerName ? order.customerName.trim().split(' ')[0] : 'Bezoeker');
-      const lastName = order.lastName || (order.customerName ? order.customerName.trim().split(' ').slice(1).join(' ') : '');
+      const firstName =
+        order.firstName ||
+        (order.customerName ? order.customerName.trim().split(' ')[0] : 'Bezoeker');
+      const lastName =
+        order.lastName ||
+        (order.customerName ? order.customerName.trim().split(' ').slice(1).join(' ') : '');
       const fullName = (firstName + ' ' + lastName).trim() || order.customerName || 'Bezoeker';
       const normalizedPhone = this.normalizePhoneNumber(order.customerPhone, order.festivalId);
 
-      // Upsert Contact in Leadfabriek CRM met exacte Custom Fields
       const contactPayload = {
         locationId: GHL_LOCATION_ID,
         email: order.customerEmail,
@@ -131,22 +198,63 @@ export class GhlSyncService {
         firstName,
         lastName,
         name: fullName,
-        tags: tags,
+        tags: ['Klant'],
         customFields: [
-          { id: 'rWdxHMB2McLAZWo1Fxwl', key: 'contact.ticket_order_number', field_value: order.orderNumber },
-          { id: '72haFPm6QoE9K24WA5Hw', key: 'contact.ticket_portaal_url', field_value: portalUrl },
-          { id: '8juF9GsuPlMFPajvm9Kk', key: 'contact.ticket_download_url', field_value: downloadUrl },
-          { id: 'wemZ8ghoJw3YPBkFoSyi', key: 'contact.ticket_festival_stad', field_value: cityName },
-          { id: 'TfG7IEMYBcuYDhoNlFR8', key: 'contact.aankoop_dossier_samenvatting', field_value: order.items.map(i => `${i.quantity}x ${i.title}`).join(', ') },
-          { id: 'q4nGpzmLvbZjm8HOVARZ', key: 'contact.totaal_aantal_tickets', field_value: order.tickets.length || order.items.reduce((s, i) => s + i.quantity, 0) },
-          { id: 'eT6a9aXU8Cow0ksysTrO', key: 'contact.totale_omzet_eur', field_value: (order.totalCents / 100).toFixed(2) },
-          { id: '3wg1nud85Z3AyqpZCAPl', key: 'contact.klantstatus', field_value: 'Betaald' },
-          { id: 'oYqgbCgnbUC7iD7oiYCI', key: 'contact.laatste_besteldatum', field_value: new Date().toISOString().split('T')[0] },
-          { id: 'Et1sgi7Z7bE8jcJGGS02', key: 'contact.meest_recente_editie', field_value: `${cityName} ${festivalYear}` },
+          {
+            id: 'rWdxHMB2McLAZWo1Fxwl',
+            key: 'contact.ticket_order_number',
+            field_value: order.orderNumber,
+          },
+          {
+            id: '72haFPm6QoE9K24WA5Hw',
+            key: 'contact.ticket_portaal_url',
+            field_value: portalUrl,
+          },
+          {
+            id: '8juF9GsuPlMFPajvm9Kk',
+            key: 'contact.ticket_download_url',
+            field_value: downloadUrl,
+          },
+          {
+            id: 'wemZ8ghoJw3YPBkFoSyi',
+            key: 'contact.ticket_festival_stad',
+            field_value: cityName,
+          },
+          {
+            id: 'TfG7IEMYBcuYDhoNlFR8',
+            key: 'contact.aankoop_dossier_samenvatting',
+            field_value: order.items.map((i) => `${i.quantity}x ${i.title}`).join(', '),
+          },
+          {
+            id: 'q4nGpzmLvbZjm8HOVARZ',
+            key: 'contact.totaal_aantal_tickets',
+            field_value:
+              order.tickets.length || order.items.reduce((s, i) => s + i.quantity, 0),
+          },
+          {
+            id: 'eT6a9aXU8Cow0ksysTrO',
+            key: 'contact.totale_omzet_eur',
+            field_value: (order.totalCents / 100).toFixed(2),
+          },
+          {
+            id: '3wg1nud85Z3AyqpZCAPl',
+            key: 'contact.klantstatus',
+            field_value: 'Betaald',
+          },
+          {
+            id: 'oYqgbCgnbUC7iD7oiYCI',
+            key: 'contact.laatste_besteldatum',
+            field_value: new Date().toISOString().split('T')[0],
+          },
+          {
+            id: 'Et1sgi7Z7bE8jcJGGS02',
+            key: 'contact.meest_recente_editie',
+            field_value: `${cityName} ${festivalYear}`,
+          },
         ],
       };
 
-      const response = await fetch(`${GHL_API_BASE}/contacts/upsert`, {
+      const { response, attempts } = await this.fetchWithRetry(`${GHL_API_BASE}/contacts/upsert`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(contactPayload),
@@ -154,93 +262,151 @@ export class GhlSyncService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.warn(`[GHL Sync] Fout bij upsert contact in GHL: ${response.status} - ${errorText}`);
-        return { success: false, error: errorText };
+        console.warn(`[CRM Sync] Fout bij upsert contact: ${response.status} - ${errorText}`);
+        return { success: false, error: errorText, attempts };
       }
 
       const json: any = await response.json();
       const contactId = json?.contact?.id;
+      const existingTags: string[] = Array.isArray(json?.contact?.tags)
+        ? json.contact.tags.map((t: string) => String(t).toLowerCase())
+        : [];
 
-      // 4. Garandeer dat de workflow trigger 'Tag Contactpersoon: Tag toegevoegd' altijd afgaat
-      //    nadat 'Ticket Festival Stad' ('Den Haag' of 'Gent') is opgeslagen op het contact.
+      // Trigger de workflow 'nieuwe bestelling': alleen DELETE uitvoeren als het contact de tag al had!
       if (contactId) {
         try {
-          await new Promise((r) => setTimeout(r, 250));
-          await fetch(`${GHL_API_BASE}/contacts/${contactId}/tags`, {
-            method: 'DELETE',
-            headers: this.getHeaders(),
-            body: JSON.stringify({ tags: ['nieuwe bestelling'] }),
-          }).catch(() => {});
-          await fetch(`${GHL_API_BASE}/contacts/${contactId}/tags`, {
+          if (existingTags.includes('nieuwe bestelling')) {
+            await this.fetchWithRetry(`${GHL_API_BASE}/contacts/${contactId}/tags`, {
+              method: 'DELETE',
+              headers: this.getHeaders(),
+              body: JSON.stringify({ tags: ['nieuwe bestelling'] }),
+            }).catch(() => {});
+          }
+          await this.fetchWithRetry(`${GHL_API_BASE}/contacts/${contactId}/tags`, {
             method: 'POST',
             headers: this.getHeaders(),
             body: JSON.stringify({ tags: ['nieuwe bestelling'] }),
           });
         } catch (tagErr: any) {
-          console.warn('[GHL Sync] Fout bij expliciet toekennen trigger tag:', tagErr.message);
+          console.warn('[CRM Sync] Fout bij toekennen trigger tag:', tagErr.message);
         }
       }
 
-      // 5. Update Custom Objects capaciteit tellers in GHL
+      // Werk voorraadtellers atomair bij (direct in-memory in de catalogus-cache + gebundeld naar CRM)
       if (!options?.skipInventoryIncrement) {
-        let updatedAny = false;
         for (const item of order.items) {
           if (item.ticketTypeId) {
             await this.incrementGhlCustomObjectSold(item.ticketTypeId, item.quantity);
-            updatedAny = true;
           }
-        }
-        if (updatedAny) {
-          GhlCatalogService.clearCache();
         }
       }
 
-      console.info(`[GHL Sync] Bestelling ${order.orderNumber} succesvol gesynchroniseerd met GHL contact ${contactId}`);
-      return { success: true, contactId };
+      console.info(
+        `[CRM Sync] Bestelling ${order.orderNumber} succesvol gesynchroniseerd met contact ${contactId} (${attempts} poging(en))`
+      );
+      return { success: true, contactId, attempts };
     } catch (err: any) {
-      console.error('[GHL Sync] Netwerkfout bij GHL sync:', err);
+      console.error('[CRM Sync] Netwerkfout bij CRM sync:', err);
       return { success: false, error: err.message };
+    } finally {
+      releaseSyncSlot();
     }
   }
 
   /**
-   * Hoogt de verkoopteller op van het specifieke GHL Custom Object record
+   * Hoogt de verkoopteller atomair en serieel op van het specifieke CRM Custom Object record
+   * zonder dat gelijktijdige kopers om 00:00 uur elkaars aantal overschrijven!
    */
-  static async incrementGhlCustomObjectSold(ticketRecordId: string, addedQty: number): Promise<void> {
-    if (!GHL_API_KEY || !ticketRecordId) return;
+  static async incrementGhlCustomObjectSold(
+    ticketRecordId: string,
+    addedQty: number
+  ): Promise<void> {
+    if (!GHL_API_KEY || !ticketRecordId || addedQty <= 0) return;
 
+    // 1. Werk direct onze snelle in-memory catalogus-cache bij (zodat de website meteen de nieuwe stand toont)
+    const cachedUpdate = GhlCatalogService.incrementCachedSold(ticketRecordId, addedQty);
+    if (cachedUpdate) {
+      inMemorySoldTotals.set(ticketRecordId, {
+        sold: cachedUpdate.newSold,
+        capacity: cachedUpdate.capacity,
+      });
+    }
+
+    // 2. Tel de delta atomair op bij eventuele andere gelijktijdige verkopen van dit exacte tickettype
+    const currentDelta = pendingSoldDeltas.get(ticketRecordId) || 0;
+    pendingSoldDeltas.set(ticketRecordId, currentDelta + addedQty);
+
+    // Als er al een worker bezig is voor dit ticketRecordId, neemt die de opgetelde delta automatisch mee
+    if (activeTicketUpdaters.has(ticketRecordId)) {
+      return;
+    }
+
+    activeTicketUpdaters.add(ticketRecordId);
     try {
-      const getUrl = `${GHL_API_BASE}/objects/${GHL_TICKETS_OBJECT_KEY}/records/${ticketRecordId}`;
-      const res = await fetch(getUrl, {
-        method: 'GET',
-        headers: this.getHeaders(),
-      });
+      while ((pendingSoldDeltas.get(ticketRecordId) || 0) > 0) {
+        const deltaToApply = pendingSoldDeltas.get(ticketRecordId) || 0;
+        pendingSoldDeltas.set(ticketRecordId, 0);
 
-      if (!res.ok) return;
+        const recordUrl = `${GHL_API_BASE}/objects/${GHL_TICKETS_OBJECT_KEY}/records/${ticketRecordId}`;
+        let knownState = inMemorySoldTotals.get(ticketRecordId);
 
-      const recordJson: any = await res.json();
-      const currentProps = recordJson?.customObjectRecord?.properties || recordJson?.properties || {};
-      const currentSold = parseInt(currentProps.sold, 10) || 0;
-      const capacity = parseInt(currentProps.capacity, 10) || 0;
-      const newSold = currentSold + addedQty;
-      const isSoldOut = capacity > 0 && newSold >= capacity;
+        // Alleen een GET doen als we dit tickettype nog niet in het geheugen kennen
+        if (!knownState) {
+          const cachedItem = GhlCatalogService.getCachedTicketItem(ticketRecordId);
+          if (cachedItem && typeof cachedItem.sold === 'number') {
+            knownState = {
+              sold: cachedItem.sold,
+              capacity: cachedItem.capacity || 0,
+            };
+          } else {
+            const { response: getRes } = await this.fetchWithRetry(recordUrl, {
+              method: 'GET',
+              headers: this.getHeaders(),
+            });
+            if (!getRes.ok) break;
+            const recordJson: any = await getRes.json();
+            const currentProps =
+              recordJson?.customObjectRecord?.properties || recordJson?.properties || {};
+            const baseSold = parseInt(currentProps.sold, 10) || 0;
+            const baseCap = parseInt(currentProps.capacity, 10) || 0;
+            knownState = {
+              sold: baseSold + deltaToApply,
+              capacity: baseCap,
+            };
+          }
+          inMemorySoldTotals.set(ticketRecordId, knownState);
+        } else if (!cachedUpdate) {
+          knownState.sold += deltaToApply;
+        }
 
-      const patchPayload = {
-        properties: {
-          sold: newSold,
-          ...(isSoldOut ? { is_sold_out: true, status_badge: 'sold-out' } : {}),
-        },
-      };
+        const newSold = knownState.sold;
+        const capacity = knownState.capacity;
+        const isSoldOut = capacity > 0 && newSold >= capacity;
 
-      await fetch(getUrl, {
-        method: 'PUT',
-        headers: this.getHeaders(),
-        body: JSON.stringify(patchPayload),
-      });
+        const patchPayload = {
+          properties: {
+            sold: newSold,
+            ...(isSoldOut ? { is_sold_out: true, status_badge: 'sold-out' } : {}),
+          },
+        };
 
-      console.info(`[GHL Custom Object] Ticket ${ticketRecordId} sold bijgewerkt naar ${newSold} (Uitverkocht: ${isSoldOut})`);
+        await this.fetchWithRetry(recordUrl, {
+          method: 'PUT',
+          headers: this.getHeaders(),
+          body: JSON.stringify(patchPayload),
+        });
+
+        console.info(
+          `[CRM Custom Object] Ticket ${ticketRecordId} sold atomair bijgewerkt naar ${newSold} (Uitverkocht: ${isSoldOut})`
+        );
+      }
     } catch (err: any) {
-      console.warn(`[GHL Custom Object] Kon ticket ${ticketRecordId} niet bijwerken in GHL:`, err.message);
+      console.warn(
+        `[CRM Custom Object] Kon ticket ${ticketRecordId} niet bijwerken:`,
+        err.message
+      );
+    } finally {
+      activeTicketUpdaters.delete(ticketRecordId);
     }
   }
 
@@ -258,41 +424,42 @@ export class GhlSyncService {
     if (!GHL_API_KEY) return;
 
     try {
-      // Zoek contact op
-      const searchRes = await fetch(`${GHL_API_BASE}/contacts/search/duplicate`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          locationId: GHL_LOCATION_ID,
-          email: params.customerEmail,
-        }),
-      });
+      const { response: searchRes } = await this.fetchWithRetry(
+        `${GHL_API_BASE}/contacts/search/duplicate`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify({
+            locationId: GHL_LOCATION_ID,
+            email: params.customerEmail,
+          }),
+        }
+      );
 
       if (!searchRes.ok) return;
       const searchJson: any = await searchRes.json();
       const contact = searchJson?.contact;
       if (!contact?.id) return;
 
-      // Update tags en link
       const existingTags: string[] = contact.tags || [];
-      const cleanedTags = existingTags.filter((t) => !t.toLowerCase().includes(params.oldSessionTitle.toLowerCase()));
+      const cleanedTags = existingTags.filter(
+        (t) => !t.toLowerCase().includes(params.oldSessionTitle.toLowerCase())
+      );
       cleanedTags.push(`Sessie: ${params.newSessionTitle}`);
       cleanedTags.push('Status: Ticket Omgeruild');
 
-      await fetch(`${GHL_API_BASE}/contacts/${contact.id}`, {
+      await this.fetchWithRetry(`${GHL_API_BASE}/contacts/${contact.id}`, {
         method: 'PUT',
         headers: this.getHeaders(),
         body: JSON.stringify({
           tags: Array.from(new Set(cleanedTags)),
-          customFields: [
-            { key: 'ticket_download_url', field_value: params.newDownloadUrl },
-          ],
+          customFields: [{ key: 'ticket_download_url', field_value: params.newDownloadUrl }],
         }),
       });
 
-      console.info(`[GHL Sync] Contact ${contact.id} omruil-tags succesvol bijgewerkt`);
+      console.info(`[CRM Sync] Contact ${contact.id} omruil-tags succesvol bijgewerkt`);
     } catch (err: any) {
-      console.warn('[GHL Sync] Fout bij updaten ticket swap in GHL:', err.message);
+      console.warn('[CRM Sync] Fout bij updaten ticket swap:', err.message);
     }
   }
 }
