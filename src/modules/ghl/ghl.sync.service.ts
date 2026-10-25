@@ -4,6 +4,7 @@
  */
 
 import { StoredOrder } from '../orders/orders.repository.js';
+import { GhlCatalogService } from './ghl.catalog.service.js';
 
 const GHL_API_BASE = 'https://services.leadconnectorhq.com';
 const GHL_API_KEY = process.env.GHL_API_KEY || 'pit-150d6114-ac2c-4cf7-9d5c-ffc20499c790';
@@ -76,7 +77,11 @@ export class GhlSyncService {
    * 3. Custom Fields vullen met ordernummer, downloadlink én portaallink
    * 4. GHL Custom Objects ticket-telling bijwerken
    */
-  static async syncPaidOrder(order: StoredOrder, publicBaseUrl = process.env.PUBLIC_API_URL || 'https://whiskytix-r1qq.vercel.app'): Promise<GhlSyncResult> {
+  static async syncPaidOrder(
+    order: StoredOrder,
+    publicBaseUrl = process.env.PUBLIC_API_URL || 'https://whiskytix-r1qq.vercel.app',
+    options?: { skipInventoryIncrement?: boolean }
+  ): Promise<GhlSyncResult> {
     if (!GHL_API_KEY) {
       console.info('[GHL Sync] GHL_API_KEY niet ingesteld. Sync overgeslagen (mock mode).');
       return { success: true, contactId: 'mock-ghl-contact' };
@@ -86,11 +91,16 @@ export class GhlSyncService {
       const cityName = order.festivalId === 'gent' ? 'Gent' : order.festivalId === 'amsterdam' ? 'Amsterdam' : 'Den Haag';
       const cleanOrderNumber = order.orderNumber.replace('#', '');
       const downloadUrl = `${publicBaseUrl}/api/orders/${encodeURIComponent(cleanOrderNumber)}/pdf?city=${order.festivalId}`;
-      const festivalYear = (order.festivalId === 'gent' || order.festivalId === 'amsterdam') ? '2027' : '2026';
+      const festivalYear = '2027';
 
       // Bepaal de dynamische portaallink (website domein / preview / live)
       let portalBase = order.portalBaseUrl;
-      if (!portalBase || portalBase.includes('vercel.app')) {
+      if (
+        !portalBase ||
+        portalBase.includes('vercel.app') ||
+        portalBase.includes('localhost') ||
+        portalBase.includes('127.0.0.1')
+      ) {
         if (order.festivalId === 'gent') {
           portalBase = process.env.PORTAL_BASE_URL_GENT || 'https://whiskyfestival.be';
         } else if (order.festivalId === 'amsterdam') {
@@ -113,7 +123,7 @@ export class GhlSyncService {
       const fullName = (firstName + ' ' + lastName).trim() || order.customerName || 'Bezoeker';
       const normalizedPhone = this.normalizePhoneNumber(order.customerPhone, order.festivalId);
 
-      // Upsert Contact in GHL met exacte Custom Fields
+      // Upsert Contact in Leadfabriek CRM met exacte Custom Fields
       const contactPayload = {
         locationId: GHL_LOCATION_ID,
         email: order.customerEmail,
@@ -151,9 +161,16 @@ export class GhlSyncService {
       const json: any = await response.json();
       const contactId = json?.contact?.id;
 
-      // 4. Garandeer dat de GHL workflow trigger 'Tag Contactpersoon: Tag toegevoegd' afgaat
+      // 4. Garandeer dat de workflow trigger 'Tag Contactpersoon: Tag toegevoegd' altijd afgaat
+      //    nadat 'Ticket Festival Stad' ('Den Haag' of 'Gent') is opgeslagen op het contact.
       if (contactId) {
         try {
+          await new Promise((r) => setTimeout(r, 250));
+          await fetch(`${GHL_API_BASE}/contacts/${contactId}/tags`, {
+            method: 'DELETE',
+            headers: this.getHeaders(),
+            body: JSON.stringify({ tags: ['nieuwe bestelling'] }),
+          }).catch(() => {});
           await fetch(`${GHL_API_BASE}/contacts/${contactId}/tags`, {
             method: 'POST',
             headers: this.getHeaders(),
@@ -165,9 +182,16 @@ export class GhlSyncService {
       }
 
       // 5. Update Custom Objects capaciteit tellers in GHL
-      for (const item of order.items) {
-        if (item.ticketTypeId) {
-          await this.incrementGhlCustomObjectSold(item.ticketTypeId, item.quantity);
+      if (!options?.skipInventoryIncrement) {
+        let updatedAny = false;
+        for (const item of order.items) {
+          if (item.ticketTypeId) {
+            await this.incrementGhlCustomObjectSold(item.ticketTypeId, item.quantity);
+            updatedAny = true;
+          }
+        }
+        if (updatedAny) {
+          GhlCatalogService.clearCache();
         }
       }
 

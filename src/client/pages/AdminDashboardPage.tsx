@@ -68,21 +68,34 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const { stats: ghlStats, loading: ghlLoading, refresh: refreshGhlCatalog } = useLiveCatalog('all');
 
   // Fetch real orders from API based on active environment (test vs live)
-  const fetchOrders = async (env: 'test' | 'live') => {
+  const fetchIdRef = React.useRef(0);
+  const fetchOrders = async (env: 'test' | 'live', isRetry = false) => {
+    const reqId = ++fetchIdRef.current;
     setIsLoading(true);
     try {
       const res = await fetch(`/api/admin/orders?env=${env}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.orders)) {
-        setOrders(data.orders);
-      } else {
-        setOrders([]);
+      if (reqId !== fetchIdRef.current) return;
+      if (res.ok) {
+        const data = await res.json();
+        if (reqId !== fetchIdRef.current) return;
+        if (data.success && Array.isArray(data.orders)) {
+          setOrders(data.orders);
+        }
+      } else if (!isRetry) {
+        setTimeout(() => fetchOrders(env, true), 1500);
+        return;
       }
     } catch (err) {
+      if (reqId !== fetchIdRef.current) return;
       console.error('Fout bij ophalen van orders:', err);
-      setOrders([]);
+      if (!isRetry) {
+        setTimeout(() => fetchOrders(env, true), 1500);
+        return;
+      }
     } finally {
-      setIsLoading(false);
+      if (reqId === fetchIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -176,15 +189,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         edition: '25e Jubileum Editie',
         location: 'Grote Kerk Den Haag',
         dates: '13, 14 en 15 Nov 2026',
-        isLive: false,
-        accountInfo: 'Gezamenlijk Account (NL)',
-        statusLabel: 'In Voorbereiding',
-        statusType: 'prep',
+        isLive: true,
+        accountInfo: 'Highland Consultancy B.V. (NL)',
+        statusLabel: mollieEnv === 'live' ? 'Mollie Live Actief' : 'Mollie Testmodus',
+        statusType: mollieEnv === 'live' ? 'live' : 'test',
         revenueCents: dhRevCents,
         ticketsSold: dhTickets,
         ticketsTotal: dhTotal,
         pct: dhPct,
-        vipNote: 'Beschikbaar bij start verkoop',
+        vipNote: 'Verkoop actief',
         ticketTypesCount: ghlStats?.denhaag?.ticketTypesCount || 118,
       },
       {
@@ -231,29 +244,29 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               Centrale Festival Cockpit
             </span>
             <span className="text-xs text-[#4c5752] font-semibold">
-              • Realtime transacties via Mollie • GHL Catalogus Actief
+              • Realtime transacties via Mollie • Leadfabriek CRM Actief
             </span>
           </div>
           <h1 className="text-xl sm:text-3xl font-extrabold text-[#1D1C1A] tracking-tight">
             3-Steden Festival Cockpit
           </h1>
           <p className="text-xs sm:text-sm text-[#4c5752] mt-0.5 font-medium">
-            Overkoepelend inzicht in omzet, zaalcapaciteiten en live tickets rechtstreeks uit GoHighLevel.
+            Overkoepelend inzicht in omzet, zaalcapaciteiten en live tickets rechtstreeks uit het Leadfabriek CRM.
           </p>
         </div>
 
-        {/* Controls: Mollie Test/Live & GHL Sync */}
+        {/* Controls: Mollie Test/Live & Leadfabriek CRM Sync */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 shrink-0 flex-wrap">
-          {/* GHL Catalogus Sync Knop */}
+          {/* Leadfabriek CRM Catalogus Sync Knop */}
           <button
             type="button"
             onClick={() => refreshGhlCatalog()}
             disabled={ghlLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-[#1D1C1A] bg-[#FCFAF7] hover:bg-[#d8e7e2] text-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer text-xs font-bold transition-all disabled:opacity-50"
-            title="Herlaad live tickets en zaalcapaciteiten direct uit GoHighLevel Custom Objects"
+            title="Herlaad live tickets en zaalcapaciteiten direct uit het Leadfabriek CRM"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-[#006448] ${ghlLoading ? 'animate-spin' : ''}`} />
-            <span>{ghlLoading ? 'GHL Leden...' : 'GHL Sync'}</span>
+            <span>{ghlLoading ? 'CRM Laden...' : 'Leadfabriek CRM Sync'}</span>
           </button>
 
           {/* Mollie Test / Live Mode Schakelaar */}
@@ -465,7 +478,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         ></div>
                       </div>
                       <div className="flex items-center justify-between text-[10px] sm:text-[11px] pt-1 border-t border-[#c1d4ce]/60">
-                        <span className="text-[#4c5752] font-medium truncate mr-2">GHL Catalogus:</span>
+                        <span className="text-[#4c5752] font-medium truncate mr-2">Leadfabriek CRM:</span>
                         <span className="font-bold text-[#006448]">
                           {fest.ticketTypesCount} types ({fest.ticketsTotal.toLocaleString('nl-NL')} pl.)
                         </span>

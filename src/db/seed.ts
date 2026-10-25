@@ -37,10 +37,10 @@ export async function runSeed() {
     const dhSessionVrijdag = await db.insert(sessions).values({
       festivalId: 'denhaag',
       name: 'Vrijdagavond Sessie',
-      date: '2026-11-13',
+      date: '2027-11-12',
       startTime: '19:00',
       endTime: '23:00',
-      capacityMax: 1500,
+      capacityMax: 1250,
       capacitySold: 0,
       isActive: true,
     }).onConflictDoNothing().returning();
@@ -48,10 +48,10 @@ export async function runSeed() {
     const dhSessionZaterdag = await db.insert(sessions).values({
       festivalId: 'denhaag',
       name: 'Zaterdagavond Sessie',
-      date: '2026-11-14',
+      date: '2027-11-13',
       startTime: '19:00',
       endTime: '23:00',
-      capacityMax: 1500,
+      capacityMax: 1250,
       capacitySold: 0,
       isActive: true,
     }).onConflictDoNothing().returning();

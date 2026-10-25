@@ -161,15 +161,15 @@ export class CouponsRepository {
       return { valid: false, message: 'Voer een kortingscode in.' };
     }
 
-    // Built-in membership & gift voucher patterns
-    if (code.startsWith('WS-') || code === 'IWS') {
+    // Built-in IWS membership & gift voucher patterns
+    if (code.startsWith('WS-') || code.startsWith('IWS')) {
       return {
         valid: true,
         code,
         type: 'fixed_amount',
-        value: 55,
-        valueCents: 5500,
-        message: '✓ Lidmaatschap gevalideerd: €55,00 korting toegepast.',
+        value: 5,
+        valueCents: 500,
+        message: 'IWS-lidmaatschap gevalideerd: €5,00 korting op 1 sessiekaart en €5,00 op de festivalbotteling.',
       };
     }
 

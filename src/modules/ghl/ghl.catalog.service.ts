@@ -136,27 +136,34 @@ export class GhlCatalogService {
 
     try {
       const url = `${GHL_API_BASE}/objects/${GHL_TICKETS_OBJECT_KEY}/records/search`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${GHL_API_KEY}`,
-          Version: '2021-07-28',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          locationId: GHL_LOCATION_ID,
-          page: 1,
-          pageLimit: 250,
-          searchAfter: [],
-        }),
-      });
+      const records: any[] = [];
+      let page = 1;
+      while (page <= 5) {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${GHL_API_KEY}`,
+            Version: '2021-07-28',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            locationId: GHL_LOCATION_ID,
+            page,
+            pageLimit: 100,
+            searchAfter: [],
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`GHL Search endpoint status ${response.status} ${response.statusText}`);
+        if (!response.ok) {
+          throw new Error(`GHL Search endpoint status ${response.status} ${response.statusText}`);
+        }
+
+        const json = (await response.json()) as any;
+        const pageRecs = json.customObjectRecords || json.records || [];
+        records.push(...pageRecs);
+        if (pageRecs.length < 100 || records.length >= (json.total || 0)) break;
+        page++;
       }
-
-      const json = (await response.json()) as any;
-      const records = json.customObjectRecords || json.records || [];
 
       if (!Array.isArray(records) || records.length === 0) {
         throw new Error('Geen records ontvangen uit GHL Custom Objects');
@@ -200,7 +207,7 @@ export class GhlCatalogService {
           capacity,
           sold,
           isSoldOut,
-          statusText: isSoldOut ? 'Uitverkocht' : p.status_badge || undefined,
+          statusText: isSoldOut ? 'Uitverkocht' : p.status_badge === 'hidden' ? 'Concept (Verborgen)' : p.status_badge || undefined,
           bookingType: p.booking_type || 'vrij_te_boeken',
           day: p.day || 'all',
           daypart: p.daypart || 'all',

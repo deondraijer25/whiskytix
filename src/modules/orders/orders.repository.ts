@@ -107,11 +107,36 @@ function loadLocalStore() {
     const parsed = JSON.parse(raw);
     memoryOrders.clear();
     if (Array.isArray(parsed.orders)) {
+      let dirty = false;
       parsed.orders.forEach((o: StoredOrder) => {
-        if (o.orderNumber && o.orderNumber.startsWith('#WF-GENT-')) return;
+        if (!o.orderNumber) return;
+        if (
+          o.orderNumber.startsWith('#WF-GENT-') ||
+          o.orderNumber === '#WF-2026-COMP-19464' ||
+          o.orderNumber === '#WF-2027-91633' ||
+          o.orderNumber === '#WF-2026-DHTEST'
+        ) {
+          dirty = true;
+          return;
+        }
+        if (o.orderNumber === '#WF-2026-41745' && o.festivalId !== 'gent') {
+          o.festivalId = 'gent';
+          dirty = true;
+        }
+        if (
+          o.festivalId === 'denhaag' &&
+          o.status === 'expired' &&
+          o.orderNumber !== '#WF-2027-55880'
+        ) {
+          o.festivalId = 'gent';
+          dirty = true;
+        }
         memoryOrders.set(o.orderNumber, o);
         memoryOrders.set(o.id, o);
       });
+      if (dirty) {
+        saveLocalStore();
+      }
     }
   } catch (err) {
     console.warn('Could not load local orders store:', err);
@@ -185,11 +210,12 @@ export class OrdersRepository {
     saveLocalStore();
   }
   /**
-   * Generates next clean Order Number like #WF-2026-84387
+   * Generates next clean Order Number like #WF-2026-84387 (Den Haag) or #WF-2027-84387 (Gent/Amsterdam)
    */
-  static generateOrderNumber(): string {
+  static generateOrderNumber(_festivalId: string = 'gent'): string {
     const randomDigits = Math.floor(10000 + Math.random() * 90000);
-    return `#WF-2027-${randomDigits}`;
+    const year = '2027';
+    return `#WF-${year}-${randomDigits}`;
   }
 
   /**
@@ -211,6 +237,14 @@ export class OrdersRepository {
     let dateStr = (explicitDate && explicitDate.trim() && explicitDate !== 'Festivaldag') ? explicitDate.trim() : '';
     let timeStr = (explicitTime && explicitTime.trim() && explicitTime !== 'Regulier') ? explicitTime.trim().replace(/–/g, '-') : '';
 
+    // Check if sessionTitle contains an inline time range like "19:30 - 20:15"
+    if (!timeStr) {
+      const inlineTimeMatch = sessionTitle.match(/\b([0-2]?[0-9]:[0-5][0-9]\s*[-–—]\s*[0-2]?[0-9]:[0-5][0-9])\b/);
+      if (inlineTimeMatch) {
+        timeStr = `${inlineTimeMatch[1].replace(/–|—/g, '-')} UUR`;
+      }
+    }
+
     // Only if dateStr is missing, deduce from title and festival city
     if (!dateStr) {
       if (cityName === 'Gent') {
@@ -226,13 +260,15 @@ export class OrdersRepository {
       } else if (cityName === 'Amsterdam') {
         dateStr = 'Zaterdag 16 januari 2027';
       } else {
-        // Den Haag
+        // Den Haag 2027
         if (titleLower.includes('zondag')) {
-          dateStr = 'Zondag 15 november 2026';
+          dateStr = 'Zondag 14 november 2027';
         } else if (titleLower.includes('zaterdag')) {
-          dateStr = 'Zaterdag 14 november 2026';
+          dateStr = 'Zaterdag 13 november 2027';
+        } else if (titleLower.includes('botteling') || titleLower.includes('munt') || titleLower.includes('glencairn')) {
+          dateStr = 'Afhalen Festival (12-14 nov 2027)';
         } else {
-          dateStr = 'Vrijdag 13 november 2026';
+          dateStr = 'Vrijdag 12 november 2027';
         }
       }
     }
@@ -256,8 +292,9 @@ export class OrdersRepository {
         timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
       } else {
         // Den Haag
-        if (titleLower.includes('zondag')) timeStr = '13:00 - 17:00 UUR';
-        else if (titleLower.includes('avond')) timeStr = '18:30 - 22:30 UUR';
+        if (titleLower.includes('botteling') || titleLower.includes('munt') || titleLower.includes('glencairn')) timeStr = 'Hele dag';
+        else if (titleLower.includes('zondag')) timeStr = '13:00 - 17:00 UUR';
+        else if (titleLower.includes('avond')) timeStr = '19:00 - 23:00 UUR';
         else if (titleLower.includes('vip')) timeStr = '13:00 - 17:00 UUR';
         else timeStr = '13:00 - 17:00 UUR';
       }
@@ -606,8 +643,8 @@ export class OrdersRepository {
 
     // Reconstruct from Mollie API if not in memory or DB (e.g. serverless cold start)
     try {
-      const mollieLivePayments = await MollieService.listRecentPayments(100, 'gent', 'live');
-      const mollieTestPayments = await MollieService.listRecentPayments(50, 'gent', 'test');
+      const mollieLivePayments = await MollieService.listAllRecentPayments(100, 'live');
+      const mollieTestPayments = await MollieService.listAllRecentPayments(50, 'test');
       const molliePayments = [...mollieLivePayments, ...mollieTestPayments];
       const cleaned = identifier.replace(/^#+/, '');
       const matched = molliePayments.find((p: any) => {
@@ -1564,7 +1601,8 @@ export class OrdersRepository {
     );
 
     const randomDigits = Math.floor(10000 + Math.random() * 90000);
-    const orderNumber = `#WF-2027-COMP-${randomDigits}`;
+    const compYear = '2027';
+    const orderNumber = `#WF-${compYear}-COMP-${randomDigits}`;
     const orderId = crypto.randomUUID();
     const nowIso = new Date().toISOString();
     const qty = Math.max(1, Math.min(Number(params.quantity) || 1, 50));

@@ -10,6 +10,15 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    watch: {
+      ignored: [
+        '**/src/modules/**',
+        '**/src/db/**',
+        '**/src/server.ts',
+        '**/src/index.ts',
+        '**/.data/**',
+      ],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:4000',

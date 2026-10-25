@@ -86,13 +86,13 @@ const FESTIVAL_THEMES: Record<string, FestivalTheme> = {
     transit: 'Tram 2, 3 of 6: halte Grote Markt (2 min. lopen)',
     parking: 'Q-Park Grote Markt of Lutherse Burgwal',
     established: 'EST. 2000',
-    edition: '25e Jubileum Editie',
+    edition: '26e Editie',
     email: 'beheer@whiskyfestival.nl',
     watermark: 'WF',
-    datesShort: '13, 14 en 15 November 2026',
+    datesShort: '12, 13 en 14 November 2027',
     defaultMonth: 'NOV',
-    defaultDay: '13',
-    year: '2026',
+    defaultDay: '12',
+    year: '2027',
     pillLocation: 'GROTE KERK  \u2022  DEN HAAG',
     colors: {
       primary: '#006448',        // Den Haag Pine Green
@@ -287,9 +287,9 @@ export function parseTicketDateTime(
       else if (dayName === 'ZONDAG') day = '15';
     }
     if (!timeStr) {
-      if (dayName === 'ZATERDAG') timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
+      if (dayName === 'ZATERDAG') timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
       else if (dayName === 'ZONDAG') timeStr = '13:00 - 17:00 UUR';
-      else timeStr = titleLower.includes('vip') ? '13:00 - 17:00 UUR' : '18:30 - 22:30 UUR';
+      else timeStr = titleLower.includes('vip') || titleLower.includes('middag') ? '13:00 - 17:00 UUR' : '19:00 - 23:00 UUR';
     }
   } else if (cityKey === 'amsterdam') {
     month = month || 'JAN';

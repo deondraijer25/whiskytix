@@ -79,19 +79,23 @@ export const OrdersPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const { env: mollieEnv } = useEnvironment();
+  const fetchIdRef = React.useRef(0);
 
   const activeFestival = cityId ? INITIAL_FESTIVALS.find((f) => f.id === cityId) : null;
   const effectiveCity = cityId || selectedCity;
   const theme = CITY_THEMES[effectiveCity] || CITY_THEMES.denhaag;
 
-  const fetchOrders = async (targetEnv?: 'test' | 'live') => {
+  const fetchOrders = async (targetEnv?: 'test' | 'live', isRetry = false) => {
+    const reqId = ++fetchIdRef.current;
     setIsLoading(true);
     const activeEnv = targetEnv || mollieEnv;
     try {
       const cityQuery = effectiveCity && effectiveCity !== 'all' ? `city=${effectiveCity}&` : '';
       const res = await fetch(`/api/admin/orders?${cityQuery}env=${activeEnv}`);
+      if (reqId !== fetchIdRef.current) return;
       if (res.ok) {
         const data = await res.json();
+        if (reqId !== fetchIdRef.current) return;
         if (data && Array.isArray(data.orders)) {
           setOrders(data.orders);
           setSelectedOrder((prev) => {
@@ -117,15 +121,22 @@ export const OrdersPage: React.FC = () => {
             }
             return null;
           });
-        } else {
-          setOrders([]);
         }
+      } else if (!isRetry) {
+        setTimeout(() => fetchOrders(activeEnv, true), 1500);
+        return;
       }
     } catch (err) {
+      if (reqId !== fetchIdRef.current) return;
       console.error('Kon bestellingen niet ophalen:', err);
-      setOrders([]);
+      if (!isRetry) {
+        setTimeout(() => fetchOrders(activeEnv, true), 1500);
+        return;
+      }
     } finally {
-      setIsLoading(false);
+      if (reqId === fetchIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -155,7 +166,7 @@ export const OrdersPage: React.FC = () => {
       .reduce((acc, o) => acc + (o.totalCents || 0), 0);
   }, [filteredOrders]);
 
-  const isPrelaunch = effectiveCity === 'denhaag' || effectiveCity === 'amsterdam';
+  const isPrelaunch = effectiveCity === 'amsterdam';
 
   return (
     <div className="space-y-4 sm:space-y-6 font-sans">
@@ -189,7 +200,7 @@ export const OrdersPage: React.FC = () => {
 
         <div className="flex items-center gap-2 text-xs font-bold text-[#4c5752] w-full md:w-auto justify-between md:justify-end flex-wrap">
           {/* Mollie Test / Live Mode Schakelaar */}
-          <MollieEnvToggle onEnvChange={(newEnv) => fetchOrders(newEnv)} />
+          <MollieEnvToggle />
 
           <button
             onClick={() => {
@@ -256,7 +267,7 @@ export const OrdersPage: React.FC = () => {
             >
               <option value="all">Alle Steden</option>
               <option value="gent">Gent (Actief)</option>
-              <option value="denhaag">Den Haag (Prep)</option>
+              <option value="denhaag">Den Haag (Actief)</option>
               <option value="amsterdam">Amsterdam (Prep)</option>
             </select>
           )}

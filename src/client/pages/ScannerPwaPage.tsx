@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { INITIAL_FESTIVALS } from '../data/mockData';
+import { INITIAL_FESTIVALS, INITIAL_SESSIONS } from '../data/mockData';
 import { getStoredScans, addStoredScan, ScanRecord } from '../data/scannerStore';
 
 export const ScannerPwaPage: React.FC = () => {
@@ -26,6 +26,14 @@ export const ScannerPwaPage: React.FC = () => {
   const festivalParam = searchParams.get('festival') || 'denhaag';
   const currentFestival =
     INITIAL_FESTIVALS.find((f) => f.id === festivalParam) || INITIAL_FESTIVALS[0];
+  const festivalSessions = INITIAL_SESSIONS.filter(
+    (s) => s.city === festivalParam && s.category !== 'masterclass'
+  );
+  const [selectedSessionLabel, setSelectedSessionLabel] = useState<string>(
+    festivalSessions[0]
+      ? `${festivalSessions[0].name} (${festivalSessions[0].time})`
+      : 'Vrijdagmiddag (13:00 - 17:00)'
+  );
 
   // Hardware & Network State
   const [isOnline, setIsOnline] = useState(true);
@@ -52,12 +60,15 @@ export const ScannerPwaPage: React.FC = () => {
   const [manualSearchOpen, setManualSearchOpen] = useState(false);
   const [manualQuery, setManualQuery] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [liveTickets, setLiveTickets] = useState<
+    Array<{ name: string; code: string; type: string; alreadyScanned: boolean }>
+  >([]);
 
   // Html5Qrcode scanner instance
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const containerId = 'whiskytix-clean-camera-viewport';
 
-  // Load persistent scan history on mount
+  // Load persistent scan history on mount & live tickets for manual search
   useEffect(() => {
     const stored = getStoredScans();
     setScans(stored);
@@ -70,6 +81,27 @@ export const ScannerPwaPage: React.FC = () => {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!manualSearchOpen) return;
+    fetch(`/api/admin/tickets?city=${festivalParam}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.tickets)) {
+          const mapped = data.tickets
+            .filter((t: any) => t.status !== 'cancelled' && t.status !== 'swapped')
+            .map((t: any) => ({
+              name: t.attendeeName || t.buyerName || 'Bezoeker',
+              code: t.code || t.ticketCode,
+              type: t.session || 'Festival Ticket',
+              alreadyScanned:
+                t.status === 'checked-in' || checkedInCodesRef.current.has(t.code || t.ticketCode),
+            }));
+          setLiveTickets(mapped);
+        }
+      })
+      .catch(() => {});
+  }, [manualSearchOpen, festivalParam]);
 
   // Audio Tone Synthesis (Web Audio API)
   const playSound = (type: 'valid' | 'duplicate' | 'wrong_session') => {
@@ -163,7 +195,7 @@ export const ScannerPwaPage: React.FC = () => {
       const res = await fetch('/api/scanner/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrPayload: decodedRaw, code: ticketCode }),
+        body: JSON.stringify({ qrPayload: decodedRaw, code: ticketCode, festivalId: festivalParam }),
       });
 
       const data = await res.json();
@@ -391,11 +423,28 @@ export const ScannerPwaPage: React.FC = () => {
 
       {/* 2. Subdued Session & Door Context Strip */}
       <div className="px-4 py-2 bg-[#12110F] border-b border-white/5 flex items-center justify-between text-xs">
-        <span className="text-stone-400 font-medium flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#caac8e]"></span>
-          Vrijdagmiddag (13:00 - 17:00)
-        </span>
-        <span className="text-[10px] font-mono font-bold text-[#caac8e] bg-white/5 px-2 py-0.5 rounded">
+        <div className="text-stone-300 font-medium flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#caac8e] shrink-0"></span>
+          {festivalSessions.length > 0 ? (
+            <select
+              value={selectedSessionLabel}
+              onChange={(e) => setSelectedSessionLabel(e.target.value)}
+              className="bg-transparent text-stone-300 font-semibold text-xs focus:outline-none cursor-pointer"
+            >
+              {festivalSessions.map((s) => {
+                const label = `${s.name} (${s.time})`;
+                return (
+                  <option key={s.id} value={label} className="bg-[#12110F] text-stone-200">
+                    {label}
+                  </option>
+                );
+              })}
+            </select>
+          ) : (
+            <span>{selectedSessionLabel}</span>
+          )}
+        </div>
+        <span className="text-[10px] font-mono font-bold text-[#caac8e] bg-white/5 px-2 py-0.5 rounded shrink-0">
           Deur 1
         </span>
       </div>
@@ -717,35 +766,31 @@ export const ScannerPwaPage: React.FC = () => {
               <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
-            <div className="space-y-2 text-xs">
+            <div className="space-y-2 text-xs max-h-[60vh] overflow-y-auto pr-1">
               <span className="text-stone-400 font-bold block text-[11px] uppercase tracking-wider">
-                Direct Inchecken:
+                Direct Inchecken ({currentFestival.name}):
               </span>
-              {[
-                { name: 'Deon Draijer', code: '#WF-2026-76464-1', type: 'VIP Vrijdag', alreadyScanned: true },
-                { name: 'Robert-Jan Bakker', code: '#WF-2026-84391-1', type: 'VIP Vrijdag', alreadyScanned: false },
-                { name: 'Karel van Dongen', code: '#WF-2026-84388-2', type: 'VIP Vrijdag', alreadyScanned: false },
-                { name: 'Pieter van Mechelen', code: '#WF-2027-84392-1', type: 'Regulier Zondag', alreadyScanned: false },
-                { name: 'Sophie van Dam', code: '#WF-2026-84380-1', type: 'VIP Vrijdag', alreadyScanned: false },
-              ]
+              {(liveTickets.length > 0
+                ? liveTickets
+                : [
+                    { name: 'Deon Draijer', code: '#WF-2026-76464-1', type: 'VIP Vrijdag', alreadyScanned: true },
+                    { name: 'Robert-Jan Bakker', code: '#WF-2026-84391-1', type: 'VIP Vrijdag', alreadyScanned: false },
+                  ]
+              )
                 .filter(
                   (m) =>
                     !manualQuery ||
                     m.name.toLowerCase().includes(manualQuery.toLowerCase()) ||
-                    m.code.toLowerCase().includes(manualQuery.toLowerCase())
+                    m.code.toLowerCase().includes(manualQuery.toLowerCase()) ||
+                    m.type.toLowerCase().includes(manualQuery.toLowerCase())
                 )
+                .slice(0, 30)
                 .map((m, i) => (
                   <div
                     key={i}
                     onClick={() => {
                       setManualSearchOpen(false);
-                      if (m.alreadyScanned) {
-                        handleTicketScanned(m.code);
-                      } else if (m.type.includes('Zondag')) {
-                        handleTicketScanned(`WT1:${m.code.replace('#', '')}:denhaag:Zondagsessie:${m.name}:sig`);
-                      } else {
-                        handleTicketScanned(`WT1:${m.code.replace('#', '')}:denhaag:VIP Vrijdag:${m.name}:sig`);
-                      }
+                      handleTicketScanned(m.code);
                     }}
                     className="p-3 bg-[#1C1B18] border border-white/5 rounded-2xl hover:border-[#caac8e] cursor-pointer flex items-center justify-between transition-colors"
                   >
@@ -756,7 +801,7 @@ export const ScannerPwaPage: React.FC = () => {
                       </span>
                     </div>
                     <span
-                      className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg ${
+                      className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg shrink-0 ${
                         m.alreadyScanned
                           ? 'bg-red-950 text-red-400 border border-red-800'
                           : 'bg-[#006448] text-white'

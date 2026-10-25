@@ -45,3 +45,8 @@ Deze stijlgids is bindend voor alle frontend componenten, pagina's, modals, drop
 - Geen onnodige gradients tenzij specifiek gevraagd.
 - Geen rommelige voetnoten of overtollige badges op inlog- en formulierpagina's.
 - Responsief: popups en formulieren moeten altijd binnen het scherm passen zonder ongewenste verticale overflows op laptops.
+
+## 6. White-Label Regel (Leadfabriek CRM)
+- **STRIKT VERBODEN in UI**: Gebruik in de frontend (knoppen, badges, tooltips, teksten, foutmeldingen of toasts) **NOOIT** de termen `GHL`, `GoHighLevel`, `Go High Level` of `LeadConnector`.
+- Gebruik in alle zichtbare teksten voor de klant **uitsluitend** `Leadfabriek CRM` (of kortweg `CRM`).
+

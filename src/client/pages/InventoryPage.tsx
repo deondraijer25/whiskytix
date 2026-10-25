@@ -33,7 +33,22 @@ export const InventoryPage: React.FC = () => {
                 paid.forEach((o: any) => {
                   if (Array.isArray(o.tickets)) {
                     o.tickets.forEach((t: any) => {
-                      if (t.session && t.session.toLowerCase().includes(s.name.toLowerCase().replace(' sessie', ''))) {
+                      const tSession = (t.session || '').toLowerCase();
+                      const sNameClean = s.name
+                        .toLowerCase()
+                        .replace('entree ', '')
+                        .replace(' sessie', '')
+                        .replace(' — ', ' ')
+                        .trim();
+                      if (
+                        tSession &&
+                        (tSession.includes(sNameClean) ||
+                          (sNameClean.includes('vrijdagmiddag') && tSession.includes('vrijdagmiddag')) ||
+                          (sNameClean.includes('vrijdagavond') && tSession.includes('vrijdagavond')) ||
+                          (sNameClean.includes('zaterdagmiddag') && tSession.includes('zaterdagmiddag')) ||
+                          (sNameClean.includes('zaterdagavond') && tSession.includes('zaterdagavond')) ||
+                          (sNameClean.includes('zondagmiddag') && tSession.includes('zondag')))
+                      ) {
                         count++;
                       }
                     });

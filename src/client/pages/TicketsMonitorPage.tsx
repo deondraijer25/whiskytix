@@ -320,7 +320,7 @@ export const TicketsMonitorPage: React.FC = () => {
                           : 'Nog geen tickets gegenereerd'}
                       </div>
                       <p className="text-xs text-[#4c5752]">
-                        {effectiveCity && (effectiveCity.toLowerCase().includes('denhaag') || effectiveCity.toLowerCase().includes('amsterdam'))
+                        {effectiveCity && effectiveCity.toLowerCase().includes('amsterdam')
                           ? 'Dit festival is momenteel in voorbereiding. Zodra de kaartverkoop start, verschijnen de officiële e-tickets en QR-codes hier direct.'
                           : 'Officiële HMAC QR-codes en downloads verschijnen hier automatisch zodra betalingen via Mollie binnenkomen.'}
                       </p>
@@ -524,7 +524,7 @@ export const TicketsMonitorPage: React.FC = () => {
                   </div>
                   <div>&bull; De oude barcode wordt <strong>per direct ongeldig</strong> gemaakt in alle scanners.</div>
                   <div>&bull; Er wordt een <strong>nieuw ticket</strong> gemint met aangepaste QR-code.</div>
-                  <div>&bull; De nieuwe downloadlink wordt klaargezet voor verzending via GoHighLevel.</div>
+                  <div>&bull; De nieuwe downloadlink wordt klaargezet voor verzending via het Leadfabriek CRM.</div>
                 </div>
 
                 {/* Knoppen */}

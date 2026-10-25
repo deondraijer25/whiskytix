@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Mail, Download, RefreshCw, CheckCircle, Clock, AlertTriangle, ShieldCheck, User, Phone, Calendar, Plus, Ticket, Tag, Check, Search } from 'lucide-react';
 import { Order } from '../data/mockData';
-import { getFestivalCatalog, FestivalCatalogItem, formatEuro } from '../data/festivalCatalog';
+import { getFestivalCatalog, useLiveCatalog, FestivalCatalogItem, formatEuro } from '../data/festivalCatalog';
 
 function formatPurchaseDateTime(dateStr?: string): string {
   if (!dateStr) return 'Onbekend';
@@ -196,7 +196,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
 
   const theme = DRAWER_THEMES[resolvedCityKey] || DRAWER_THEMES.denhaag;
 
-  const catalog = useMemo(() => getFestivalCatalog(resolvedCityKey as any), [resolvedCityKey]);
+  const { items: catalog } = useLiveCatalog(resolvedCityKey as any);
   const selectedSwapItem = useMemo(() => {
     return catalog.find((i) => i.id === selectedSwapItemId) || catalog.find((i) => i.title === targetSession) || catalog[0] || null;
   }, [catalog, selectedSwapItemId, targetSession]);
@@ -228,8 +228,25 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleResendEmail = () => {
-    showToast(`E-Tickets opnieuw verstuurd naar ${order.customerEmail} via Resend!`);
+  const handleResendEmail = async () => {
+    setIsProcessing(true);
+    try {
+      const cleanOrderNumber = order.orderNumber.replace(/^#+/, '');
+      const res = await fetch(`/api/admin/orders/${encodeURIComponent(cleanOrderNumber)}/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`E-Tickets voor ${order.orderNumber} opnieuw verzonden naar ${order.customerEmail} via het Leadfabriek CRM!`);
+      } else {
+        showToast(`Fout bij opnieuw verzenden: ${data.error || 'Kon Leadfabriek CRM verzending niet starten'}`);
+      }
+    } catch {
+      showToast('Netwerkfout bij het opnieuw verzenden van de e-tickets.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDownloadPdf = () => {

@@ -24,6 +24,7 @@ import {
 import { OrderDetailDrawer } from '../components/OrderDetailDrawer';
 import { useEnvironment } from '../context/EnvironmentContext';
 import { MollieEnvToggle } from '../components/MollieEnvToggle';
+import { SalesYoYChartCard } from '../components/SalesYoYChartCard';
 
 const CITY_THEMES: Record<string, {
   primary: string;
@@ -74,6 +75,7 @@ export const FestivalOverviewPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const { env: mollieEnv } = useEnvironment();
+  const fetchIdRef = React.useRef(0);
 
   const theme = CITY_THEMES[cityId] || CITY_THEMES.denhaag;
 
@@ -81,22 +83,34 @@ export const FestivalOverviewPage: React.FC = () => {
     return INITIAL_FESTIVALS.find((f: any) => f.id === cityId) || INITIAL_FESTIVALS[0];
   }, [cityId]);
 
-  const fetchOrders = async (targetEnv?: 'test' | 'live') => {
+  const fetchOrders = async (targetEnv?: 'test' | 'live', isRetry = false) => {
+    const reqId = ++fetchIdRef.current;
     setIsLoading(true);
     const activeEnv = targetEnv || mollieEnv;
     try {
       const res = await fetch(`/api/admin/orders?festivalId=${cityId}&env=${activeEnv}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.orders)) {
-        setOrders(data.orders);
-      } else {
-        setOrders([]);
+      if (reqId !== fetchIdRef.current) return;
+      if (res.ok) {
+        const data = await res.json();
+        if (reqId !== fetchIdRef.current) return;
+        if (data.success && Array.isArray(data.orders)) {
+          setOrders(data.orders);
+        }
+      } else if (!isRetry) {
+        setTimeout(() => fetchOrders(activeEnv, true), 1500);
+        return;
       }
     } catch (err) {
+      if (reqId !== fetchIdRef.current) return;
       console.error('Fout bij ophalen van orders:', err);
-      setOrders([]);
+      if (!isRetry) {
+        setTimeout(() => fetchOrders(activeEnv, true), 1500);
+        return;
+      }
     } finally {
-      setIsLoading(false);
+      if (reqId === fetchIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -126,12 +140,30 @@ export const FestivalOverviewPage: React.FC = () => {
   const sessions = useMemo<SessionCapacity[]>(() => {
     const rawSessions = INITIAL_SESSIONS.filter((s: any) => s.city === cityId);
     return rawSessions.map((session: any) => {
-      // Calculate how many tickets were sold for this specific session
+      const sName = session.name.toLowerCase();
+      const isVip = sName.includes('vip');
+      const isVrAvond = sName.includes('vrijdag') && sName.includes('avond');
+      const isZaMiddag = sName.includes('zaterdag') && sName.includes('middag');
+      const isZaAvond = sName.includes('zaterdag') && sName.includes('avond');
+      const isZoMiddag = sName.includes('zondag');
+
       let soldCount = 0;
       paidOrders.forEach((o) => {
         if (Array.isArray(o.tickets)) {
           o.tickets.forEach((t: any) => {
-            if (t.session && t.session.toLowerCase().includes(session.name.toLowerCase().replace(' sessie', ''))) {
+            if (t.status === 'cancelled' || t.status === 'swapped') return;
+            const ts = (t.session || '').toLowerCase();
+            if (!ts || ts.includes('masterclass') || ts.includes('botteling') || ts.includes('munt') || ts.includes('glencairn') || ts.includes('tram') || ts.includes('boot') || ts.includes('rondleiding')) {
+              return;
+            }
+            if (
+              (isVip && ts.includes('vip')) ||
+              (isVrAvond && ts.includes('vrijdag') && !ts.includes('vip')) ||
+              (isZaMiddag && ts.includes('zaterdag') && ts.includes('middag')) ||
+              (isZaAvond && ts.includes('zaterdag') && ts.includes('avond')) ||
+              (isZoMiddag && ts.includes('zondag')) ||
+              ts.includes(sName.replace(' sessie', '').replace('entree ', ''))
+            ) {
               soldCount++;
             }
           });
@@ -145,7 +177,7 @@ export const FestivalOverviewPage: React.FC = () => {
     });
   }, [cityId, paidOrders]);
 
-  const isPrelaunch = cityId === 'denhaag' || cityId === 'amsterdam';
+  const isPrelaunch = cityId === 'amsterdam';
 
   return (
     <div className="space-y-6 sm:space-y-8 font-sans">
@@ -180,7 +212,7 @@ export const FestivalOverviewPage: React.FC = () => {
 
         <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap">
           {/* Mollie Test / Live Mode Schakelaar */}
-          <MollieEnvToggle onEnvChange={(newEnv) => fetchOrders(newEnv)} />
+          <MollieEnvToggle />
 
           <button
             onClick={() => fetchOrders(mollieEnv)}
@@ -328,6 +360,14 @@ export const FestivalOverviewPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* 2B. PAGINABREDE VERKOOPGRAFIEK: DIT JAAR T.O.V. VORIG JAAR */}
+      <SalesYoYChartCard
+        cityId={cityId}
+        festivalName={activeFestival.name}
+        mollieEnv={mollieEnv}
+        paidOrders={paidOrders}
+      />
 
       {/* 3. DE SESSIE-THERMOMETER: Voortgang per Dagdeel */}
       <div>

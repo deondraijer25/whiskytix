@@ -541,8 +541,12 @@ export async function buildServer(): Promise<FastifyInstance> {
       var h = window.location.hash.replace(/^#+/, '').trim();
       var p = new URLSearchParams(window.location.search);
       var code = p.get('order') || p.get('code') || h;
+      var city = (p.get('city') || p.get('festivalId') || '').toLowerCase();
       if (code) {
-        window.location.replace('/api/orders/' + encodeURIComponent(code.replace(/^#+/, '')) + '/pdf');
+        var qs = city ? ('?city=' + encodeURIComponent(city)) : '';
+        window.location.replace('/api/orders/' + encodeURIComponent(code.replace(/^#+/, '')) + '/pdf' + qs);
+      } else if (city === 'denhaag' || city === 'amsterdam') {
+        window.location.replace('https://whiskyfestival.nl/inloggen');
       } else {
         window.location.replace('https://whiskyfestival.be/inloggen');
       }

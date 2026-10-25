@@ -28,7 +28,7 @@ export const DoorMonitorPage: React.FC = () => {
   const { cityId = 'denhaag' } = useParams<{ cityId?: string }>();
   const activeFestival = INITIAL_FESTIVALS.find((f: any) => f.id === cityId) || INITIAL_FESTIVALS[0];
 
-  const isPrelaunch = activeFestival.id === 'denhaag' || activeFestival.id === 'amsterdam';
+  const isPrelaunch = activeFestival.id === 'amsterdam';
 
   const { env: mollieEnv } = useEnvironment();
   const [tickets, setTickets] = useState<ScannedTicket[]>([]);
@@ -43,7 +43,7 @@ export const DoorMonitorPage: React.FC = () => {
     try {
       setLoading(true);
       const activeEnv = targetEnv || mollieEnv;
-      const res = await fetch(`/api/admin/tickets?env=${activeEnv}`);
+      const res = await fetch(`/api/admin/tickets?city=${activeFestival.id}&env=${activeEnv}`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.tickets)) {
