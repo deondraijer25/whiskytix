@@ -219,10 +219,17 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         : `${baseUrl}/order/confirmation?orderNumber=${encodeURIComponent(orderNumber)}`;
       const webhookUrl = `${baseUrl}/api/payments/webhook`;
 
+      const festivalPaymentLabel =
+        String(festivalId).toLowerCase() === 'gent'
+          ? 'Gents Whisky Festival'
+          : String(festivalId).toLowerCase() === 'amsterdam'
+          ? 'Amsterdam Whisky Festival'
+          : 'International Whisky Festival';
+
       const payment = await MollieService.createPayment({
         orderNumber,
         amountCents: totalCents,
-        description: `Bestelling ${orderNumber} - ${festivalId.toUpperCase()} Whisky Fest`,
+        description: `Bestelling ${orderNumber} - ${festivalPaymentLabel}`,
         redirectUrl,
         webhookUrl,
         customerEmail,
@@ -856,7 +863,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         }
 
         const pdfUrl = `${apiBase}/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${encodeURIComponent(order.festivalId || 'gent')}&name=${encodeURIComponent(ticket.attendeeName || order.customerName || 'Bezoeker')}&title=${encodeURIComponent(ticket.sessionTitle || 'Entreeticket')}&time=${encodeURIComponent(ticket.timeStr || '13:00 - 17:00 UUR')}&date=${encodeURIComponent(ticket.dateStr || '')}&orderNumber=${encodeURIComponent(order.orderNumber || '')}`;
-        const shareText = encodeURIComponent(`*${order.festivalId === 'gent' ? 'Gents Whisky Festival 2027' : order.festivalId === 'amsterdam' ? 'Amsterdam Whisky Festival 2027' : 'International Whisky Festival 2026'}*\nE-ticket: ${ticket.sessionTitle || 'Entreeticket'}\n\nKaarthouder: ${ticket.attendeeName || order.customerName}\nDatum: ${ticket.dateStr || ''}\nTijdslot: ${ticket.timeStr || ''}\nTicket Code: ${ticket.ticketCode}\nLocatie: ${city.venue}\n\nDownload je E-ticket (PDF):\n${pdfUrl}`);
+        const shareText = encodeURIComponent(`*${order.festivalId === 'gent' ? 'Gents Whisky Festival 2027' : order.festivalId === 'amsterdam' ? 'Amsterdam Whisky Festival 2027' : 'International Whisky Festival 2027'}*\nE-ticket: ${ticket.sessionTitle || 'Entreeticket'}\n\nKaarthouder: ${ticket.attendeeName || order.customerName}\nDatum: ${ticket.dateStr || ''}\nTijdslot: ${ticket.timeStr || ''}\nTicket Code: ${ticket.ticketCode}\nLocatie: ${city.venue}\n\nDownload je E-ticket (PDF):\n${pdfUrl}`);
         const isCheckedIn = ticket.status === 'checked_in';
         const isReplacement = !!ticket.replacedTicketCode || ticket.ticketCode.includes('-R');
         const isComp = !!ticket.swapReason && ticket.swapReason.includes('Handmatig');
