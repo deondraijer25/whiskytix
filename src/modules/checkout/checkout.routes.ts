@@ -8,11 +8,11 @@ import { CouponsRepository } from '../coupons/coupons.repository.js';
 
 export async function registerCheckoutRoutes(server: FastifyInstance): Promise<void> {
   /**
-   * 0. COUPONS & PROMO CODES MANAGEMENT + VALIDATION
+   * 0. COUPONS & PROMO CODES MANAGEMENT + VALIDATION (PostgreSQL / Supabase synced)
    */
   server.get('/api/coupons', async (request, reply) => {
-    const query = (request.query || {}) as { festivalId?: string };
-    const coupons = CouponsRepository.getAll(query.festivalId);
+    const query = (request.query || {}) as { festivalId?: string; city?: string };
+    const coupons = await CouponsRepository.getAll(query.festivalId || query.city);
     return reply.send({ success: true, coupons });
   });
 
@@ -21,7 +21,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     if (!body.code || typeof body.code !== 'string') {
       return reply.status(400).send({ error: 'Kortingscode is verplicht.' });
     }
-    const coupon = CouponsRepository.create({
+    const coupon = await CouponsRepository.create({
       code: body.code,
       city: body.city || 'Alle Festivals',
       type: body.type === 'fixed_amount' ? 'fixed_amount' : 'percentage',
@@ -32,15 +32,28 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     return reply.send({ success: true, coupon });
   });
 
+  server.patch('/api/coupons/:id', async (request, reply) => {
+    const params = request.params as { id: string };
+    const body = (request.body || {}) as { isActive?: boolean };
+    const updated = await CouponsRepository.toggleActive(params.id, Boolean(body.isActive));
+    if (!updated) {
+      return reply.status(404).send({ success: false, error: 'Kortingscode niet gevonden.' });
+    }
+    return reply.send({ success: true, coupon: updated });
+  });
+
   server.delete('/api/coupons/:id', async (request, reply) => {
     const params = request.params as { id: string };
-    const deleted = CouponsRepository.deleteById(params.id);
+    const deleted = await CouponsRepository.deleteById(params.id);
     return reply.send({ success: deleted });
   });
 
   server.post('/api/coupons/validate', async (request, reply) => {
-    const body = (request.body || {}) as { code?: string; festivalId?: string };
-    const result = CouponsRepository.validate(body.code || '', body.festivalId);
+    const body = (request.body || {}) as { code?: string; festivalId?: string; city?: string };
+    const result = await CouponsRepository.validate(
+      body.code || '',
+      body.festivalId || body.city
+    );
     return reply.send(result);
   });
 
@@ -154,13 +167,10 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       let finalDiscountCents = Math.min(subtotalCents, Math.max(0, Number(discountCents) || 0));
       if (promoCode && typeof promoCode === 'string' && promoCode.trim()) {
         const cleanPromo = promoCode.trim().toUpperCase();
-        if (cleanPromo.startsWith('WS-') || cleanPromo.startsWith('IWS')) {
-          const hasBottlingItem = orderItems.some((it) => String(it.category || '').toLowerCase() === 'botteling' && it.quantity > 0);
-          const iwsDiscountCents = (entreeQty > 0 ? 500 : 0) + (hasBottlingItem ? 500 : 0);
-          finalDiscountCents = Math.min(subtotalCents, iwsDiscountCents > 0 ? iwsDiscountCents : finalDiscountCents);
-          CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
-        } else {
-          const couponCheck = CouponsRepository.validate(cleanPromo, festivalId);
+        const explicitCoupon = await CouponsRepository.getByCode(cleanPromo);
+
+        if (explicitCoupon) {
+          const couponCheck = await CouponsRepository.validate(cleanPromo, festivalId);
           if (couponCheck.valid) {
             if (couponCheck.type === 'percentage' && couponCheck.value) {
               finalDiscountCents = Math.min(
@@ -170,7 +180,30 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
             } else if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
               finalDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
             }
-            CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
+            await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
+          }
+        } else if (cleanPromo.startsWith('WS-') || cleanPromo.startsWith('IWS')) {
+          const hasBottlingItem = orderItems.some(
+            (it) => String(it.category || '').toLowerCase() === 'botteling' && it.quantity > 0
+          );
+          const iwsDiscountCents = (entreeQty > 0 ? 500 : 0) + (hasBottlingItem ? 500 : 0);
+          finalDiscountCents = Math.min(
+            subtotalCents,
+            iwsDiscountCents > 0 ? iwsDiscountCents : finalDiscountCents
+          );
+          await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
+        } else {
+          const couponCheck = await CouponsRepository.validate(cleanPromo, festivalId);
+          if (couponCheck.valid) {
+            if (couponCheck.type === 'percentage' && couponCheck.value) {
+              finalDiscountCents = Math.min(
+                subtotalCents,
+                Math.round(subtotalCents * (couponCheck.value / 100))
+              );
+            } else if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
+              finalDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
+            }
+            await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
           }
         }
       }

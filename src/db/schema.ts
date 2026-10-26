@@ -62,6 +62,7 @@ export const discountCodes = pgTable('discount_codes', {
   minOrderCents: integer('min_order_cents').default(0).notNull(),
   maxUses: integer('max_uses'),
   currentUses: integer('current_uses').default(0).notNull(),
+  totalDiscountGrantedCents: integer('total_discount_granted_cents').default(0).notNull(),
   validFrom: timestamp('valid_from'),
   validUntil: timestamp('valid_until'),
   isActive: boolean('is_active').default(true).notNull(),
