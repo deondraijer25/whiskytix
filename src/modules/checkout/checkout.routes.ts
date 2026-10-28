@@ -5,6 +5,7 @@ import { MollieService, sandboxPayments } from '../payments/mollie.service.js';
 import { verifyQrPayload } from '../tickets/qr.service.js';
 import { GhlSyncService } from '../ghl/ghl.sync.service.js';
 import { CouponsRepository } from '../coupons/coupons.repository.js';
+import { ConscriboService } from '../conscribo/conscribo.service.js';
 
 export async function registerCheckoutRoutes(server: FastifyInstance): Promise<void> {
   /**
@@ -163,46 +164,41 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
       const shippingCents = hasShipping ? 1250 : 0; // €12,50 shipping fee
 
+      const finalCustomerName = (firstName && lastName)
+        ? `${firstName} ${lastName}`.trim()
+        : (customerName || 'Gast Bezoeker');
+
       // Discount is ALWAYS calculated over the subtotal (excluding service fees and shipping)
       let finalDiscountCents = Math.min(subtotalCents, Math.max(0, Number(discountCents) || 0));
       if (promoCode && typeof promoCode === 'string' && promoCode.trim()) {
         const cleanPromo = promoCode.trim().toUpperCase();
-        const explicitCoupon = await CouponsRepository.getByCode(cleanPromo);
+        const couponCheck = await CouponsRepository.validate(cleanPromo, festivalId);
 
-        if (explicitCoupon) {
-          const couponCheck = await CouponsRepository.validate(cleanPromo, festivalId);
-          if (couponCheck.valid) {
-            if (couponCheck.type === 'percentage' && couponCheck.value) {
-              finalDiscountCents = Math.min(
-                subtotalCents,
-                Math.round(subtotalCents * (couponCheck.value / 100))
-              );
-            } else if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
-              finalDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
-            }
-            await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
+        if (!couponCheck.valid) {
+          if (couponCheck.isIwsMember) {
+            return reply.status(400).send({ error: couponCheck.message });
           }
-        } else if (cleanPromo.startsWith('WS-') || cleanPromo.startsWith('IWS')) {
-          const hasBottlingItem = orderItems.some(
-            (it) => String(it.category || '').toLowerCase() === 'botteling' && it.quantity > 0
-          );
-          const iwsDiscountCents = (entreeQty > 0 ? 500 : 0) + (hasBottlingItem ? 500 : 0);
-          finalDiscountCents = Math.min(
-            subtotalCents,
-            iwsDiscountCents > 0 ? iwsDiscountCents : finalDiscountCents
-          );
-          await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
+          finalDiscountCents = 0;
         } else {
-          const couponCheck = await CouponsRepository.validate(cleanPromo, festivalId);
-          if (couponCheck.valid) {
-            if (couponCheck.type === 'percentage' && couponCheck.value) {
-              finalDiscountCents = Math.min(
-                subtotalCents,
-                Math.round(subtotalCents * (couponCheck.value / 100))
-              );
-            } else if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
-              finalDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
-            }
+          if (couponCheck.type === 'percentage' && couponCheck.value) {
+            finalDiscountCents = Math.min(
+              subtotalCents,
+              Math.round(subtotalCents * (couponCheck.value / 100))
+            );
+          } else if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
+            finalDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
+          }
+
+          if (couponCheck.isIwsMember && couponCheck.lidnummer) {
+            await ConscriboService.recordClaim({
+              lidnummer: couponCheck.lidnummer,
+              festivalId,
+              orderNumber,
+              discountCents: finalDiscountCents,
+              customerEmail,
+              customerName: finalCustomerName,
+            });
+          } else {
             await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
           }
         }
@@ -210,10 +206,6 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
       const discountedSubtotalCents = Math.max(0, subtotalCents - finalDiscountCents);
       const totalCents = discountedSubtotalCents + feeCents + shippingCents;
-
-      const finalCustomerName = (firstName && lastName)
-        ? `${firstName} ${lastName}`.trim()
-        : (customerName || 'Gast Bezoeker');
 
       // Create Pending Order
       const storedOrder = await OrdersRepository.createOrder({
@@ -749,6 +741,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           const mollieStatus = (verification as any).payment?.status;
           if (mollieStatus === 'canceled' || mollieStatus === 'expired' || mollieStatus === 'failed') {
             await OrdersRepository.cancelOrder(order.orderNumber, `Betaling ${mollieStatus} in Mollie`);
+            await ConscriboService.releaseClaimByOrderNumber(order.orderNumber);
             order.status = 'cancelled';
           }
         }

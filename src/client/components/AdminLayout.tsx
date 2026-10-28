@@ -26,7 +26,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [hubDropdownOpen, setHubDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const hubDropdownRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const authData = useMemo(() => {
@@ -50,12 +52,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (hubDropdownRef.current && !hubDropdownRef.current.contains(target)) {
+        setHubDropdownOpen(false);
+      }
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setUserDropdownOpen(false);
       }
     };
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        setHubDropdownOpen(false);
         setUserDropdownOpen(false);
       }
     };
@@ -73,13 +80,35 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     navigate('/admin/login');
   };
 
-  const navItems = [
-    { label: 'Cockpit', path: '/admin', icon: LayoutDashboard },
-    { label: 'Ticket & QR Monitor', path: '/admin/tickets', icon: QrCode },
-    { label: 'Gent', path: '/admin/festival/gent', icon: Building2 },
-    { label: 'Den Haag', path: '/admin/festival/denhaag', icon: Building2 },
-    { label: 'Amsterdam', path: '/admin/festival/amsterdam', icon: Building2 },
+  const hubItems = [
+    {
+      id: 'gent',
+      label: 'Gents Whisky Festival',
+      shortLabel: 'Gent',
+      subtitle: 'De Oude Vismijn Gent',
+      path: '/admin/festival/gent',
+      badge: 'Festival Hub',
+    },
+    {
+      id: 'denhaag',
+      label: 'Whisky Festival Den Haag',
+      shortLabel: 'Den Haag',
+      subtitle: 'Grote Kerk Den Haag',
+      path: '/admin/festival/denhaag',
+      badge: 'Festival Hub',
+    },
+    {
+      id: 'amsterdam',
+      label: 'Whisky Weekend Amsterdam',
+      shortLabel: 'Amsterdam',
+      subtitle: 'De Hallen Amsterdam',
+      path: '/admin/festival/amsterdam',
+      badge: 'Festival Hub',
+    },
   ];
+
+  const isIwsActive = location.pathname.startsWith('/admin/iws-leden');
+  const activeHubLabel = isIwsActive ? 'IWS Leden' : null;
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] bg-parchment-pattern flex flex-col font-sans text-[#1D1C1A]">
@@ -95,7 +124,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               </Link>
             </div>
 
-            {/* Center: Desktop Unified Navigation (ONE Single Clean Row) */}
+            {/* Center: Desktop Unified Navigation */}
             <nav className="hidden lg:flex items-center gap-1.5 xl:gap-2 ml-4">
               <Link
                 to="/admin"
@@ -124,28 +153,90 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               {/* Vertical Subtle Divider */}
               <div className="h-5 w-[1.5px] bg-[#c1d4ce] mx-2 self-center shrink-0"></div>
 
-              {/* Festival Links */}
-              {[
-                { id: 'gent', label: 'Gent', path: '/admin/festival/gent' },
-                { id: 'denhaag', label: 'Den Haag', path: '/admin/festival/denhaag' },
-                { id: 'amsterdam', label: 'Amsterdam', path: '/admin/festival/amsterdam' },
-              ].map((fest) => {
-                const isActive = location.pathname.startsWith(fest.path);
-                return (
-                  <Link
-                    key={fest.id}
-                    to={fest.path}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded text-xs font-bold transition-all ${
-                      isActive
-                        ? 'bg-[#006448] text-white border-2 border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
-                        : 'text-[#4c5752] hover:text-[#1D1C1A] hover:bg-[#FAF7F2] border border-transparent'
+              {/* "Kies een HUB" Dropdown (Gent, Den Haag, Amsterdam & IWS Leden) */}
+              <div className="relative" ref={hubDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setHubDropdownOpen(!hubDropdownOpen)}
+                  aria-expanded={hubDropdownOpen}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded text-xs font-extrabold transition-all cursor-pointer border-2 ${
+                    isIwsActive
+                      ? 'bg-[#774d35] text-[#fff5dc] border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                      : hubDropdownOpen
+                      ? 'bg-[#d8e7e2] text-[#1D1C1A] border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                      : 'bg-[#FAF7F2] hover:bg-[#d8e7e2] text-[#1D1C1A] border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                  }`}
+                >
+                  <Building2 className={`w-4 h-4 ${isIwsActive ? 'text-[#fff5dc]' : 'text-[#006448]'}`} />
+                  <span>{activeHubLabel ? `HUB: ${activeHubLabel}` : 'Kies een HUB'}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      hubDropdownOpen ? 'rotate-180' : ''
                     }`}
-                  >
-                    <Building2 className={`w-3.5 h-3.5 ${isActive ? 'text-[#e4d5c4]' : 'text-[#006448]'}`} />
-                    <span>{fest.label}</span>
-                  </Link>
-                );
-              })}
+                  />
+                </button>
+
+                {hubDropdownOpen && (
+                  <div className="absolute left-0 mt-2 w-72 bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <div className="px-3 py-2 border-b border-[#c1d4ce] text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752]">
+                      Kies een HUB
+                    </div>
+
+                    {hubItems.map((hub) => {
+                      const isActive = location.pathname.startsWith(hub.path);
+                      return (
+                        <Link
+                          key={hub.id}
+                          to={hub.path}
+                          onClick={() => setHubDropdownOpen(false)}
+                          className={`w-full text-left px-3.5 py-2.5 text-xs font-bold flex items-center justify-between hover:bg-[#FAF7F2] transition-colors ${
+                            isActive
+                              ? 'bg-[#d8e7e2] text-[#006448] font-extrabold border-l-4 border-[#006448]'
+                              : 'text-[#1D1C1A]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Building2 className="w-4 h-4 text-[#006448] shrink-0" />
+                            <div>
+                              <div className="font-extrabold">{hub.label}</div>
+                              <div className="text-[11px] text-[#4c5752] font-normal">{hub.subtitle}</div>
+                            </div>
+                          </div>
+                          <span className="text-[10px] bg-[#FAF7F2] text-[#4c5752] border border-[#c1d4ce] px-1.5 py-0.5 rounded font-bold">
+                            {hub.shortLabel}
+                          </span>
+                        </Link>
+                      );
+                    })}
+
+                    {/* Divider for IWS Leden Hub */}
+                    <div className="border-t border-[#c1d4ce] my-1"></div>
+
+                    <Link
+                      to="/admin/iws-leden"
+                      onClick={() => setHubDropdownOpen(false)}
+                      className={`w-full text-left px-3.5 py-2.5 text-xs font-bold flex items-center justify-between hover:bg-[#FAF7F2] transition-colors ${
+                        isIwsActive
+                          ? 'bg-[#774d35]/15 text-[#774d35] font-extrabold border-l-4 border-[#774d35]'
+                          : 'text-[#1D1C1A]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Users className="w-4 h-4 text-[#774d35] shrink-0" />
+                        <div>
+                          <div className="font-extrabold">IWS Ledenbestand</div>
+                          <div className="text-[11px] text-[#4c5752] font-normal">
+                            International Whisky Society (Conscribo)
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-[#774d35] text-[#fff5dc] px-1.5 py-0.5 rounded font-extrabold">
+                        IWS
+                      </span>
+                    </Link>
+                  </div>
+                )}
+              </div>
             </nav>
 
             {/* Right: Profile Dropdown */}
@@ -251,13 +342,40 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752] mb-1">
               Navigatie:
             </div>
-            {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
-              const Icon = item.icon;
+            <Link
+              to="/admin"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded font-extrabold text-xs uppercase tracking-wider border-2 transition-all ${
+                location.pathname === '/admin'
+                  ? 'bg-[#006448] text-white border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                  : 'bg-[#FAF7F2] text-[#1D1C1A] border-[#1D1C1A] hover:bg-[#d8e7e2]'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Cockpit</span>
+            </Link>
+            <Link
+              to="/admin/tickets"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded font-extrabold text-xs uppercase tracking-wider border-2 transition-all ${
+                location.pathname === '/admin/tickets'
+                  ? 'bg-[#006448] text-white border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                  : 'bg-[#FAF7F2] text-[#1D1C1A] border-[#1D1C1A] hover:bg-[#d8e7e2]'
+              }`}
+            >
+              <QrCode className="w-4 h-4" />
+              <span>Ticket & QR Monitor</span>
+            </Link>
+
+            <div className="pt-2 border-t border-[#c1d4ce] text-[11px] font-extrabold uppercase tracking-wider text-[#4c5752] mb-1">
+              Kies een HUB:
+            </div>
+            {hubItems.map((hub) => {
+              const isActive = location.pathname.startsWith(hub.path);
               return (
                 <Link
-                  key={item.path}
-                  to={item.path}
+                  key={hub.path}
+                  to={hub.path}
                   onClick={() => setMobileMenuOpen(false)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded font-extrabold text-xs uppercase tracking-wider border-2 transition-all ${
                     isActive
@@ -265,11 +383,23 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                       : 'bg-[#FAF7F2] text-[#1D1C1A] border-[#1D1C1A] hover:bg-[#d8e7e2]'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span>{item.label}</span>
+                  <Building2 className="w-4 h-4" />
+                  <span>{hub.label}</span>
                 </Link>
               );
             })}
+            <Link
+              to="/admin/iws-leden"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded font-extrabold text-xs uppercase tracking-wider border-2 transition-all ${
+                isIwsActive
+                  ? 'bg-[#774d35] text-[#fff5dc] border-[#1D1C1A] shadow-[2px_2px_0px_rgba(29,28,26,0.9)]'
+                  : 'bg-[#FAF7F2] text-[#1D1C1A] border-[#1D1C1A] hover:bg-[#d8e7e2]'
+              }`}
+            >
+              <Users className="w-4 h-4 text-[#774d35]" />
+              <span>IWS Ledenbestand (Conscribo)</span>
+            </Link>
           </div>
         )}
       </div>

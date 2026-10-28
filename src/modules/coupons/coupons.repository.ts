@@ -3,6 +3,11 @@ import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { queryClient, checkDbConnection } from '../../db/index.js';
+import {
+  ConscriboService,
+  normalizeIwsLidnummer,
+  getIwsDiscountForFestival,
+} from '../conscribo/conscribo.service.js';
 
 export interface StoredCoupon {
   id: string;
@@ -371,6 +376,9 @@ export class CouponsRepository {
     festivalId?: string
   ): Promise<{
     valid: boolean;
+    isIwsMember?: boolean;
+    lidnummer?: string;
+    memberName?: string;
     code?: string;
     type?: 'percentage' | 'fixed_amount';
     value?: number; // percentage (e.g. 10) or EUR amount (e.g. 50)
@@ -379,7 +387,7 @@ export class CouponsRepository {
   }> {
     const code = (rawCode || '').trim().toUpperCase();
     if (!code) {
-      return { valid: false, message: 'Voer een kortingscode in.' };
+      return { valid: false, message: 'Voer een kortingscode of IWS-lidnummer in.' };
     }
 
     // 1. Check PostgreSQL / Supabase database FIRST so any custom code created by the client
@@ -439,18 +447,6 @@ export class CouponsRepository {
       }
     }
 
-    // 2. Fallback to built-in IWS membership & gift voucher patterns if not an explicit coupon in DB
-    if (code.startsWith('WS-') || code.startsWith('IWS')) {
-      return {
-        valid: true,
-        code,
-        type: 'fixed_amount',
-        value: 5,
-        valueCents: 500,
-        message: 'IWS-lidmaatschap gevalideerd: €5,00 korting op 1 sessiekaart en €5,00 op de festivalbotteling.',
-      };
-    }
-
     if (code === 'GIFT-50' || code === 'CADEAU-50') {
       return {
         valid: true,
@@ -462,7 +458,53 @@ export class CouponsRepository {
       };
     }
 
-    return { valid: false, message: '✗ Ongeldige code. Probeer het opnieuw.' };
+    // 2. Live Conscribo IWS Membership & Cross-Festival 1x Free Ticket Validation
+    const normalizedLidnummer = normalizeIwsLidnummer(code);
+    if (normalizedLidnummer) {
+      const member = await ConscriboService.findMemberByLidnummer(code);
+      if (!member) {
+        return {
+          valid: false,
+          isIwsMember: true,
+          lidnummer: normalizedLidnummer,
+          message: `✗ IWS-lidnummer #${normalizedLidnummer} is niet gevonden in het ledenbestand.`,
+        };
+      }
+
+      if (member.status !== 'actief') {
+        return {
+          valid: false,
+          isIwsMember: true,
+          lidnummer: member.lidnummer,
+          message: `✗ Het IWS-lidmaatschap voor #${member.lidnummer} is verlopen.`,
+        };
+      }
+
+      const existingClaim = member.claim || (await ConscriboService.getClaim(member.lidnummer));
+      if (existingClaim) {
+        return {
+          valid: false,
+          isIwsMember: true,
+          lidnummer: member.lidnummer,
+          message: `✗ Lidnr. #${member.lidnummer} is al ingezet voor ${existingClaim.festivalName} (1x gratis ticket per jaar).`,
+        };
+      }
+
+      const festDiscount = getIwsDiscountForFestival(festivalId);
+      return {
+        valid: true,
+        isIwsMember: true,
+        lidnummer: member.lidnummer,
+        memberName: member.volledigeNaam,
+        code: `WS-${member.lidnummer}`,
+        type: 'fixed_amount',
+        value: festDiscount.discountEur,
+        valueCents: festDiscount.discountCents,
+        message: `✓ IWS-lid #${member.lidnummer} actief: 1x gratis ticket (-€ ${festDiscount.discountFormatted}).`,
+      };
+    }
+
+    return { valid: false, message: '✗ Ongeldige code of lidnummer. Probeer het opnieuw.' };
   }
 
   static async recordRedemption(rawCode: string, discountGrantedCents: number): Promise<void> {

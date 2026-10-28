@@ -13,6 +13,7 @@ import { ScanHistoryPage } from './pages/ScanHistoryPage';
 import { TicketViewPage } from './pages/TicketViewPage';
 import { FestivalOverviewPage } from './pages/FestivalOverviewPage';
 import { CreateInvitationPage } from './pages/CreateInvitationPage';
+import { IwsMembersPage } from './pages/IwsMembersPage';
 import { AdminLayout } from './components/AdminLayout';
 import { FestivalLayout } from './components/FestivalLayout';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -64,6 +65,16 @@ export const App: React.FC = () => {
           <ProtectedRoute>
             <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
               <CreateInvitationPage />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/iws-leden"
+        element={
+          <ProtectedRoute>
+            <AdminLayout selectedCity={selectedCity} onCityChange={setSelectedCity}>
+              <IwsMembersPage />
             </AdminLayout>
           </ProtectedRoute>
         }

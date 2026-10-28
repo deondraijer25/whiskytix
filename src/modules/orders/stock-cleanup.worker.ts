@@ -4,6 +4,7 @@
  */
 
 import { OrdersRepository } from './orders.repository.js';
+import { ConscriboService } from '../conscribo/conscribo.service.js';
 import { db, checkDbConnection } from '../../db/index.js';
 import * as schema from '../../db/schema.js';
 import { eq, and, lt } from 'drizzle-orm';
@@ -42,6 +43,7 @@ export async function runStockCleanup(): Promise<{ expiredCount: number }> {
       if (!isNaN(expiresAtDate.getTime()) && expiresAtDate < now) {
         order.status = 'expired';
         expiredCount++;
+        await ConscriboService.releaseClaimByOrderNumber(order.orderNumber);
         console.info(`[Stock Cleanup] Order ${order.orderNumber} is verlopen na 15 min. Voorraad vrijgegeven.`);
 
         // Update DB if connected

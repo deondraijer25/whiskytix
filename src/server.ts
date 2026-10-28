@@ -14,6 +14,7 @@ import { generateTicketPdf, generateTicketsBundlePdf, type TicketPdfOptions } fr
 import { generateQrSvg, generateQrPngDataUrl } from './modules/tickets/qr.service.js';
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
 import { registerCatalogRoutes } from './modules/catalog/catalog.routes.js';
+import { registerConscriboRoutes } from './modules/conscribo/conscribo.routes.js';
 import { startStockCleanupWorker } from './modules/orders/stock-cleanup.worker.js';
 import { UsersRepository } from './modules/auth/users.repository.js';
 import { OrdersRepository } from './modules/orders/orders.repository.js';
@@ -556,6 +557,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   // 5. Catalog, Checkout & Payment Routes
   await registerCatalogRoutes(server);
   await registerCheckoutRoutes(server);
+  await registerConscriboRoutes(server);
 
   // Start background 15-minute stock hold cleanup
   startStockCleanupWorker();

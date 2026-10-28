@@ -216,7 +216,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                   title="Wissel van festival locatie"
                 >
                   <Building2 className="w-4 h-4 text-[#006448]" />
-                  <span className="text-[#4c5752] font-semibold">Editie:</span>
+                  <span className="text-[#4c5752] font-semibold">Kies een HUB:</span>
                   <span className="text-[#006448] font-extrabold">
                     {cityId === 'denhaag' ? 'Den Haag' : cityId === 'amsterdam' ? 'Amsterdam' : 'Gent'}
                   </span>
@@ -226,7 +226,7 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                 {cityDropdownOpen && (
                   <div className="absolute right-0 mt-2 w-64 bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
                     <div className="px-3 py-2 border-b border-[#c1d4ce] text-xs font-bold text-[#4c5752]">
-                      Kies festival editie
+                      Kies een HUB
                     </div>
                     {INITIAL_FESTIVALS.map((fest: any) => (
                       <button
@@ -250,6 +250,23 @@ export const FestivalLayout: React.FC<FestivalLayoutProps> = ({ children }) => {
                         )}
                       </button>
                     ))}
+                    <div className="border-t border-[#c1d4ce] my-1"></div>
+                    <Link
+                      to="/admin/iws-leden"
+                      onClick={() => setCityDropdownOpen(false)}
+                      className="w-full text-left px-3 py-2.5 text-xs font-bold flex items-center justify-between hover:bg-[#FAF7F2] text-[#1D1C1A] transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-[#774d35] shrink-0" />
+                        <div>
+                          <div className="font-extrabold">IWS Ledenbestand</div>
+                          <div className="text-[11px] text-[#4c5752]">International Whisky Society</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-[#774d35] text-[#fff5dc] px-1.5 py-0.5 rounded font-extrabold">
+                        IWS
+                      </span>
+                    </Link>
                   </div>
                 )}
               </div>
