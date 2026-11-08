@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { db, checkDbConnection } from '../../db/index.js';
 import * as schema from '../../db/schema.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ilike } from 'drizzle-orm';
 import { buildQrPayload, generateTicketSignature } from '../tickets/qr.service.js';
 import { GhlSyncService } from '../ghl/ghl.sync.service.js';
 import { MollieService } from '../payments/mollie.service.js';
@@ -465,6 +465,7 @@ export class OrdersRepository {
   static async createOrder(order: Omit<StoredOrder, 'tickets'>): Promise<StoredOrder> {
     const fullOrder: StoredOrder = {
       ...order,
+      customerEmail: (order.customerEmail || '').trim().toLowerCase(),
       tickets: [],
     };
 
@@ -874,7 +875,7 @@ export class OrdersRepository {
         const rows = await db
           .select()
           .from(schema.orders)
-          .where(eq(schema.orders.customerEmail, cleanEmail));
+          .where(ilike(schema.orders.customerEmail, cleanEmail));
 
         for (const row of rows) {
           if (!ordersMap.has(row.orderNumber)) {
@@ -889,6 +890,27 @@ export class OrdersRepository {
       }
     } catch (err: any) {
       console.warn('DB lookup by email failed:', err.message);
+    }
+
+    // 3. Fallback: Reconstruct from Mollie API metadata if no DB/memory rows matched
+    if (ordersMap.size === 0) {
+      try {
+        const mollieLivePayments = await MollieService.listAllRecentPayments(100, 'live');
+        const mollieTestPayments = await MollieService.listAllRecentPayments(50, 'test');
+        const molliePayments = [...mollieLivePayments, ...mollieTestPayments];
+        for (const p of molliePayments) {
+          const metaEmail = (p.metadata?.customerEmail || '').trim().toLowerCase();
+          const metaOrderNum = p.metadata?.orderNumber;
+          if (metaEmail === cleanEmail && metaOrderNum) {
+            const reconstructed = await this.findOrder(metaOrderNum);
+            if (reconstructed && (!festivalId || reconstructed.festivalId === festivalId)) {
+              ordersMap.set(reconstructed.orderNumber, reconstructed);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn('Mollie lookup by email failed:', err.message);
+      }
     }
 
     return Array.from(ordersMap.values()).sort((a, b) => 
