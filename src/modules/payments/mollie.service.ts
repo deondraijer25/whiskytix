@@ -60,7 +60,7 @@ export class MollieService {
 
     // City-specific defaults when no explicit environment override is set
     if (city === 'denhaag') {
-      const dhLiveKey = process.env.MOLLIE_API_KEY_LIVE_DENHAAG || 'live_udW4qwm4NbAPvF7shg5rB8CwuqRcSA';
+      const dhLiveKey = process.env.MOLLIE_API_KEY_LIVE_DENHAAG;
       if (dhLiveKey && dhLiveKey.startsWith('live_') && dhLiveKey !== 'live_placeholder') {
         return 'live';
       }
