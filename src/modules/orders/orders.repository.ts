@@ -232,6 +232,40 @@ export class OrdersRepository {
   /**
    * Clears all stored orders
    */
+  /**
+   * Returns a map of ticketTypeId -> total quantity currently held in non-expired pending orders
+   */
+  static getActiveReservedQuantities(festivalId?: string): Map<string, number> {
+    const now = Date.now();
+    const reserved = new Map<string, number>();
+    const seenOrders = new Set<string>();
+
+    for (const o of memoryOrders.values()) {
+      if (!o || !o.orderNumber || seenOrders.has(o.orderNumber)) continue;
+      seenOrders.add(o.orderNumber);
+      if (o.status !== 'pending') continue;
+      if (festivalId && o.festivalId !== festivalId) continue;
+
+      const exp = o.expiresAt ? new Date(o.expiresAt).getTime() : 0;
+      if (exp > 0 && exp < now) continue;
+
+      if (Array.isArray(o.items)) {
+        for (const it of o.items) {
+          if (it.ticketTypeId && it.quantity > 0) {
+            reserved.set(it.ticketTypeId, (reserved.get(it.ticketTypeId) || 0) + it.quantity);
+          }
+          if (it.title && it.quantity > 0) {
+            const cleanTitleKey = it.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (cleanTitleKey) {
+              reserved.set('title:' + cleanTitleKey, (reserved.get('title:' + cleanTitleKey) || 0) + it.quantity);
+            }
+          }
+        }
+      }
+    }
+    return reserved;
+  }
+
   static clearOrders() {
     memoryOrders.clear();
     saveLocalStore();
@@ -1024,9 +1058,13 @@ export class OrdersRepository {
       // Serverless-Safe AWAIT op de gedoseerde CRM-sync zodat Vercel het proces nooit halverwege bevriest!
       if (!order.ghlSynced) {
         try {
-          const syncRes = await GhlSyncService.syncPaidOrder(order, undefined, {
+          const syncPromise = GhlSyncService.syncPaidOrder(order, undefined, {
             skipInventoryIncrement: wasAlreadyPaidWithTickets,
           });
+          const timeoutPromise = new Promise<{ success: boolean; contactId?: string }>((resolve) =>
+            setTimeout(() => resolve({ success: false }), 8500)
+          );
+          const syncRes = await Promise.race([syncPromise, timeoutPromise]);
           order.ghlSynced = syncRes.success;
           if (syncRes.contactId) {
             order.ghlContactId = syncRes.contactId;

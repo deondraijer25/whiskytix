@@ -60,7 +60,7 @@ export class MollieService {
 
     // City-specific defaults when no explicit environment override is set
     if (city === 'denhaag') {
-      const dhLiveKey = process.env.MOLLIE_API_KEY_LIVE_DENHAAG;
+      const dhLiveKey = process.env.MOLLIE_API_KEY_LIVE_DENHAAG || 'live_udW4qwm4NbAPvF7shg5rB8CwuqRcSA';
       if (dhLiveKey && dhLiveKey.startsWith('live_') && dhLiveKey !== 'live_placeholder') {
         return 'live';
       }
@@ -107,7 +107,7 @@ export class MollieService {
         if (dhKey && dhKey.startsWith('live_') && dhKey !== 'live_placeholder') {
           return dhKey;
         }
-        return null; // Den Haag live key not yet configured / launched
+        return 'live_udW4qwm4NbAPvF7shg5rB8CwuqRcSA'; // Highland Consultancy B.V. (#12343118 - profiel pfl_HFD8YffpCH) Live API key
       } else if (city === 'amsterdam') {
         const amKey = process.env.MOLLIE_API_KEY_LIVE_AMSTERDAM;
         if (amKey && amKey.startsWith('live_') && amKey !== 'live_placeholder') {
@@ -236,7 +236,7 @@ export class MollieService {
 
     // Den Haag (Highland Consultancy B.V.) keys
     addKey(process.env.MOLLIE_API_KEY_TEST_DENHAAG || 'test_gnHKSmfVqHdz69rQUzNt3mtwdpRzSC');
-    addKey(process.env.MOLLIE_API_KEY_LIVE_DENHAAG);
+    addKey(process.env.MOLLIE_API_KEY_LIVE_DENHAAG || 'live_udW4qwm4NbAPvF7shg5rB8CwuqRcSA');
 
     // Gent (Whisky Festival VOF) keys
     addKey(process.env.MOLLIE_API_KEY_LIVE_GENT || process.env.MOLLIE_API_KEY_GENT || 'live_WwzPNdHVjugNfmV4Tx3hsCvxhHWyV3');

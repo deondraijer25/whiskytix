@@ -6,13 +6,19 @@ import * as schema from './schema.js';
 
 dotenv.config();
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/whiskytix';
+const rawConnectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/whiskytix';
+const isServerless = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+// Automatically use Supabase Transaction Mode pooler (port 6543) in serverless to support hundreds of concurrent lambdas
+const connectionString = isServerless && rawConnectionString.includes('.pooler.supabase.com:5432')
+  ? rawConnectionString.replace('.pooler.supabase.com:5432', '.pooler.supabase.com:6543')
+  : rawConnectionString;
 
-// 1. PostgreSQL connection client (with connection pooling)
+// 1. PostgreSQL connection client (with connection pooling & Supavisor transaction mode compatibility)
 export const queryClient = postgres(connectionString, {
-  max: 10,
+  max: isServerless ? 2 : 10,
   idle_timeout: 20,
   connect_timeout: 10,
+  prepare: false,
 });
 
 // 2. Drizzle ORM instance with typed schema

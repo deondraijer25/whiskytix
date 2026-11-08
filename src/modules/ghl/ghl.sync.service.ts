@@ -20,8 +20,8 @@ export interface GhlSyncResult {
 }
 
 // --- 1. Paced Concurrency Limiter (voorkomt 429 burst-blokkades bij honderden orders om 00:00 uur) ---
-const MAX_CONCURRENT_SYNCS = 3;
-const MIN_START_INTERVAL_MS = 180;
+const MAX_CONCURRENT_SYNCS = 6;
+const MIN_START_INTERVAL_MS = 110;
 let activeSyncWorkers = 0;
 let lastTaskStartedAt = 0;
 const syncWaitQueue: Array<() => void> = [];
@@ -180,7 +180,7 @@ export class GhlSyncService {
         }
       }
       portalBase = portalBase.replace(/\/+$/, '');
-      const portalUrl = `${portalBase}/inloggen`;
+      const portalUrl = `${portalBase}/account?email=${encodeURIComponent(order.customerEmail)}&order=${encodeURIComponent(order.orderNumber)}`;
 
       const firstName =
         order.firstName ||

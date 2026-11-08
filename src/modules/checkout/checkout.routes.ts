@@ -4,6 +4,7 @@ import { OrdersRepository, StoredOrderItem, StoredOrder, parseItemsSummary } fro
 import { MollieService, sandboxPayments } from '../payments/mollie.service.js';
 import { verifyQrPayload } from '../tickets/qr.service.js';
 import { GhlSyncService } from '../ghl/ghl.sync.service.js';
+import { GhlCatalogService } from '../ghl/ghl.catalog.service.js';
 import { CouponsRepository } from '../coupons/coupons.repository.js';
 import { ConscriboService } from '../conscribo/conscribo.service.js';
 
@@ -206,6 +207,47 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
       const discountedSubtotalCents = Math.max(0, subtotalCents - finalDiscountCents);
       const totalCents = discountedSubtotalCents + feeCents + shippingCents;
+
+      // Pre-payment Capacity & Stock Protection (prevents overselling under 300-400 concurrent buyers)
+      try {
+        const catalog = await GhlCatalogService.getCatalog(festivalId);
+        if (catalog && Array.isArray(catalog.items) && catalog.items.length > 0) {
+          const activeReserved = OrdersRepository.getActiveReservedQuantities(festivalId);
+          for (const reqItem of orderItems) {
+            const cleanReqTitle = (reqItem.title || '')
+              .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, '');
+
+            const matchedCatalogItem = catalog.items.find((ci) => {
+              if (ci.id === reqItem.ticketTypeId) return true;
+              const cleanCiTitle = (ci.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              return Boolean(cleanReqTitle && cleanCiTitle && cleanCiTitle === cleanReqTitle);
+            });
+
+            if (matchedCatalogItem) {
+              // Ensure orderItem uses the canonical GHL record ID so post-payment sold increments hit the exact record
+              if (matchedCatalogItem.id && (!reqItem.ticketTypeId || reqItem.ticketTypeId.startsWith('dh-') || reqItem.ticketTypeId.startsWith('ticket-'))) {
+                reqItem.ticketTypeId = matchedCatalogItem.id;
+              }
+              const cap = matchedCatalogItem.capacity || 0;
+              const sold = matchedCatalogItem.sold || 0;
+              const reservedById = activeReserved.get(matchedCatalogItem.id) || 0;
+              const effectiveSold = sold + reservedById;
+
+              if (matchedCatalogItem.isSoldOut || (cap > 0 && effectiveSold + reqItem.quantity > cap)) {
+                const remaining = Math.max(0, cap - effectiveSold);
+                const msg = remaining === 0
+                  ? `Helaas! "${reqItem.title}" is zojuist uitverkocht.`
+                  : `Voor "${reqItem.title}" zijn nog slechts ${remaining} ticket(s) beschikbaar (u probeert er ${reqItem.quantity} te bestellen).`;
+                return reply.status(409).send({ error: msg, code: 'SOLD_OUT', ticketTypeId: reqItem.ticketTypeId, remaining });
+              }
+            }
+          }
+        }
+      } catch (stockErr: any) {
+        server.log.warn('Kon pre-checkout voorraadcheck niet uitvoeren: ' + stockErr.message);
+      }
 
       // Create Pending Order
       const storedOrder = await OrdersRepository.createOrder({
