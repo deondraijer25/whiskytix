@@ -27,7 +27,6 @@ export const db = drizzle(queryClient, { schema });
 // 3. Supabase Admin Client (Service Role - full access to auth, storage, database)
 const supabaseUrl = process.env.SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder';
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || 'placeholder';
 
 export const supabaseAdmin: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
@@ -36,10 +35,7 @@ export const supabaseAdmin: SupabaseClient = createClient(supabaseUrl, supabaseS
   },
 });
 
-// 4. Supabase Public Client (Anon key)
-export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-
-// 5. Connection health check
+// 4. Connection health check
 export async function checkDbConnection(): Promise<{ ok: boolean; message: string }> {
   try {
     await queryClient`SELECT 1`;

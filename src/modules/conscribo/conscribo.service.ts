@@ -316,6 +316,7 @@ async function ensureClaimsDbReady(): Promise<boolean> {
           customer_name text,
           claimed_at timestamptz NOT NULL DEFAULT now()
         );
+        ALTER TABLE iws_festival_claims ENABLE ROW LEVEL SECURITY;
       `);
       claimsDbInitialized = true;
     }
