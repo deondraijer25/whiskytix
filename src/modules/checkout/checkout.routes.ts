@@ -321,16 +321,16 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           customerPhone: customerPhone || '',
           promoCode: promoCode ? String(promoCode).trim() : '',
           discountCents: finalDiscountCents,
-          itemsSummary: orderItems.map((i) => `${i.quantity}x ${i.title}`).join(', '),
-          itemsJson: JSON.stringify(orderItems.map((i) => ({
+          itemsSummary: orderItems.map((i) => `${i.quantity}x ${i.title}`).join(', ').slice(0, 450),
+          itemsJson: JSON.stringify(orderItems.slice(0, 8).map((i) => ({
             id: i.id,
-            title: i.title,
+            title: (i.title || '').slice(0, 38),
             qty: i.quantity,
             priceCents: i.unitPriceCents,
             cat: i.category,
-            d: i.date,
-            tm: i.time,
-          }))).slice(0, 850),
+            d: (i.date || '').slice(0, 26),
+            tm: (i.timeslot || i.time || '').slice(0, 26),
+          }))),
         },
       }, festivalId);
 

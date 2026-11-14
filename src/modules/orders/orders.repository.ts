@@ -327,7 +327,10 @@ export class OrdersRepository {
           dateStr = 'Zondag 14 november 2027';
         } else if (titleLower.includes('zaterdag')) {
           dateStr = 'Zaterdag 13 november 2027';
-        } else if (titleLower.includes('botteling') || titleLower.includes('munt') || titleLower.includes('glencairn')) {
+        } else if (titleLower.includes('botteling')) {
+          const isShipping = titleLower.includes('verzend') || (explicitTime && explicitTime.toLowerCase().includes('verzend'));
+          dateStr = isShipping ? 'Verzending na festival (12-14 nov 2027)' : 'Afhalen Festival (12-14 nov 2027)';
+        } else if (titleLower.includes('munt') || titleLower.includes('glencairn')) {
           dateStr = 'Afhalen Festival (12-14 nov 2027)';
         } else {
           dateStr = 'Vrijdag 12 november 2027';
@@ -346,7 +349,7 @@ export class OrdersRepository {
         else if (titleLower.includes('bowmore')) timeStr = '19:30 - 20:30 UUR';
         else if (titleLower.includes('suntory')) timeStr = '15:00 - 15:45 UUR';
         else if (titleLower.includes('boot')) timeStr = '12:00 - 13:00 UUR';
-        else if (titleLower.includes('botteling')) timeStr = 'Hele dag';
+        else if (titleLower.includes('botteling')) timeStr = titleLower.includes('verzend') ? 'Verzending per post' : 'Afhalen tijdens festival';
         else if (titleLower.includes('vip')) timeStr = '13:00 - 17:00 UUR';
         else if (titleLower.includes('avond')) timeStr = '19:00 - 23:00 UUR';
         else timeStr = '13:00 - 17:00 UUR';
@@ -354,7 +357,8 @@ export class OrdersRepository {
         timeStr = titleLower.includes('avond') ? '18:30 - 22:30 UUR' : '13:00 - 17:00 UUR';
       } else {
         // Den Haag
-        if (titleLower.includes('botteling') || titleLower.includes('munt') || titleLower.includes('glencairn')) timeStr = 'Hele dag';
+        if (titleLower.includes('botteling')) timeStr = titleLower.includes('verzend') ? 'Verzending per post' : 'Afhalen tijdens festival';
+        else if (titleLower.includes('munt') || titleLower.includes('glencairn')) timeStr = 'Afhalen tijdens festival';
         else if (titleLower.includes('zondag')) timeStr = '13:00 - 17:00 UUR';
         else if (titleLower.includes('avond')) timeStr = '19:00 - 23:00 UUR';
         else if (titleLower.includes('vip')) timeStr = '13:00 - 17:00 UUR';
@@ -362,9 +366,17 @@ export class OrdersRepository {
       }
     }
 
+    const upperTime = timeStr.toUpperCase();
     if (timeStr.toLowerCase().endsWith(' uur')) {
       timeStr = timeStr.slice(0, -4).trim() + ' UUR';
-    } else if (!timeStr.toUpperCase().includes('UUR') && !timeStr.toUpperCase().includes('DAG') && !timeStr.toUpperCase().includes('POST')) {
+    } else if (
+      !upperTime.includes('UUR') &&
+      !upperTime.includes('DAG') &&
+      !upperTime.includes('POST') &&
+      !upperTime.includes('AFHALEN') &&
+      !upperTime.includes('VERZEND') &&
+      !upperTime.includes('FESTIVAL')
+    ) {
       timeStr += ' UUR';
     }
 
@@ -484,6 +496,18 @@ export class OrdersRepository {
     try {
       const dbStatus = await checkDbConnection();
       if (dbStatus.ok) {
+        await db.insert(schema.festivals).values({
+          id: fullOrder.festivalId,
+          name: fullOrder.festivalId === 'denhaag'
+            ? 'International Whisky Festival Den Haag'
+            : fullOrder.festivalId === 'gent'
+            ? 'International Whisky Festival Gent'
+            : 'International Whisky Festival Amsterdam',
+          city: fullOrder.festivalId === 'denhaag' ? 'Den Haag' : fullOrder.festivalId === 'gent' ? 'Gent' : 'Amsterdam',
+          currency: 'EUR',
+          supportEmail: 'info@whiskyfestival.nl',
+        }).onConflictDoNothing();
+
         await db.insert(schema.orders).values({
           id: fullOrder.id,
           orderNumber: fullOrder.orderNumber,
@@ -553,10 +577,11 @@ export class OrdersRepository {
     try {
       const dbStatus = await checkDbConnection();
       if (dbStatus.ok) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier.trim());
         const rows = await db
           .select()
           .from(schema.orders)
-          .where(eq(schema.orders.orderNumber, normalized));
+          .where(isUuid ? eq(schema.orders.id, identifier.trim()) : eq(schema.orders.orderNumber, normalized));
         if (rows.length > 0) {
           const row = rows[0];
           const items = await db
@@ -662,11 +687,18 @@ export class OrdersRepository {
             const cleanOrderNum = row.orderNumber.replace('#', '');
             const pdfUrl = `/api/tickets/${encodeURIComponent(cleanCode)}/pdf?city=${row.festivalId}&orderNumber=${cleanOrderNum}&name=${encodeURIComponent(t.attendeeName)}&title=${encodeURIComponent(cleanTitle)}&time=${encodeURIComponent(timeStr)}&date=${encodeURIComponent(dateStr)}`;
 
+            const qrPayload = buildQrPayload({
+              ticketCode: t.ticketCode,
+              cityName: row.festivalId,
+              sessionTitle: cleanTitle,
+              attendeeName: t.attendeeName,
+            });
+
             return {
               id: t.id,
               orderId: t.orderId,
               ticketCode: t.ticketCode,
-              qrPayload: '',
+              qrPayload,
               qrPayloadHash: t.qrPayloadHash,
               attendeeName: t.attendeeName,
               status: t.status as any,
@@ -1189,15 +1221,26 @@ export class OrdersRepository {
           const tRow = rows[0];
           const dbOrder = await this.findOrder(tRow.orderId);
           if (dbOrder) {
+            const matchedHydratedTicket = dbOrder.tickets.find(
+              (tk) => tk.ticketCode === tRow.ticketCode || tk.id === tRow.id
+            );
+            if (matchedHydratedTicket) {
+              return { order: dbOrder, ticket: matchedHydratedTicket };
+            }
             const ticket: StoredIssuedTicket = {
               id: tRow.id,
               orderId: tRow.orderId,
               ticketCode: tRow.ticketCode,
-              qrPayload: '',
+              qrPayload: buildQrPayload({
+                ticketCode: tRow.ticketCode,
+                cityName: dbOrder.festivalId,
+                sessionTitle: 'Festival Entreeticket',
+                attendeeName: tRow.attendeeName,
+              }),
               qrPayloadHash: tRow.qrPayloadHash,
               attendeeName: tRow.attendeeName,
               status: tRow.status as any,
-              sessionTitle: '',
+              sessionTitle: 'Festival Entreeticket',
               cityName: dbOrder.festivalId,
               dateStr: '',
               timeStr: '',
@@ -1857,6 +1900,18 @@ export class OrdersRepository {
     try {
       const dbStatus = await checkDbConnection();
       if (dbStatus.ok) {
+        await db.insert(schema.festivals).values({
+          id: order.festivalId,
+          name: order.festivalId === 'denhaag'
+            ? 'International Whisky Festival Den Haag'
+            : order.festivalId === 'gent'
+            ? 'International Whisky Festival Gent'
+            : 'International Whisky Festival Amsterdam',
+          city: order.festivalId === 'denhaag' ? 'Den Haag' : order.festivalId === 'gent' ? 'Gent' : 'Amsterdam',
+          currency: 'EUR',
+          supportEmail: 'info@whiskyfestival.nl',
+        }).onConflictDoNothing();
+
         await db.insert(schema.orders).values({
           id: order.id,
           orderNumber: order.orderNumber,

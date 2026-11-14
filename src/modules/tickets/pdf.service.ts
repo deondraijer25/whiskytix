@@ -148,10 +148,15 @@ function hexToRgb(hex: string) {
   return rgb(r, g, b);
 }
 
+const logoPngCache = new Map<string, Buffer>();
+
 /**
  * Loads and rasterizes the official festival logo SVG to a high-res PNG buffer
  */
 function getFestivalLogoPng(cityKey: string): Buffer | null {
+  if (logoPngCache.has(cityKey)) {
+    return logoPngCache.get(cityKey)!;
+  }
   const possiblePaths = [
     path.join(process.cwd(), 'src', 'assets', 'logos', `logo-${cityKey}-color.svg`),
     path.join(process.cwd(), 'src', 'assets', 'logos', `logo-${cityKey}.svg`),
@@ -166,7 +171,9 @@ function getFestivalLogoPng(cityKey: string): Buffer | null {
       try {
         const svgContent = fs.readFileSync(p, 'utf8');
         const resvg = new Resvg(svgContent, { fitTo: { mode: 'height', value: 300 } });
-        return Buffer.from(resvg.render().asPng());
+        const pngBuf = Buffer.from(resvg.render().asPng());
+        logoPngCache.set(cityKey, pngBuf);
+        return pngBuf;
       } catch (err) {
         console.error(`Error rasterizing SVG logo for ${cityKey}:`, err);
       }
@@ -191,30 +198,37 @@ export function parseTicketDateTime(
   let dayName = '';
   let day = '';
   let month = '';
-  let year = '2026';
+  let year = cityKey === 'denhaag' || cityKey === 'amsterdam' ? '2027' : '2026';
   let timeStr = (rawTimeStr || '').trim().replace(/–/g, '-');
 
   // 1. If explicit dateStr is provided, parse it
   if (rawDateStr && rawDateStr.trim() && rawDateStr !== 'Festivaldag') {
     const dLower = rawDateStr.toLowerCase();
-    
-    // Day name
-    if (dLower.includes('vrijdag')) dayName = 'VRIJDAG';
-    else if (dLower.includes('zaterdag')) dayName = 'ZATERDAG';
-    else if (dLower.includes('zondag')) dayName = 'ZONDAG';
 
-    // Day number (e.g. "3" or "03" or "4" or "14")
-    const monthDayMatch = rawDateStr.match(/\b([0-3]?\d)\s*(?:okt|oct|nov|dec|jan|feb|mrt|mar|apr|mei|may|jun|jul|aug|sep)/i);
-    if (monthDayMatch) {
-      day = monthDayMatch[1].padStart(2, '0');
+    // Check multi-day range first (e.g. "12-14 nov 2027" or "2-4 okt 2026")
+    const rangeMatch = rawDateStr.match(/\b(\d{1,2}\s*[-–]\s*\d{1,2})\s*(?:okt|oct|nov|dec|jan|feb|mrt|mar|apr|mei|may|jun|jul|aug|sep)/i);
+    if (rangeMatch) {
+      day = rangeMatch[1].replace(/\s+/g, '');
+      dayName = 'VR - ZO';
     } else {
-      const isoMatch = rawDateStr.match(/\d{4}-\d{2}-([0-3]\d)/);
-      if (isoMatch) {
-        day = isoMatch[1];
+      // Day name
+      if (dLower.includes('vrijdag')) dayName = 'VRIJDAG';
+      else if (dLower.includes('zaterdag')) dayName = 'ZATERDAG';
+      else if (dLower.includes('zondag')) dayName = 'ZONDAG';
+
+      // Day number (e.g. "3" or "03" or "4" or "14")
+      const monthDayMatch = rawDateStr.match(/\b([0-3]?\d)\s*(?:okt|oct|nov|dec|jan|feb|mrt|mar|apr|mei|may|jun|jul|aug|sep)/i);
+      if (monthDayMatch) {
+        day = monthDayMatch[1].padStart(2, '0');
       } else {
-        const anyDayMatch = rawDateStr.match(/\b([0-3]?\d)\b/);
-        if (anyDayMatch) {
-          day = anyDayMatch[1].padStart(2, '0');
+        const isoMatch = rawDateStr.match(/\d{4}-\d{2}-([0-3]\d)/);
+        if (isoMatch) {
+          day = isoMatch[1];
+        } else {
+          const anyDayMatch = rawDateStr.match(/\b([0-3]?\d)\b/);
+          if (anyDayMatch) {
+            day = anyDayMatch[1].padStart(2, '0');
+          }
         }
       }
     }
@@ -240,6 +254,7 @@ export function parseTicketDateTime(
       if (titleLower.includes('vrijdag')) dayName = 'VRIJDAG';
       else if (titleLower.includes('zaterdag')) dayName = 'ZATERDAG';
       else if (titleLower.includes('zondag')) dayName = 'ZONDAG';
+      else if (titleLower.includes('botteling')) dayName = 'VR - ZO';
       else if (titleLower.includes('jura') || titleLower.includes('laphroaig') || titleLower.includes('belgian owl') || titleLower.includes('suntory')) {
         dayName = 'ZONDAG';
       } else if (titleLower.includes('rondleiding') || titleLower.includes('dada')) {
@@ -250,7 +265,8 @@ export function parseTicketDateTime(
     }
 
     if (!day) {
-      if (dayName === 'VRIJDAG') day = '02';
+      if (dayName === 'VR - ZO') day = '2-4';
+      else if (dayName === 'VRIJDAG') day = '02';
       else if (dayName === 'ZATERDAG') day = '03';
       else if (dayName === 'ZONDAG') day = '04';
       else day = '02';
@@ -269,25 +285,33 @@ export function parseTicketDateTime(
       else if (titleLower.includes('boot') || titleLower.includes('bootje')) timeStr = '12:00 - 13:00 UUR';
       else if (titleLower.includes('rondleiding')) timeStr = (dayName === 'VRIJDAG') ? '18:00 - 19:30 UUR' : '11:00 - 12:30 UUR';
       else if (titleLower.includes('dada chapel') || titleLower.includes('dada')) timeStr = (dayName === 'VRIJDAG') ? '20:00 - 20:45 UUR' : '13:45 - 14:30 UUR';
+      else if (titleLower.includes('botteling')) timeStr = titleLower.includes('verzend') ? 'VERZENDING PER POST' : 'AFHALEN TIJDENS FESTIVAL';
       else if (dayName === 'ZATERDAG') timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
       else if (dayName === 'ZONDAG') timeStr = '13:00 - 17:00 UUR';
       else timeStr = '19:00 - 23:00 UUR';
     }
   } else if (cityKey === 'denhaag') {
     month = month || 'NOV';
-    year = year || '2026';
+    year = year || '2027';
+    if (titleLower.includes('botteling') || titleLower.includes('munt') || titleLower.includes('glencairn')) {
+      if (!dayName) dayName = 'VR - ZO';
+      if (!day || day === '14') day = '12-14';
+    }
     if (!dayName) {
       if (titleLower.includes('zaterdag')) dayName = 'ZATERDAG';
       else if (titleLower.includes('zondag')) dayName = 'ZONDAG';
       else dayName = 'VRIJDAG';
     }
     if (!day) {
-      if (dayName === 'VRIJDAG') day = '13';
-      else if (dayName === 'ZATERDAG') day = '14';
-      else if (dayName === 'ZONDAG') day = '15';
+      if (dayName === 'VR - ZO') day = '12-14';
+      else if (dayName === 'VRIJDAG') day = '12';
+      else if (dayName === 'ZATERDAG') day = '13';
+      else if (dayName === 'ZONDAG') day = '14';
     }
     if (!timeStr) {
-      if (dayName === 'ZATERDAG') timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
+      if (titleLower.includes('botteling')) timeStr = titleLower.includes('verzend') ? 'VERZENDING PER POST' : 'AFHALEN TIJDENS FESTIVAL';
+      else if (titleLower.includes('munt') || titleLower.includes('glencairn')) timeStr = 'AFHALEN TIJDENS FESTIVAL';
+      else if (dayName === 'ZATERDAG') timeStr = titleLower.includes('avond') ? '19:00 - 23:00 UUR' : '13:00 - 17:00 UUR';
       else if (dayName === 'ZONDAG') timeStr = '13:00 - 17:00 UUR';
       else timeStr = titleLower.includes('vip') || titleLower.includes('middag') ? '13:00 - 17:00 UUR' : '19:00 - 23:00 UUR';
     }
@@ -301,12 +325,20 @@ export function parseTicketDateTime(
 
   // Fallback defaults
   dayName = dayName || 'VRIJDAG';
-  day = day || '02';
-  month = month || 'OKT';
+  day = day || (cityKey === 'denhaag' ? '12' : '02');
+  month = month || (cityKey === 'denhaag' ? 'NOV' : 'OKT');
   if (!timeStr) timeStr = '13:00 - 17:00 UUR';
+  const upperTime = timeStr.toUpperCase();
   if (timeStr.toLowerCase().endsWith(' uur')) {
     timeStr = timeStr.slice(0, -4).trim() + ' UUR';
-  } else if (!timeStr.toUpperCase().includes('UUR')) {
+  } else if (
+    !upperTime.includes('UUR') &&
+    !upperTime.includes('DAG') &&
+    !upperTime.includes('AFHALEN') &&
+    !upperTime.includes('VERZEND') &&
+    !upperTime.includes('POST') &&
+    !upperTime.includes('FESTIVAL')
+  ) {
     timeStr += ' UUR';
   }
 
@@ -808,12 +840,18 @@ export async function generateTicketPdf(options: TicketPdfOptions): Promise<Uint
     });
   }
 
-  // 3. Session Title (16 pt HelveticaBold - 100% UNIFORM MET GENTS WHISKY FESTIVAL!)
+  // 3. Session Title (auto-scaled down from 16 pt if very long so it never overflows the card)
   const sessionY = dividerY - 19;
-  page.drawText(sessionTitle.toUpperCase(), {
+  const upperSessionTitle = sessionTitle.toUpperCase();
+  let sessionFontSize = 16;
+  const maxTitleWidth = cardW - 40;
+  while (sessionFontSize > 9.5 && fontHelveticaBold.widthOfTextAtSize(upperSessionTitle, sessionFontSize) > maxTitleWidth) {
+    sessionFontSize -= 0.5;
+  }
+  page.drawText(upperSessionTitle, {
     x: cardX + 20,
     y: sessionY,
-    size: 16,
+    size: sessionFontSize,
     font: fontHelveticaBold,
     color: colorCharcoal,
   });
