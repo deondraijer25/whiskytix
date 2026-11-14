@@ -11,6 +11,9 @@ export async function registerCatalogRoutes(server: FastifyInstance): Promise<vo
       const query = (request.query || {}) as { city?: string; refresh?: string };
       const forceRefresh = query.refresh === 'true' || query.refresh === '1';
       const result = await GhlCatalogService.getCatalog(query.city, forceRefresh);
+      if (!forceRefresh) {
+        reply.header('Cache-Control', 'public, s-maxage=5, stale-while-revalidate=10');
+      }
       return reply.send(result);
     } catch (err: any) {
       server.log.error(err);

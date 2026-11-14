@@ -171,8 +171,9 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
 
       // Discount is ALWAYS calculated over the subtotal (excluding service fees and shipping)
       let finalDiscountCents = Math.min(subtotalCents, Math.max(0, Number(discountCents) || 0));
-      if (promoCode && typeof promoCode === 'string' && promoCode.trim()) {
-        const cleanPromo = promoCode.trim().toUpperCase();
+      let validatedCouponCheck: any = null;
+      const cleanPromo = promoCode && typeof promoCode === 'string' ? promoCode.trim().toUpperCase() : '';
+      if (cleanPromo) {
         const couponCheck = await CouponsRepository.validate(cleanPromo, festivalId);
 
         if (!couponCheck.valid) {
@@ -181,6 +182,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           }
           finalDiscountCents = 0;
         } else {
+          validatedCouponCheck = couponCheck;
           if (couponCheck.type === 'percentage' && couponCheck.value) {
             finalDiscountCents = Math.min(
               subtotalCents,
@@ -188,19 +190,6 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
             );
           } else if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
             finalDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
-          }
-
-          if (couponCheck.isIwsMember && couponCheck.lidnummer) {
-            await ConscriboService.recordClaim({
-              lidnummer: couponCheck.lidnummer,
-              festivalId,
-              orderNumber,
-              discountCents: finalDiscountCents,
-              customerEmail,
-              customerName: finalCustomerName,
-            });
-          } else {
-            await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
           }
         }
       }
@@ -253,6 +242,22 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         }
       } catch (stockErr: any) {
         server.log.warn('Kon pre-checkout voorraadcheck niet uitvoeren: ' + stockErr.message);
+      }
+
+      // Record coupon / IWS member claim ONLY after stock check succeeds so a 409 SOLD_OUT never burns a member's code
+      if (validatedCouponCheck && cleanPromo) {
+        if (validatedCouponCheck.isIwsMember && validatedCouponCheck.lidnummer) {
+          await ConscriboService.recordClaim({
+            lidnummer: validatedCouponCheck.lidnummer,
+            festivalId,
+            orderNumber,
+            discountCents: finalDiscountCents,
+            customerEmail,
+            customerName: finalCustomerName,
+          });
+        } else {
+          await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
+        }
       }
 
       // Create Pending Order
@@ -569,6 +574,9 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
    */
   server.post('/api/payments/sandbox-complete/:paymentId', async (request, reply) => {
     const params = request.params as { paymentId: string };
+    if (!params.paymentId || !params.paymentId.startsWith('tr_test_')) {
+      return reply.status(403).send({ error: 'Sandbox completion alleen toegestaan voor tr_test_ sessies.' });
+    }
     const body = (request.body || {}) as any;
     const paymentMethod = body.paymentMethod || 'ideal';
 
@@ -801,82 +809,6 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     if (!order) {
       return reply.status(404).send({ error: 'Bestelling niet gevonden.' });
     }
-
-    // Always apply Mollie metadata modifications (cancelledTicketCodes, swappedJson, orderStatus)
-    try {
-      const molliePayments = await MollieService.listRecentPayments(50);
-      const cleanedNum = order.orderNumber.startsWith('#') ? order.orderNumber : `#${order.orderNumber}`;
-      const rawNum = order.orderNumber.replace(/^#+/, '');
-      const matched = molliePayments.find((p: any) =>
-        p.id === order.molliePaymentId ||
-        p.metadata?.orderNumber === cleanedNum ||
-        p.metadata?.orderNumber === rawNum ||
-        p.metadata?.orderNumber?.replace(/^#+/, '') === rawNum
-      );
-
-      if (matched?.metadata) {
-        const meta = matched.metadata;
-        const rawCanc = meta.cancelledTicketCodes;
-        const cancList = rawCanc
-          ? (typeof rawCanc === 'string' ? rawCanc.split(',') : Array.isArray(rawCanc) ? rawCanc : [rawCanc])
-              .map((c: string) => String(c).trim().replace(/^#+/, ''))
-          : [];
-
-        if (cancList.length > 0 && Array.isArray(order.tickets)) {
-          for (const t of order.tickets) {
-            const cleanT = (t.ticketCode || '').replace(/^#+/, '');
-            if (cancList.includes(cleanT) || cancList.includes(t.ticketCode)) {
-              t.status = 'cancelled';
-              t.swapReason = 'Geannuleerd via orderbeheer';
-            }
-          }
-        }
-
-        if (meta.orderStatus) {
-          order.status = meta.orderStatus as any;
-          if (meta.orderStatus === 'cancelled' && Array.isArray(order.tickets)) {
-            for (const t of order.tickets) {
-              t.status = 'cancelled';
-              t.swapReason = 'Geannuleerd via orderbeheer';
-            }
-          }
-        }
-
-        if (meta.swappedJson && Array.isArray(order.tickets)) {
-          try {
-            const swappedList = JSON.parse(meta.swappedJson);
-            if (Array.isArray(swappedList)) {
-              for (const sw of swappedList) {
-                const orig = order.tickets.find((t) => t.ticketCode === sw.originalCode || t.ticketCode?.replace(/^#+/, '') === String(sw.originalCode).replace(/^#+/, ''));
-                if (orig) {
-                  orig.status = 'swapped';
-                  orig.swappedToTicketCode = sw.newCode;
-                  orig.swapReason = `Omgeruild naar ${sw.newTitle}`;
-                }
-                if (!order.tickets.some((t) => t.ticketCode === sw.newCode)) {
-                  order.tickets.push({
-                    id: crypto.randomUUID(),
-                    orderId: order.id,
-                    ticketCode: sw.newCode,
-                    qrPayload: `WT1:${sw.newCode.replace('#', '')}:${order.festivalId}:${sw.newTitle}:${order.customerName}`,
-                    qrPayloadHash: sw.newCode.replace('#', '').substring(0, 10),
-                    attendeeName: order.customerName,
-                    status: 'valid',
-                    sessionTitle: sw.newTitle,
-                    cityName: order.festivalId,
-                    dateStr: sw.newDate || '',
-                    timeStr: sw.newTime || '',
-                    pdfUrl: `/api/tickets/${sw.newCode.replace('#', '')}/pdf?city=${order.festivalId}`,
-                    replacedTicketCode: sw.originalCode,
-                    createdAt: new Date().toISOString(),
-                  });
-                }
-              }
-            }
-          } catch {}
-        }
-      }
-    } catch (_) {}
 
     // Generate pre-rendered ticket cards HTML for festival websites
     const cityConfig: Record<string, { primary: string; primaryLight: string; badgeBorder: string; venue: string; gradient: string }> = {

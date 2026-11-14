@@ -15,7 +15,7 @@ const connectionString = isServerless && rawConnectionString.includes('.pooler.s
 
 // 1. PostgreSQL connection client (with connection pooling & Supavisor transaction mode compatibility)
 export const queryClient = postgres(connectionString, {
-  max: isServerless ? 2 : 10,
+  max: isServerless ? 4 : 10,
   idle_timeout: 20,
   connect_timeout: 10,
   prepare: false,
@@ -35,12 +35,19 @@ export const supabaseAdmin: SupabaseClient = createClient(supabaseUrl, supabaseS
   },
 });
 
-// 4. Connection health check
+// 4. Connection health check (cached for 30s so hot paths don't issue redundant SELECT 1 roundtrips)
+let lastDbHealthOkAt = 0;
 export async function checkDbConnection(): Promise<{ ok: boolean; message: string }> {
+  const now = Date.now();
+  if (lastDbHealthOkAt > 0 && now - lastDbHealthOkAt < 30000) {
+    return { ok: true, message: 'Database connectie succesvol (gecachet).' };
+  }
   try {
     await queryClient`SELECT 1`;
+    lastDbHealthOkAt = Date.now();
     return { ok: true, message: 'Database connectie succesvol (PostgreSQL / Supabase).' };
   } catch (error: any) {
+    lastDbHealthOkAt = 0;
     return { ok: false, message: `Database connectie mislukt: ${error.message}` };
   }
 }

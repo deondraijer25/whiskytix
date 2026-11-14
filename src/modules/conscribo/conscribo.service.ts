@@ -809,14 +809,15 @@ export class ConscriboService {
       return { ...manual, claim };
     }
 
-    // 2. Check cached Conscribo members (or populate cache if empty)
-    const { members } = await this.getMembersAndStats(false);
-    const foundInCache = members.find(
-      (m) => (normalizeIwsLidnummer(m.lidnummer) || m.lidnummer) === lidnummer
-    );
-    if (foundInCache) {
-      const claim = await this.getClaim(lidnummer);
-      return { ...foundInCache, claim };
+    // 2. Check in-memory cached Conscribo members if already warm (avoid downloading 2,000+ members on serverless cold start)
+    if (this.cachedMembers && Date.now() < this.cacheExpiresAt) {
+      const foundInCache = this.cachedMembers.find(
+        (m) => (normalizeIwsLidnummer(m.lidnummer) || m.lidnummer) === lidnummer
+      );
+      if (foundInCache) {
+        const claim = await this.getClaim(lidnummer);
+        return { ...foundInCache, claim };
+      }
     }
 
     // 3. Live real-time query to Conscribo for newly registered members not yet in cache!

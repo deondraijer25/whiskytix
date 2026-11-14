@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { db, checkDbConnection } from '../../db/index.js';
 import * as schema from '../../db/schema.js';
-import { and, eq, ilike } from 'drizzle-orm';
+import { and, eq, ilike, ne } from 'drizzle-orm';
 import { buildQrPayload, generateTicketSignature } from '../tickets/qr.service.js';
 import { GhlSyncService } from '../ghl/ghl.sync.service.js';
 import { MollieService } from '../payments/mollie.service.js';
@@ -274,9 +274,10 @@ export class OrdersRepository {
    * Generates next clean Order Number like #WF-2026-84387 (Den Haag) or #WF-2027-84387 (Gent/Amsterdam)
    */
   static generateOrderNumber(_festivalId: string = 'gent'): string {
-    const randomDigits = Math.floor(10000 + Math.random() * 90000);
+    const randomDigits = Math.floor(100000 + Math.random() * 900000);
+    const randomHex = crypto.randomBytes(1).toString('hex').toUpperCase();
     const year = '2027';
-    return `#WF-${year}-${randomDigits}`;
+    return `#WF-${year}-${randomDigits}${randomHex}`;
   }
 
   /**
@@ -691,6 +692,8 @@ export class OrdersRepository {
             status: row.status as any,
             molliePaymentId: row.molliePaymentId,
             paymentMethod: row.paymentMethod,
+            ghlContactId: row.ghlContactId || undefined,
+            ghlSynced: Boolean(row.ghlContactId),
             createdAt: row.createdAt.toISOString(),
             paidAt: row.paidAt ? row.paidAt.toISOString() : null,
             expiresAt: row.expiresAt.toISOString(),
@@ -958,6 +961,7 @@ export class OrdersRepository {
       }
 
       // Generate individual tickets if not yet issued
+      const dbTicketsToInsert: Array<typeof schema.issuedTickets.$inferInsert> = [];
       if (order.tickets.length === 0) {
         let ticketCounter = 1;
         const cleanOrderNumber = order.orderNumber.replace('#', '');
@@ -1029,29 +1033,17 @@ export class OrdersRepository {
             };
 
             order.tickets.push(ticket);
-
-            // Save to DB if available
-            try {
-              const dbStatus = await checkDbConnection();
-              if (dbStatus.ok) {
-                await db
-                  .insert(schema.issuedTickets)
-                  .values({
-                    id: ticket.id,
-                    orderItemId: item.id,
-                    orderId: order.id,
-                    ticketCode: ticket.ticketCode,
-                    qrPayloadHash: ticket.qrPayloadHash,
-                    attendeeName: ticket.attendeeName,
-                    status: ticket.status,
-                    pdfUrl: ticket.pdfUrl,
-                    createdAt: new Date(ticket.createdAt),
-                  })
-                  .onConflictDoNothing();
-              }
-            } catch (err: any) {
-              // local store fallback handled
-            }
+            dbTicketsToInsert.push({
+              id: ticket.id,
+              orderItemId: item.id,
+              orderId: order.id,
+              ticketCode: ticket.ticketCode,
+              qrPayloadHash: ticket.qrPayloadHash,
+              attendeeName: ticket.attendeeName,
+              status: ticket.status,
+              pdfUrl: ticket.pdfUrl,
+              createdAt: new Date(ticket.createdAt),
+            });
           }
         }
       }
@@ -1060,28 +1052,39 @@ export class OrdersRepository {
       memoryOrders.set(order.id, order);
       saveLocalStore();
 
-      // Persist paid status to DB
+      // Persist paid status & tickets to DB atomically so concurrent Vercel instances don't double-sync GHL
+      let wonPaidTransition = !wasAlreadyPaidWithTickets;
       try {
         const dbStatus = await checkDbConnection();
         if (dbStatus.ok) {
-          await db
+          if (dbTicketsToInsert.length > 0) {
+            await db.insert(schema.issuedTickets).values(dbTicketsToInsert).onConflictDoNothing();
+          }
+          const claimedRows = await db
             .update(schema.orders)
             .set({
               status: 'paid',
               paidAt: new Date(order.paidAt),
               paymentMethod: order.paymentMethod || 'ideal',
             })
-            .where(eq(schema.orders.orderNumber, order.orderNumber));
+            .where(and(eq(schema.orders.orderNumber, order.orderNumber), ne(schema.orders.status, 'paid')))
+            .returning({ id: schema.orders.id });
+
+          if (claimedRows.length === 0 && !wasAlreadyPaidWithTickets) {
+            // Another concurrent Vercel instance just transitioned this order from pending -> paid!
+            wonPaidTransition = false;
+            order.ghlSynced = true;
+          }
         }
       } catch (err: any) {
         // local store fallback handled
       }
 
       // Serverless-Safe AWAIT op de gedoseerde CRM-sync zodat Vercel het proces nooit halverwege bevriest!
-      if (!order.ghlSynced) {
+      if (!order.ghlSynced && (wonPaidTransition || !order.ghlContactId)) {
         try {
           const syncPromise = GhlSyncService.syncPaidOrder(order, undefined, {
-            skipInventoryIncrement: wasAlreadyPaidWithTickets,
+            skipInventoryIncrement: !wonPaidTransition || wasAlreadyPaidWithTickets,
           });
           const timeoutPromise = new Promise<{ success: boolean; contactId?: string }>((resolve) =>
             setTimeout(() => resolve({ success: false }), 8500)
@@ -1093,6 +1096,15 @@ export class OrdersRepository {
           }
           if (syncRes.success) {
             order.ghlSyncedAt = new Date().toISOString();
+            try {
+              const dbStatus = await checkDbConnection();
+              if (dbStatus.ok) {
+                await db
+                  .update(schema.orders)
+                  .set({ ghlContactId: syncRes.contactId || 'synced' })
+                  .where(eq(schema.orders.orderNumber, order.orderNumber));
+              }
+            } catch {}
           }
           memoryOrders.set(order.orderNumber, order);
           memoryOrders.set(order.id, order);

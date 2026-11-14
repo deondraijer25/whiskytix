@@ -61,5 +61,24 @@ export async function runStockCleanup(): Promise<{ expiredCount: number }> {
     }
   }
 
+  // Also expire any pending orders in Supabase DB across serverless instances
+  try {
+    const dbStatus = await checkDbConnection();
+    if (dbStatus.ok) {
+      const expiredDbRows = await db
+        .update(schema.orders)
+        .set({ status: 'expired' })
+        .where(and(eq(schema.orders.status, 'pending'), lt(schema.orders.expiresAt, now)))
+        .returning({ orderNumber: schema.orders.orderNumber });
+
+      for (const row of expiredDbRows) {
+        expiredCount++;
+        await ConscriboService.releaseClaimByOrderNumber(row.orderNumber);
+      }
+    }
+  } catch (e: any) {
+    // ignore
+  }
+
   return { expiredCount };
 }

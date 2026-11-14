@@ -34,9 +34,9 @@ const DEFAULT_COUPONS: StoredCoupon[] = [
     type: 'percentage',
     value: 10,
     usedCount: 0,
-    maxUses: 1000,
+    maxUses: 5000,
     totalDiscountGrantedCents: 0,
-    validUntil: '2027-12-31',
+    validUntil: '2026-12-31',
     isActive: true,
   },
 ];
@@ -95,10 +95,34 @@ async function ensureDbTableReady(): Promise<boolean> {
     const status = await checkDbConnection();
     if (!status.ok) return false;
     if (!dbTableInitialized) {
-      await queryClient.unsafe(`
-        ALTER TABLE discount_codes
-        ADD COLUMN IF NOT EXISTS total_discount_granted_cents integer DEFAULT 0 NOT NULL;
-      `);
+      for (const def of DEFAULT_COUPONS) {
+        const validUntilTs = new Date(`${def.validUntil}T23:59:59Z`);
+        await queryClient`
+          INSERT INTO discount_codes (
+            code,
+            festival_id,
+            discount_type,
+            discount_value,
+            max_uses,
+            current_uses,
+            total_discount_granted_cents,
+            valid_until,
+            is_active
+          )
+          VALUES (
+            ${def.code},
+            ${def.city},
+            ${def.type},
+            ${def.value},
+            ${def.maxUses},
+            ${def.usedCount},
+            ${def.totalDiscountGrantedCents},
+            ${validUntilTs},
+            ${def.isActive}
+          )
+          ON CONFLICT (code) DO NOTHING
+        `;
+      }
       dbTableInitialized = true;
     }
     return true;
@@ -175,6 +199,7 @@ export class CouponsRepository {
 
       if (Array.isArray(rows)) {
         memoryCoupons.clear();
+        DEFAULT_COUPONS.forEach((c) => memoryCoupons.set(c.code.toUpperCase(), { ...c }));
         for (const r of rows) {
           const mapped = mapDbRowToCoupon(r);
           if (mapped.code) {

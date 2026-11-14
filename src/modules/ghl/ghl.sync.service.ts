@@ -350,31 +350,35 @@ export class GhlSyncService {
         const recordUrl = `${GHL_API_BASE}/objects/${GHL_TICKETS_OBJECT_KEY}/records/${ticketRecordId}`;
         let knownState = inMemorySoldTotals.get(ticketRecordId);
 
-        // Alleen een GET doen als we dit tickettype nog niet in het geheugen kennen
-        if (!knownState) {
+        // Haal altijd de meest actuele stand uit GHL op zodat parallelle Vercel instances elkaar nooit overschrijven
+        const { response: getRes } = await this.fetchWithRetry(recordUrl, {
+          method: 'GET',
+          headers: this.getHeaders(),
+        });
+        if (getRes.ok) {
+          const recordJson: any = await getRes.json();
+          const currentProps =
+            recordJson?.customObjectRecord?.properties || recordJson?.properties || {};
+          const remoteSold = parseInt(currentProps.sold, 10) || 0;
+          const remoteCap = parseInt(currentProps.capacity, 10) || 0;
+          const localMinSold = knownState ? knownState.sold : 0;
+          // Gebruik het hoogste van remoteSold + deltaToApply of onze lokale teller
+          knownState = {
+            sold: Math.max(remoteSold + deltaToApply, localMinSold),
+            capacity: remoteCap || (knownState ? knownState.capacity : 0),
+          };
+          inMemorySoldTotals.set(ticketRecordId, knownState);
+        } else if (!knownState) {
           const cachedItem = GhlCatalogService.getCachedTicketItem(ticketRecordId);
           if (cachedItem && typeof cachedItem.sold === 'number') {
             knownState = {
               sold: cachedItem.sold,
               capacity: cachedItem.capacity || 0,
             };
+            inMemorySoldTotals.set(ticketRecordId, knownState);
           } else {
-            const { response: getRes } = await this.fetchWithRetry(recordUrl, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-            if (!getRes.ok) break;
-            const recordJson: any = await getRes.json();
-            const currentProps =
-              recordJson?.customObjectRecord?.properties || recordJson?.properties || {};
-            const baseSold = parseInt(currentProps.sold, 10) || 0;
-            const baseCap = parseInt(currentProps.capacity, 10) || 0;
-            knownState = {
-              sold: baseSold + deltaToApply,
-              capacity: baseCap,
-            };
+            break;
           }
-          inMemorySoldTotals.set(ticketRecordId, knownState);
         } else if (!cachedUpdate) {
           knownState.sold += deltaToApply;
         }

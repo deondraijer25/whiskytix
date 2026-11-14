@@ -59,12 +59,9 @@ export class MollieService {
     if (env === 'test') return 'test';
 
     // City-specific defaults when no explicit environment override is set
+    // Den Haag uses built-in Highland Consultancy B.V. live key (#12343118 - profiel pfl_HFD8YffpCH), default to live mode
     if (city === 'denhaag') {
-      const dhLiveKey = process.env.MOLLIE_API_KEY_LIVE_DENHAAG;
-      if (dhLiveKey && dhLiveKey.startsWith('live_') && dhLiveKey !== 'live_placeholder') {
-        return 'live';
-      }
-      return 'test';
+      return 'live';
     }
 
     if (city === 'amsterdam') {
@@ -187,7 +184,11 @@ export class MollieService {
           isSandboxSimulator: false,
         };
       } catch (err: any) {
-        console.warn('Mollie API error, falling back to interactive sandbox simulator:', err.message);
+        const targetMode = mode || this.getActiveMode(resolvedFestival);
+        if (targetMode === 'live' || process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') {
+          throw new Error(`Mollie betaling kon niet worden gestart: ${err.message}`);
+        }
+        console.warn('Mollie API error in local test mode, falling back to interactive sandbox simulator:', err.message);
       }
     }
 
