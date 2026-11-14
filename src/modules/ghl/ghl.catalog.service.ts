@@ -25,6 +25,8 @@ export interface LiveCatalogItem {
   daypart?: string;
   ambassadorName?: string;
   ambassadorTitle?: string;
+  ambassadorBio?: string;
+  duration?: string;
   tastingLineup?: string[];
 }
 
@@ -51,7 +53,7 @@ const GHL_API_KEY = process.env.GHL_API_KEY || 'pit-150d6114-ac2c-4cf7-9d5c-ffc2
 const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID || '1OZ9uxIBFoxwbheVC5iN';
 const GHL_TICKETS_OBJECT_KEY = process.env.GHL_TICKETS_SCHEMA_ID || 'custom_objects.festival_tickets';
 
-const CACHE_TTL_MS = 60 * 1000; // 1 minuut in-memory cache
+const CACHE_TTL_MS = 5 * 1000; // 5 seconden in-memory cache voor realtime GHL sync
 
 let inMemoryCache: {
   timestamp: number;
@@ -234,7 +236,7 @@ export class GhlCatalogService {
         body: JSON.stringify({
           locationId: GHL_LOCATION_ID,
           page,
-          pageLimit: 100,
+          pageLimit: 250,
           searchAfter: [],
         }),
       });
@@ -246,7 +248,7 @@ export class GhlCatalogService {
       const json = (await response.json()) as any;
       const pageRecs = json.customObjectRecords || json.records || [];
       records.push(...pageRecs);
-      if (pageRecs.length < 100 || records.length >= (json.total || 0)) break;
+      if (pageRecs.length < 250 || records.length >= (json.total || 0)) break;
       page++;
     }
 
@@ -314,6 +316,8 @@ export class GhlCatalogService {
         daypart: p.daypart || 'all',
         ambassadorName: p.ambassador_name || undefined,
         ambassadorTitle: p.ambassador_title || undefined,
+        ambassadorBio: p.ambassador_bio || undefined,
+        duration: p.duration || p.session_duration || undefined,
         tastingLineup,
       };
     });

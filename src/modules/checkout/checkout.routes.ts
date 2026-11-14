@@ -219,10 +219,16 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
               .toLowerCase()
               .replace(/[^a-z0-9]/g, '');
 
+            const isGhlId = Boolean(reqItem.ticketTypeId && /^[a-f0-9]{20,30}$/i.test(reqItem.ticketTypeId));
             const matchedCatalogItem = catalog.items.find((ci) => {
               if (ci.id === reqItem.ticketTypeId) return true;
+              if (isGhlId) return false;
               const cleanCiTitle = (ci.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-              return Boolean(cleanReqTitle && cleanCiTitle && cleanCiTitle === cleanReqTitle);
+              if (!cleanReqTitle || !cleanCiTitle || cleanCiTitle !== cleanReqTitle) return false;
+              const reqTime = (reqItem.time || reqItem.timeslot || '').replace(/[^0-9:]/g, '');
+              const ciTime = (ci.timeStr || '').replace(/[^0-9:]/g, '');
+              if (reqTime && ciTime && reqTime !== ciTime) return false;
+              return true;
             });
 
             if (matchedCatalogItem) {
