@@ -54,15 +54,16 @@ export class MollieService {
         ? process.env.MOLLIE_ENVIRONMENT_AMSTERDAM
         : process.env.MOLLIE_ENVIRONMENT_GENT;
 
+    if (process.env.FORCE_MOLLIE_TEST === 'true') return 'test';
+
+    // Den Haag (Highland Consultancy B.V. #12343118) & Gent (Whisky Festival VOF #6556141) run in LIVE mode
+    if (city === 'denhaag' || city === 'gent') {
+      return 'live';
+    }
+
     const env = (envOverride || process.env.MOLLIE_ENVIRONMENT)?.toLowerCase();
     if (env === 'live') return 'live';
     if (env === 'test') return 'test';
-
-    // City-specific defaults when no explicit environment override is set
-    // Den Haag uses built-in Highland Consultancy B.V. live key (#12343118 - profiel pfl_HFD8YffpCH), default to live mode
-    if (city === 'denhaag') {
-      return 'test';
-    }
 
     if (city === 'amsterdam') {
       const amsLiveKey = process.env.MOLLIE_API_KEY_LIVE_AMSTERDAM;
