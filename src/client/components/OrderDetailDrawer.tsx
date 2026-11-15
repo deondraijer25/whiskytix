@@ -110,7 +110,21 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
   const effectiveTickets: any[] = useMemo(() => {
     if (!order) return [];
     if (localTickets) return localTickets;
-    let base = Array.isArray(order.tickets) && order.tickets.length > 0 ? [...order.tickets] : [];
+    const isOrderPaid = order.status === 'paid';
+    const isOrderDead =
+      order.status === 'refunded' ||
+      order.status === 'cancelled' ||
+      order.status === 'expired' ||
+      order.status === 'failed' ||
+      (order.status as any) === 'canceled';
+    const unpaidFallbackStatus = isOrderDead ? 'cancelled' : 'pending_payment';
+
+    let base = Array.isArray(order.tickets) && order.tickets.length > 0
+      ? order.tickets.map((t: any) => ({
+          ...t,
+          status: isOrderPaid ? t.status : unpaidFallbackStatus,
+        }))
+      : [];
 
     const hasMashedSingleTicket =
       base.length === 1 &&
@@ -136,7 +150,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
             type: isMc ? 'Masterclass' : 'Entreeticket',
             session: title,
             attendeeName: order.customerName,
-            status: order.status === 'paid' ? 'valid' : order.status === 'refunded' ? 'cancelled' : 'valid',
+            status: isOrderPaid ? 'valid' : unpaidFallbackStatus,
           });
           ticketIndex++;
         }
@@ -437,7 +451,20 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                 </span>
               </div>
               <p className={`text-[11px] sm:text-xs ${theme.accentSubtle}`}>
-                Mollie Betaalreferentie • Status: {order.status === 'paid' ? 'Betaald' : order.status}
+                Mollie Betaalreferentie • Status:{' '}
+                {order.status === 'paid'
+                  ? 'Betaald'
+                  : order.status === 'pending' || (order.status as any) === 'open'
+                  ? 'In afwachting (Nog niet betaald)'
+                  : order.status === 'expired'
+                  ? 'Verlopen (Niet betaald)'
+                  : order.status === 'cancelled' || (order.status as any) === 'canceled'
+                  ? 'Geannuleerd (Niet betaald)'
+                  : order.status === 'failed'
+                  ? 'Mislukt (Niet betaald)'
+                  : order.status === 'refunded'
+                  ? 'Terugbetaald / Geannuleerd'
+                  : order.status}
               </p>
             </div>
           </div>
@@ -517,6 +544,45 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                 </ul>
               )}
             </div>
+            {(() => {
+              const rawSubtotal = Number((order as any).subtotalCents) || 0;
+              const rawDiscount = Number((order as any).discountCents) || 0;
+              const iwsLidnr = (order as any).iwsLidnummer;
+              const effectiveSubtotal = rawSubtotal > 0 ? rawSubtotal : order.totalCents + rawDiscount;
+              const afterDiscount = Math.max(0, effectiveSubtotal - rawDiscount);
+              const serviceFeeCents = Math.max(0, order.totalCents - afterDiscount);
+
+              if (rawDiscount > 0 || serviceFeeCents > 0) {
+                return (
+                  <div className="space-y-1 pb-2.5 border-b border-[#c1d4ce] text-xs">
+                    <div className="flex items-center justify-between text-[#4c5752] font-semibold">
+                      <span>Subtotaal tickets:</span>
+                      <span>€ {(effectiveSubtotal / 100).toFixed(2).replace('.', ',')}</span>
+                    </div>
+                    {rawDiscount > 0 && (
+                      <div className="flex items-center justify-between text-[#006448] font-extrabold">
+                        <span className="flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5" />
+                          {iwsLidnr
+                            ? `IWS Ledenkorting (Lidnr. #${iwsLidnr}):`
+                            : rawDiscount === 5500 || rawDiscount === 3950 || rawDiscount === 3995
+                            ? 'IWS Ledenkorting (1x Gratis Ticket):'
+                            : 'Toegepaste Korting:'}
+                        </span>
+                        <span>- € {(rawDiscount / 100).toFixed(2).replace('.', ',')}</span>
+                      </div>
+                    )}
+                    {serviceFeeCents > 0 && (
+                      <div className="flex items-center justify-between text-[#4c5752] font-semibold">
+                        <span>Servicekosten:</span>
+                        <span>€ {(serviceFeeCents / 100).toFixed(2).replace('.', ',')}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return null;
+            })()}
             <div className="flex items-center justify-between pt-0.5">
               <span className="text-xs sm:text-sm font-extrabold text-[#1D1C1A]">Totaalbedrag (incl. BTW):</span>
               <span className={`text-base sm:text-lg font-extrabold ${theme.textPrimary}`}>
@@ -528,8 +594,14 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
           {/* Uitgegeven E-Tickets Breakdown */}
           <div>
             <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#1D1C1A] mb-3 flex items-center justify-between">
-              <span>Uitgegeven E-Tickets ({effectiveTickets.length})</span>
-              <span className="text-[11px] font-bold text-[#4c5752]">HMAC Beveiligd</span>
+              <span>
+                {order.status === 'paid'
+                  ? `Uitgegeven E-Tickets (${effectiveTickets.length})`
+                  : `Winkelwagen Items (Nog géén E-Tickets uitgegeven)`}
+              </span>
+              <span className={`text-[11px] font-bold ${order.status === 'paid' ? 'text-[#4c5752]' : 'text-amber-800'}`}>
+                {order.status === 'paid' ? 'HMAC Beveiligd' : 'Niet Betaald'}
+              </span>
             </h4>
 
             {effectiveTickets.length === 0 ? (
@@ -540,8 +612,9 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
               <div className="space-y-3">
                 {effectiveTickets.map((t, idx) => {
                   const isSwapped = t.status === 'swapped';
+                  const isPendingPayment = t.status === 'pending_payment' || (order.status !== 'paid' && t.status !== 'cancelled');
                   const isCancelled = t.status === 'cancelled';
-                  const isValid = !isSwapped && !isCancelled;
+                  const isValid = order.status === 'paid' && !isSwapped && !isCancelled && !isPendingPayment;
 
                   return (
                     <div
@@ -549,6 +622,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                       className={`p-3.5 border-2 rounded-lg space-y-2.5 shadow-[2px_2px_0px_rgba(29,28,26,0.15)] transition-colors ${
                         isSwapped
                           ? 'bg-amber-50/60 border-amber-400 opacity-90'
+                          : isPendingPayment
+                          ? 'bg-amber-50/50 border-amber-300 opacity-90'
                           : isCancelled
                           ? 'bg-red-50/50 border-red-300 opacity-75'
                           : 'bg-[#FAF7F2] border-[#1D1C1A]'
@@ -561,6 +636,8 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                             className={`font-mono text-xs font-extrabold px-2 py-0.5 rounded border shrink-0 ${
                               isSwapped
                                 ? 'bg-amber-100 text-amber-900 border-amber-400 line-through'
+                                : isPendingPayment
+                                ? 'bg-amber-100 text-amber-900 border-amber-400'
                                 : isCancelled
                                 ? 'bg-red-100 text-red-800 border-red-400 line-through'
                                 : `${theme.badgeBg} ${theme.badgeText} ${theme.badgeBorder}`
@@ -580,6 +657,11 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                               <CheckCircle className="w-3 h-3" /> GELDIG
                             </span>
                           )}
+                          {isPendingPayment && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-400">
+                              <Clock className="w-3 h-3" /> WACHT OP BETALING
+                            </span>
+                          )}
                           {isSwapped && (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-400">
                               <RefreshCw className="w-3 h-3" /> OMGERUILD
@@ -587,7 +669,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
                           )}
                           {isCancelled && (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-red-100 text-red-800 border border-red-400">
-                              <X className="w-3 h-3" /> GEANNULEERD
+                              <X className="w-3 h-3" /> {order.status === 'paid' ? 'GEANNULEERD' : 'NIET BETAALD / VERLOPEN'}
                             </span>
                           )}
                         </div>

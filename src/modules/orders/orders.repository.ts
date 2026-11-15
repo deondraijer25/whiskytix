@@ -204,6 +204,8 @@ export class OrdersRepository {
     if (!order || !order.orderNumber) return;
     if (order.status === 'paid') {
       order.ghlSynced = true;
+    } else {
+      order.tickets = [];
     }
     const existing = memoryOrders.get(order.orderNumber) || memoryOrders.get(order.id);
     if (!existing) {
@@ -227,11 +229,16 @@ export class OrdersRepository {
         existing.status = 'paid';
         existing.ghlSynced = true;
         if (order.paidAt) existing.paidAt = order.paidAt;
-      } else if (order.status === 'cancelled') {
-        existing.status = 'cancelled';
-      }
-      if (Array.isArray(order.tickets) && order.tickets.length > 0) {
-        existing.tickets = order.tickets;
+        if (Array.isArray(order.tickets) && order.tickets.length > 0) {
+          existing.tickets = order.tickets;
+        }
+      } else {
+        if (existing.status !== 'paid') {
+          if (order.status === 'cancelled' || order.status === 'expired' || order.status === 'failed') {
+            existing.status = order.status;
+          }
+          existing.tickets = [];
+        }
       }
       saveLocalStore();
     }
@@ -623,6 +630,8 @@ export class OrdersRepository {
     if (order) {
       if (order.status === 'paid' && order.tickets.length === 0 && Array.isArray(order.items) && order.items.length > 0) {
         this.ensureOrderTickets(order);
+      } else if (order.status !== 'paid' && order.tickets.length > 0) {
+        order.tickets = [];
       }
       return order;
     }

@@ -8,6 +8,7 @@ import {
   normalizeIwsLidnummer,
   getIwsDiscountForFestival,
 } from '../conscribo/conscribo.service.js';
+import { OrdersRepository } from '../orders/orders.repository.js';
 
 export interface StoredCoupon {
   id: string;
@@ -509,12 +510,39 @@ export class CouponsRepository {
 
       const existingClaim = member.claim || (await ConscriboService.getClaim(member.lidnummer));
       if (existingClaim) {
-        return {
-          valid: false,
-          isIwsMember: true,
-          lidnummer: member.lidnummer,
-          message: `✗ Lidnr. #${member.lidnummer} is al ingezet voor ${existingClaim.festivalName} (1x gratis ticket per jaar).`,
-        };
+        let claimIsPaidOrActive = true;
+        if (existingClaim.orderNumber && existingClaim.orderNumber !== 'HANDMATIG') {
+          try {
+            const claimedOrder = await OrdersRepository.findOrder(existingClaim.orderNumber);
+            if (claimedOrder) {
+              if (
+                claimedOrder.status === 'cancelled' ||
+                claimedOrder.status === 'expired' ||
+                claimedOrder.status === 'failed' ||
+                claimedOrder.status === 'refunded'
+              ) {
+                claimIsPaidOrActive = false;
+              } else if (claimedOrder.status !== 'paid') {
+                // If the previous order is still unpaid/pending and > 90 seconds old, the user abandoned or restarted checkout
+                const claimedTime = new Date(existingClaim.claimedAt || claimedOrder.createdAt).getTime();
+                if (!isNaN(claimedTime) && Date.now() - claimedTime > 90 * 1000) {
+                  claimIsPaidOrActive = false;
+                }
+              }
+            }
+          } catch {}
+        }
+
+        if (!claimIsPaidOrActive) {
+          await ConscriboService.releaseClaim(member.lidnummer);
+        } else {
+          return {
+            valid: false,
+            isIwsMember: true,
+            lidnummer: member.lidnummer,
+            message: `✗ Lidnr. #${member.lidnummer} is al ingezet voor ${existingClaim.festivalName} (1x gratis ticket per jaar).`,
+          };
+        }
       }
 
       const festDiscount = getIwsDiscountForFestival(festivalId);

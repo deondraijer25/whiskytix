@@ -704,6 +704,17 @@ export class ConscriboService {
     return released;
   }
 
+  public static getClaimByOrderNumberSync(orderNumber: string): IwsFestivalClaim | null {
+    const cleanOrder = (orderNumber || '').trim().replace(/^#+/, '');
+    if (!cleanOrder) return null;
+    for (const claim of memoryClaims.values()) {
+      if ((claim.orderNumber || '').trim().replace(/^#+/, '') === cleanOrder) {
+        return claim;
+      }
+    }
+    return null;
+  }
+
   /**
    * Add a newly enrolled IWS member manually in Whiskytix (in case they just signed up and are not yet in Conscribo,
    * or to override an existing member's status).

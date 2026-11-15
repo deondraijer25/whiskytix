@@ -1642,7 +1642,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
      type: string;
      session: string;
      attendeeName: string;
-     status: 'valid' | 'checked_in' | 'cancelled' | 'swapped';
+     status: 'valid' | 'checked_in' | 'cancelled' | 'swapped' | 'pending_payment';
      replacedBy?: string;
      swappedToTicketCode?: string;
      swapReason?: string;
@@ -1651,6 +1651,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
    }
 
    const getSyncedOrders = async (query: { city?: string; festivalId?: string; env?: string }) => {
+     await ConscriboService.syncClaimsFromDb().catch(() => {});
      const allOrders = (await OrdersRepository.listOrdersAsync()) || OrdersRepository.listOrders() || [];
      
      const formattedOrders = allOrders.map((o) => {
@@ -1660,7 +1661,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          ? o.items.map((i) => `${i.quantity}x ${i.title}`).join(', ')
          : 'Tickets & Toegang');
 
-       let tickets: FormattedOrderTicket[] = Array.isArray(o.tickets) ? o.tickets.map((t) => ({
+       const isOrderPaid = o.status === 'paid';
+       const isOrderDead = o.status === 'refunded' || o.status === 'failed' || o.status === 'cancelled' || o.status === 'expired' || (o.status as any) === 'canceled';
+       const fallbackTicketStatus: FormattedOrderTicket['status'] = isOrderPaid ? 'valid' : isOrderDead ? 'cancelled' : 'pending_payment';
+
+       let tickets: FormattedOrderTicket[] = (isOrderPaid && Array.isArray(o.tickets)) ? o.tickets.map((t) => ({
          code: t.ticketCode,
          type: t.sessionTitle?.toLowerCase().includes('masterclass') ? 'Masterclass' : 'Entreeticket',
          session: t.sessionTitle,
@@ -1695,7 +1700,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                  type: isMc ? 'Masterclass' : 'Entreeticket',
                  session: it.title,
                  attendeeName: o.customerName || 'Bezoeker',
-                 status: (o.status === 'paid' || o.status === 'pending') ? 'valid' : (o.status === 'refunded' || o.status === 'failed') ? 'cancelled' : 'valid',
+                 status: fallbackTicketStatus,
                  dateStr: it.date,
                  timeStr: it.time || it.timeslot,
                });
@@ -1712,13 +1717,15 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                  type: isMc ? 'Masterclass' : 'Entreeticket',
                  session: it.title,
                  attendeeName: o.customerName || 'Bezoeker',
-                 status: (o.status === 'paid' || o.status === 'pending') ? 'valid' : (o.status === 'refunded' || o.status === 'failed') ? 'cancelled' : 'valid',
+                 status: fallbackTicketStatus,
                });
                ticketIdx++;
              }
            }
          }
        }
+
+       const iwsClaim = ConscriboService.getClaimByOrderNumberSync(o.orderNumber);
 
        return {
          id: o.id || o.orderNumber,
@@ -1729,6 +1736,9 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          city: city as 'denhaag' | 'amsterdam' | 'gent',
          cityName,
          itemsSummary: summary,
+         subtotalCents: o.subtotalCents || o.totalCents || 0,
+         discountCents: o.discountCents || iwsClaim?.discountCents || 0,
+         iwsLidnummer: iwsClaim?.lidnummer || undefined,
          totalCents: o.totalCents || 0,
          status: o.status || 'pending',
          createdAt: o.createdAt || new Date().toISOString(),
@@ -1831,10 +1841,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 for (let q = 0; q < it.quantity; q++) {
                   const cleanTicketCode = `${cleanNum}-${ticketIndex}`;
                   const isCancelled = isOrderCancelled || cancList.includes(cleanTicketCode) || cancList.includes(`#${cleanTicketCode}`);
-                  const ticketStatus = isCancelled
+                  const ticketStatus: FormattedOrderTicket['status'] = isCancelled
                     ? 'cancelled'
-                    : (p.status === 'paid' || p.status === 'authorized' || p.status === 'open' || p.status === 'pending')
+                    : (p.status === 'paid' || p.status === 'authorized')
                     ? 'valid'
+                    : (p.status === 'open' || p.status === 'pending')
+                    ? 'pending_payment'
                     : 'cancelled';
 
                   tickets.push({
@@ -1879,6 +1891,9 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 } catch {}
               }
 
+             const iwsClaimForMollie = ConscriboService.getClaimByOrderNumberSync(metaOrderNumber);
+             const metaDiscountCents = Number(p.metadata?.discountCents) || iwsClaimForMollie?.discountCents || 0;
+
              if (!existing) {
                formattedOrders.unshift({
                id: p.id,
@@ -1889,8 +1904,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                city: festId,
                cityName,
                itemsSummary: cleanSummary,
+               subtotalCents: amountCents + metaDiscountCents,
+               discountCents: metaDiscountCents,
+               iwsLidnummer: iwsClaimForMollie?.lidnummer || undefined,
                totalCents: amountCents,
-               status: isOrderCancelled ? 'cancelled' : p.status === 'paid' ? 'paid' : (p.status as any),
+               status: isOrderCancelled ? 'cancelled' : p.status === 'paid' ? 'paid' : p.status === 'canceled' ? 'cancelled' : (p.status as any),
                createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
                environment: p.environment || targetMode,
                tickets,
@@ -1909,7 +1927,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
              });
               // Also persist into OrdersRepository so tickets can be swapped, cancelled, or added
               try {
-                const storedTickets: any[] = tickets.map((t) => ({
+                const storedTickets: any[] = p.status === 'paid' ? tickets.map((t) => ({
                   id: crypto.randomUUID(),
                   orderId: p.id,
                   ticketCode: t.code,
@@ -1923,7 +1941,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                   timeStr: t.timeStr || '',
                   pdfUrl: "/api/tickets/" + t.code.replace('#', '') + "/pdf?city=" + festId,
                   createdAt: p.paidAt || p.createdAt || new Date().toISOString(),
-                }));
+                })) : [];
 
                 const storedOrder: any = {
                   id: p.id,
@@ -1932,18 +1950,18 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                   customerName: resolvedName,
                   customerEmail: resolvedEmail,
                   customerPhone: p.metadata?.customerPhone || undefined,
-                  subtotalCents: amountCents,
-                  discountCents: 0,
+                  subtotalCents: amountCents + metaDiscountCents,
+                  discountCents: metaDiscountCents,
                   totalCents: amountCents,
-                  status: p.status === 'paid' ? 'paid' : (p.status as any),
+                  status: p.status === 'paid' ? 'paid' : p.status === 'canceled' ? 'cancelled' : (p.status as any),
                   molliePaymentId: p.id,
                   paymentMethod: p.method || 'ideal',
                   createdAt: p.createdAt || new Date().toISOString(),
                   paidAt: p.paidAt || null,
                   expiresAt: new Date(Date.now() + 86400000).toISOString(),
                   environment: p.environment || targetMode,
-                  ghlSynced: true,
-                  ghlContactId: 'mollie-list-sync',
+                  ghlSynced: p.status === 'paid',
+                  ghlContactId: p.status === 'paid' ? 'mollie-list-sync' : undefined,
                   items: effectiveItems.map((it) => ({
                     id: crypto.randomUUID(),
                     orderId: p.id,
@@ -1965,6 +1983,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
               existing.environment = p.environment || targetMode;
               existing.city = festId;
               existing.cityName = cityName;
+              if (iwsClaimForMollie?.lidnummer && !(existing as any).iwsLidnummer) {
+                (existing as any).iwsLidnummer = iwsClaimForMollie.lidnummer;
+              }
+              if (metaDiscountCents > 0 && !(existing as any).discountCents) {
+                (existing as any).discountCents = metaDiscountCents;
+              }
               if (resolvedName && (existing.customerName === 'Klant' || existing.customerName === 'Bezoeker')) {
                 existing.customerName = resolvedName;
               }
@@ -1986,17 +2010,24 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 existing.status = 'cancelled';
               } else if (p.status === 'paid' && existing.status !== 'paid') {
                 existing.status = 'paid';
+              } else if ((p.status === 'canceled' || p.status === 'expired' || p.status === 'failed') && existing.status !== 'paid') {
+                existing.status = p.status === 'canceled' ? 'cancelled' : (p.status as any);
+                ConscriboService.releaseClaimByOrderNumber(existing.orderNumber).catch(() => {});
               }
 
-              // Apply cancellations to existing.tickets
+              // Apply cancellations or unpaid status to existing.tickets
               if (Array.isArray(existing.tickets)) {
                 for (const t of existing.tickets) {
                   const cleanTicketCode = (t.code || '').replace(/^#+/, '');
                   if (isOrderCancelled || cancList.includes(cleanTicketCode) || cancList.includes(`#${cleanTicketCode}`)) {
                     t.status = 'cancelled';
                     t.swapReason = 'Geannuleerd via orderbeheer';
-                  } else if (p.status === 'paid' && t.status !== 'swapped' && t.status !== 'cancelled') {
+                  } else if (existing.status === 'paid' && t.status !== 'swapped' && t.status !== 'cancelled') {
                     t.status = 'valid';
+                  } else if (existing.status !== 'paid') {
+                    t.status = (existing.status === 'cancelled' || existing.status === 'expired' || existing.status === 'failed' || existing.status === 'refunded')
+                      ? 'cancelled'
+                      : 'pending_payment';
                   }
                 }
               }
