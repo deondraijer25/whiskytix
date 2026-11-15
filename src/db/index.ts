@@ -15,7 +15,7 @@ const connectionString = isServerless && rawConnectionString.includes('.pooler.s
 
 // 1. PostgreSQL connection client (with connection pooling & Supavisor transaction mode compatibility)
 export const queryClient = postgres(connectionString, {
-  max: isServerless ? 4 : 10,
+  max: isServerless ? 2 : 10,
   idle_timeout: 20,
   connect_timeout: 10,
   prepare: false,

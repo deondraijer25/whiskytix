@@ -183,34 +183,52 @@ function saveCouponsStore() {
 
 loadCouponsStore();
 
+let lastCouponsSyncAt = 0;
+let inFlightCouponsSync: Promise<void> | null = null;
+const COUPONS_CACHE_TTL_MS = 30000;
+
 export class CouponsRepository {
   /**
-   * Synchronize in-memory cache from PostgreSQL/Supabase so all Vercel serverless instances
-   * and external festival websites share the exact same live discount codes.
+   * Synchronize in-memory cache from PostgreSQL/Supabase with 30s TTL + in-flight deduplication
+   * so 500 concurrent visitors never trigger 500 simultaneous DB queries.
    */
-  static async syncFromDb(): Promise<void> {
-    try {
-      const ready = await ensureDbTableReady();
-      if (!ready) return;
+  static async syncFromDb(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && lastCouponsSyncAt > 0 && now - lastCouponsSyncAt < COUPONS_CACHE_TTL_MS) {
+      return;
+    }
+    if (inFlightCouponsSync) {
+      return inFlightCouponsSync;
+    }
 
-      const rows = await queryClient.unsafe(
-        'SELECT * FROM discount_codes ORDER BY valid_until ASC NULLS LAST, code ASC'
-      );
+    inFlightCouponsSync = (async () => {
+      try {
+        const rows = await queryClient.unsafe(
+          'SELECT * FROM discount_codes ORDER BY valid_until ASC NULLS LAST, code ASC'
+        );
 
-      if (Array.isArray(rows)) {
-        memoryCoupons.clear();
-        DEFAULT_COUPONS.forEach((c) => memoryCoupons.set(c.code.toUpperCase(), { ...c }));
-        for (const r of rows) {
-          const mapped = mapDbRowToCoupon(r);
-          if (mapped.code) {
-            memoryCoupons.set(mapped.code, mapped);
+        if (Array.isArray(rows)) {
+          memoryCoupons.clear();
+          DEFAULT_COUPONS.forEach((c) => memoryCoupons.set(c.code.toUpperCase(), { ...c }));
+          for (const r of rows) {
+            const mapped = mapDbRowToCoupon(r);
+            if (mapped.code) {
+              memoryCoupons.set(mapped.code, mapped);
+            }
+          }
+          lastCouponsSyncAt = Date.now();
+          if (!isVercel) {
+            saveCouponsStore();
           }
         }
-        saveCouponsStore();
+      } catch (err) {
+        console.warn('[CouponsRepository] DB sync fallback to local memory:', err);
+      } finally {
+        inFlightCouponsSync = null;
       }
-    } catch (err) {
-      console.warn('[CouponsRepository] DB sync fallback to local memory:', err);
-    }
+    })();
+
+    return inFlightCouponsSync;
   }
 
   static async getAll(festivalId?: string): Promise<StoredCoupon[]> {
@@ -223,23 +241,7 @@ export class CouponsRepository {
   static async getByCode(code: string): Promise<StoredCoupon | undefined> {
     if (!code) return undefined;
     const clean = code.trim().toUpperCase();
-
-    try {
-      const ready = await ensureDbTableReady();
-      if (ready) {
-        const rows = await queryClient`
-          SELECT * FROM discount_codes WHERE UPPER(code) = ${clean} LIMIT 1
-        `;
-        if (rows.length > 0) {
-          const mapped = mapDbRowToCoupon(rows[0]);
-          memoryCoupons.set(clean, mapped);
-          return mapped;
-        }
-      }
-    } catch {
-      // Fallback to memoryCoupons
-    }
-
+    await this.syncFromDb();
     return memoryCoupons.get(clean);
   }
 

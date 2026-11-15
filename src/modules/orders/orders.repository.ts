@@ -235,6 +235,49 @@ export class OrdersRepository {
   /**
    * Returns a map of ticketTypeId -> total quantity currently held in non-expired pending orders
    */
+  static async getActiveReservedQuantitiesAsync(festivalId?: string): Promise<Map<string, number>> {
+    const reserved = this.getActiveReservedQuantities(festivalId);
+    const now = new Date();
+    try {
+      const dbStatus = await checkDbConnection();
+      if (dbStatus.ok) {
+        const pendingRows = await db
+          .select()
+          .from(schema.orders)
+          .where(eq(schema.orders.status, 'pending'));
+
+        const memoryOrderNums = new Set<string>();
+        for (const o of memoryOrders.values()) {
+          if (o && o.orderNumber) memoryOrderNums.add(o.orderNumber);
+        }
+
+        const activeDbOrderIds = pendingRows
+          .filter((r) => {
+            if (festivalId && r.festivalId !== festivalId) return false;
+            if (memoryOrderNums.has(r.orderNumber)) return false;
+            return r.expiresAt && new Date(r.expiresAt).getTime() > now.getTime();
+          })
+          .map((r) => r.id);
+
+        if (activeDbOrderIds.length > 0) {
+          const allItems = await Promise.all(
+            activeDbOrderIds.map((oid) =>
+              db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, oid))
+            )
+          );
+          for (const itemRows of allItems) {
+            for (const it of itemRows) {
+              if (it.ticketTypeId && it.quantity > 0) {
+                reserved.set(it.ticketTypeId, (reserved.get(it.ticketTypeId) || 0) + it.quantity);
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+    return reserved;
+  }
+
   static getActiveReservedQuantities(festivalId?: string): Map<string, number> {
     const now = Date.now();
     const reserved = new Map<string, number>();

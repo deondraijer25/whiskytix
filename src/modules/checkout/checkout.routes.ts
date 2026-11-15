@@ -8,6 +8,14 @@ import { GhlCatalogService } from '../ghl/ghl.catalog.service.js';
 import { CouponsRepository } from '../coupons/coupons.repository.js';
 import { ConscriboService } from '../conscribo/conscribo.service.js';
 
+// Concurrency Mutex Lock for Pre-Payment Stock Reservation (prevents race condition when 50+ buyers click Betalen at the exact same millisecond)
+let stockReservationQueue: Promise<any> = Promise.resolve();
+function withStockReservationLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = stockReservationQueue.then(fn, fn);
+  stockReservationQueue = next.catch(() => {});
+  return next;
+}
+
 export async function registerCheckoutRoutes(server: FastifyInstance): Promise<void> {
   /**
    * 0. COUPONS & PROMO CODES MANAGEMENT + VALIDATION (PostgreSQL / Supabase synced)
@@ -15,6 +23,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   server.get('/api/coupons', async (request, reply) => {
     const query = (request.query || {}) as { festivalId?: string; city?: string };
     const coupons = await CouponsRepository.getAll(query.festivalId || query.city);
+    reply.header('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=60');
     return reply.send({ success: true, coupons });
   });
 
@@ -197,52 +206,84 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       const discountedSubtotalCents = Math.max(0, subtotalCents - finalDiscountCents);
       const totalCents = discountedSubtotalCents + feeCents + shippingCents;
 
-      // Pre-payment Capacity & Stock Protection (prevents overselling under 300-400 concurrent buyers)
-      try {
-        const catalog = await GhlCatalogService.getCatalog(festivalId);
-        if (catalog && Array.isArray(catalog.items) && catalog.items.length > 0) {
-          const activeReserved = OrdersRepository.getActiveReservedQuantities(festivalId);
-          for (const reqItem of orderItems) {
-            const cleanReqTitle = (reqItem.title || '')
-              .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
-              .toLowerCase()
-              .replace(/[^a-z0-9]/g, '');
+      // Atomic Pre-payment Capacity & Stock Protection + Pending Order Creation
+      const stockAndOrderResult = await withStockReservationLock(async () => {
+        try {
+          const catalog = await GhlCatalogService.getCatalog(festivalId);
+          if (catalog && Array.isArray(catalog.items) && catalog.items.length > 0) {
+            const activeReserved = await OrdersRepository.getActiveReservedQuantitiesAsync(festivalId);
+            for (const reqItem of orderItems) {
+              const cleanReqTitle = (reqItem.title || '')
+                .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, '');
 
-            const isGhlId = Boolean(reqItem.ticketTypeId && /^[a-f0-9]{20,30}$/i.test(reqItem.ticketTypeId));
-            const matchedCatalogItem = catalog.items.find((ci) => {
-              if (ci.id === reqItem.ticketTypeId) return true;
-              if (isGhlId) return false;
-              const cleanCiTitle = (ci.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-              if (!cleanReqTitle || !cleanCiTitle || cleanCiTitle !== cleanReqTitle) return false;
-              const reqTime = (reqItem.time || reqItem.timeslot || '').replace(/[^0-9:]/g, '');
-              const ciTime = (ci.timeStr || '').replace(/[^0-9:]/g, '');
-              if (reqTime && ciTime && reqTime !== ciTime) return false;
-              return true;
-            });
+              const isGhlId = Boolean(reqItem.ticketTypeId && /^[a-f0-9]{20,30}$/i.test(reqItem.ticketTypeId));
+              const matchedCatalogItem = catalog.items.find((ci) => {
+                if (ci.id === reqItem.ticketTypeId) return true;
+                if (isGhlId) return false;
+                const cleanCiTitle = (ci.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (!cleanReqTitle || !cleanCiTitle || cleanCiTitle !== cleanReqTitle) return false;
+                const reqTime = (reqItem.time || reqItem.timeslot || '').replace(/[^0-9:]/g, '');
+                const ciTime = (ci.timeStr || '').replace(/[^0-9:]/g, '');
+                if (reqTime && ciTime && reqTime !== ciTime) return false;
+                return true;
+              });
 
-            if (matchedCatalogItem) {
-              // Ensure orderItem uses the canonical GHL record ID so post-payment sold increments hit the exact record
-              if (matchedCatalogItem.id && (!reqItem.ticketTypeId || reqItem.ticketTypeId.startsWith('dh-') || reqItem.ticketTypeId.startsWith('ticket-'))) {
-                reqItem.ticketTypeId = matchedCatalogItem.id;
-              }
-              const cap = matchedCatalogItem.capacity || 0;
-              const sold = matchedCatalogItem.sold || 0;
-              const reservedById = activeReserved.get(matchedCatalogItem.id) || 0;
-              const effectiveSold = sold + reservedById;
+              if (matchedCatalogItem) {
+                if (matchedCatalogItem.id && (!reqItem.ticketTypeId || reqItem.ticketTypeId.startsWith('dh-') || reqItem.ticketTypeId.startsWith('ticket-'))) {
+                  reqItem.ticketTypeId = matchedCatalogItem.id;
+                }
+                const cap = matchedCatalogItem.capacity || 0;
+                const sold = matchedCatalogItem.sold || 0;
+                const reservedById = activeReserved.get(matchedCatalogItem.id) || 0;
+                const effectiveSold = sold + reservedById;
 
-              if (matchedCatalogItem.isSoldOut || (cap > 0 && effectiveSold + reqItem.quantity > cap)) {
-                const remaining = Math.max(0, cap - effectiveSold);
-                const msg = remaining === 0
-                  ? `Helaas! "${reqItem.title}" is zojuist uitverkocht.`
-                  : `Voor "${reqItem.title}" zijn nog slechts ${remaining} ticket(s) beschikbaar (u probeert er ${reqItem.quantity} te bestellen).`;
-                return reply.status(409).send({ error: msg, code: 'SOLD_OUT', ticketTypeId: reqItem.ticketTypeId, remaining });
+                if (matchedCatalogItem.isSoldOut || (cap > 0 && effectiveSold + reqItem.quantity > cap)) {
+                  const remaining = Math.max(0, cap - effectiveSold);
+                  const msg = remaining === 0
+                    ? `Helaas! "${reqItem.title}" is zojuist uitverkocht.`
+                    : `Voor "${reqItem.title}" zijn nog slechts ${remaining} ticket(s) beschikbaar (u probeert er ${reqItem.quantity} te bestellen).`;
+                  return { soldOutError: { error: msg, code: 'SOLD_OUT', ticketTypeId: reqItem.ticketTypeId, remaining } };
+                }
               }
             }
           }
+        } catch (stockErr: any) {
+          server.log.warn('Kon pre-checkout voorraadcheck niet uitvoeren: ' + stockErr.message);
         }
-      } catch (stockErr: any) {
-        server.log.warn('Kon pre-checkout voorraadcheck niet uitvoeren: ' + stockErr.message);
+
+        const created = await OrdersRepository.createOrder({
+          id: orderId,
+          orderNumber,
+          festivalId: (festivalId as any) || 'gent',
+          customerName: finalCustomerName,
+          firstName: firstName || finalCustomerName.split(' ')[0],
+          lastName: lastName || finalCustomerName.split(' ').slice(1).join(' '),
+          customerEmail,
+          customerPhone,
+          portalBaseUrl,
+          subtotalCents,
+          discountCents: finalDiscountCents,
+          totalCents,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min stock hold TTL
+          shippingAddress: hasShipping ? shippingAddress : undefined,
+          ageVerification: hasShipping && ageVerification ? {
+            birthDate: String(ageVerification.birthDate),
+            idCheckAcknowledged: Boolean(ageVerification.idCheckAcknowledged),
+            verifiedAt: new Date().toISOString()
+          } : undefined,
+          items: orderItems,
+        });
+        return { storedOrder: created };
+      });
+
+      if (stockAndOrderResult.soldOutError) {
+        return reply.status(409).send(stockAndOrderResult.soldOutError);
       }
+      const storedOrder = stockAndOrderResult.storedOrder!;
 
       // Record coupon / IWS member claim ONLY after stock check succeeds so a 409 SOLD_OUT never burns a member's code
       if (validatedCouponCheck && cleanPromo) {
@@ -259,32 +300,6 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
         }
       }
-
-      // Create Pending Order
-      const storedOrder = await OrdersRepository.createOrder({
-        id: orderId,
-        orderNumber,
-        festivalId: (festivalId as any) || 'gent',
-        customerName: finalCustomerName,
-        firstName: firstName || finalCustomerName.split(' ')[0],
-        lastName: lastName || finalCustomerName.split(' ').slice(1).join(' '),
-        customerEmail,
-        customerPhone,
-        portalBaseUrl,
-        subtotalCents,
-        discountCents: finalDiscountCents,
-        totalCents,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min stock hold TTL
-        shippingAddress: hasShipping ? shippingAddress : undefined,
-        ageVerification: hasShipping && ageVerification ? {
-          birthDate: String(ageVerification.birthDate),
-          idCheckAcknowledged: Boolean(ageVerification.idCheckAcknowledged),
-          verifiedAt: new Date().toISOString()
-        } : undefined,
-        items: orderItems,
-      });
 
       // Initialize Payment via Mollie
       const host = request.headers.host || 'localhost:4000';
