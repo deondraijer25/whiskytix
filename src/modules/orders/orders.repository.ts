@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { db, checkDbConnection } from '../../db/index.js';
 import * as schema from '../../db/schema.js';
-import { and, eq, ilike, ne } from 'drizzle-orm';
+import { and, eq, ilike, inArray, ne } from 'drizzle-orm';
 import { buildQrPayload, generateTicketSignature } from '../tickets/qr.service.js';
 import { GhlSyncService } from '../ghl/ghl.sync.service.js';
 import { MollieService } from '../payments/mollie.service.js';
@@ -247,12 +247,23 @@ export class OrdersRepository {
   /**
    * Clears all stored orders
    */
+  private static lastDbReservedCache: { key: string; fetchedAt: number; map: Map<string, number> } | null = null;
+
   /**
    * Returns a map of ticketTypeId -> total quantity currently held in non-expired pending orders
    */
   static async getActiveReservedQuantitiesAsync(festivalId?: string): Promise<Map<string, number>> {
     const reserved = this.getActiveReservedQuantities(festivalId);
+    const cacheKey = festivalId || 'all';
+    const nowMs = Date.now();
+    if (this.lastDbReservedCache && this.lastDbReservedCache.key === cacheKey && nowMs - this.lastDbReservedCache.fetchedAt < 2500) {
+      for (const [k, v] of this.lastDbReservedCache.map.entries()) {
+        reserved.set(k, (reserved.get(k) || 0) + v);
+      }
+      return reserved;
+    }
     const now = new Date();
+    const dbOnlyMap = new Map<string, number>();
     try {
       const dbStatus = await checkDbConnection();
       if (dbStatus.ok) {
@@ -275,19 +286,18 @@ export class OrdersRepository {
           .map((r) => r.id);
 
         if (activeDbOrderIds.length > 0) {
-          const allItems = await Promise.all(
-            activeDbOrderIds.map((oid) =>
-              db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, oid))
-            )
-          );
-          for (const itemRows of allItems) {
-            for (const it of itemRows) {
-              if (it.ticketTypeId && it.quantity > 0) {
-                reserved.set(it.ticketTypeId, (reserved.get(it.ticketTypeId) || 0) + it.quantity);
-              }
+          const itemRows = await db
+            .select()
+            .from(schema.orderItems)
+            .where(inArray(schema.orderItems.orderId, activeDbOrderIds));
+          for (const it of itemRows) {
+            if (it.ticketTypeId && it.quantity > 0) {
+              reserved.set(it.ticketTypeId, (reserved.get(it.ticketTypeId) || 0) + it.quantity);
+              dbOnlyMap.set(it.ticketTypeId, (dbOnlyMap.get(it.ticketTypeId) || 0) + it.quantity);
             }
           }
         }
+        this.lastDbReservedCache = { key: cacheKey, fetchedAt: Date.now(), map: dbOnlyMap };
       }
     } catch {}
     return reserved;

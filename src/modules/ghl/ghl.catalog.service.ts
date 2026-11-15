@@ -53,7 +53,7 @@ const GHL_API_KEY = process.env.GHL_API_KEY || 'pit-150d6114-ac2c-4cf7-9d5c-ffc2
 const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID || '1OZ9uxIBFoxwbheVC5iN';
 const GHL_TICKETS_OBJECT_KEY = process.env.GHL_TICKETS_SCHEMA_ID || 'custom_objects.festival_tickets';
 
-const CACHE_TTL_MS = 5 * 1000; // 5 seconden in-memory cache voor realtime GHL sync
+const CACHE_TTL_MS = 15 * 1000; // 15 seconden in-memory cache voor realtime GHL sync (sold-counts worden direct in-memory bijgewerkt)
 
 let inMemoryCache: {
   timestamp: number;
