@@ -300,27 +300,13 @@ function saveManualMembersStore() {
   }
 }
 
+let lastClaimsDbSyncAt = 0;
+let syncClaimsInFlight: Promise<void> | null = null;
+
 async function ensureClaimsDbReady(): Promise<boolean> {
   try {
     const status = await checkDbConnection();
-    if (!status.ok) return false;
-    if (!claimsDbInitialized) {
-      await queryClient.unsafe(`
-        CREATE TABLE IF NOT EXISTS iws_festival_claims (
-          lidnummer text PRIMARY KEY,
-          festival_id text NOT NULL,
-          festival_name text NOT NULL,
-          order_number text NOT NULL,
-          discount_cents integer NOT NULL DEFAULT 0,
-          customer_email text,
-          customer_name text,
-          claimed_at timestamptz NOT NULL DEFAULT now()
-        );
-        ALTER TABLE iws_festival_claims ENABLE ROW LEVEL SECURITY;
-      `);
-      claimsDbInitialized = true;
-    }
-    return true;
+    return status.ok;
   } catch {
     return false;
   }
@@ -511,32 +497,46 @@ export class ConscriboService {
   /**
    * Synchronize cross-festival claims from PostgreSQL/Supabase into memory & local disk
    */
-  public static async syncClaimsFromDb(): Promise<void> {
-    try {
-      const ready = await ensureClaimsDbReady();
-      if (!ready) return;
-
-      const rows = await queryClient.unsafe('SELECT * FROM iws_festival_claims ORDER BY claimed_at DESC');
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          const norm = normalizeIwsLidnummer(String(r.lidnummer)) || String(r.lidnummer).trim();
-          const festId = normalizeFestivalId(r.festival_id);
-          memoryClaims.set(norm, {
-            lidnummer: norm,
-            festivalId: festId,
-            festivalName: r.festival_name || getFestivalDisplayName(festId),
-            orderNumber: String(r.order_number || ''),
-            discountCents: Number(r.discount_cents) || 0,
-            customerEmail: r.customer_email ? String(r.customer_email) : undefined,
-            customerName: r.customer_name ? String(r.customer_name) : undefined,
-            claimedAt: r.claimed_at ? new Date(r.claimed_at).toISOString() : new Date().toISOString(),
-          });
-        }
-        saveClaimsStore();
-      }
-    } catch (err) {
-      console.warn('[ConscriboService] DB syncClaims fallback to local store:', err);
+  public static async syncClaimsFromDb(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && lastClaimsDbSyncAt > 0 && now - lastClaimsDbSyncAt < 15000) {
+      return;
     }
+    if (syncClaimsInFlight) {
+      return syncClaimsInFlight;
+    }
+    syncClaimsInFlight = (async () => {
+      try {
+        const ready = await ensureClaimsDbReady();
+        if (!ready) return;
+
+        const rows = await queryClient.unsafe('SELECT * FROM iws_festival_claims ORDER BY claimed_at DESC');
+        if (Array.isArray(rows)) {
+          memoryClaims.clear();
+          for (const r of rows) {
+            const norm = normalizeIwsLidnummer(String(r.lidnummer)) || String(r.lidnummer).trim();
+            const festId = normalizeFestivalId(r.festival_id);
+            memoryClaims.set(norm, {
+              lidnummer: norm,
+              festivalId: festId,
+              festivalName: r.festival_name || getFestivalDisplayName(festId),
+              orderNumber: String(r.order_number || ''),
+              discountCents: Number(r.discount_cents) || 0,
+              customerEmail: r.customer_email ? String(r.customer_email) : undefined,
+              customerName: r.customer_name ? String(r.customer_name) : undefined,
+              claimedAt: r.claimed_at ? new Date(r.claimed_at).toISOString() : new Date().toISOString(),
+            });
+          }
+          lastClaimsDbSyncAt = Date.now();
+          saveClaimsStore();
+        }
+      } catch (err) {
+        console.warn('[ConscriboService] DB syncClaims fallback to local store:', err);
+      } finally {
+        syncClaimsInFlight = null;
+      }
+    })();
+    return syncClaimsInFlight;
   }
 
   public static async getClaim(rawLidnummer: string): Promise<IwsFestivalClaim | null> {
@@ -669,6 +669,9 @@ export class ConscriboService {
   public static async releaseClaimByOrderNumber(orderNumber: string): Promise<boolean> {
     const cleanOrder = (orderNumber || '').trim();
     if (!cleanOrder) return false;
+
+    const existingInMem = this.getClaimByOrderNumberSync(cleanOrder);
+    if (!existingInMem) return false;
 
     let released = false;
     try {

@@ -1387,9 +1387,11 @@ export class OrdersRepository {
     if (!order || !Array.isArray(order.tickets)) return;
 
     const activeTickets = order.tickets.filter((t) => t.status === 'valid' || t.status === 'checked_in');
+    const sourceTickets = activeTickets.length > 0 ? activeTickets : order.tickets;
+    if (sourceTickets.length === 0) return;
 
     const countMap = new Map<string, { count: number; dateStr?: string; timeStr?: string; category: string }>();
-    for (const t of activeTickets) {
+    for (const t of sourceTickets) {
       const title = t.sessionTitle || 'Entreeticket';
       const existing = countMap.get(title);
       const isMc = title.toLowerCase().includes('masterclass');

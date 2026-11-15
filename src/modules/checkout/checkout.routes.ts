@@ -1699,7 +1699,10 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
    }
 
    const getSyncedOrders = async (query: { city?: string; festivalId?: string; env?: string }) => {
-     await ConscriboService.syncClaimsFromDb().catch(() => {});
+     await Promise.race([
+       ConscriboService.syncClaimsFromDb().catch(() => {}),
+       new Promise((resolve) => setTimeout(resolve, 1500)),
+     ]);
      const allOrders = (await OrdersRepository.listOrdersAsync()) || OrdersRepository.listOrders() || [];
      
      const formattedOrders = allOrders.map((o) => {
@@ -2043,8 +2046,30 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
               if (resolvedEmail && !existing.customerEmail) {
                 existing.customerEmail = resolvedEmail;
               }
-              if (tickets.length > 0 && (!existing.tickets || existing.tickets.length === 0)) {
+              if (
+                tickets.length > 0 &&
+                (!existing.tickets ||
+                  existing.tickets.length === 0 ||
+                  existing.itemsSummary === 'Tickets & Toegang' ||
+                  !existing.items ||
+                  existing.items.length === 0)
+              ) {
                 existing.tickets = tickets;
+                if (cleanSummary) existing.itemsSummary = cleanSummary;
+                if (Array.isArray(effectiveItems) && effectiveItems.length > 0) {
+                  existing.items = effectiveItems.map((it) => ({
+                    id: crypto.randomUUID(),
+                    orderId: existing.id,
+                    ticketTypeId: 'ticket',
+                    title: it.title,
+                    quantity: it.quantity,
+                    unitPriceCents: 0,
+                    category: (it as any).category || 'entree',
+                    timeslot: (it as any).time,
+                    date: (it as any).date,
+                    time: (it as any).time,
+                  }));
+                }
               }
 
               const rawCanc = p.metadata?.cancelledTicketCodes;
@@ -2060,7 +2085,9 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 existing.status = 'paid';
               } else if ((p.status === 'canceled' || p.status === 'expired' || p.status === 'failed') && existing.status !== 'paid') {
                 existing.status = p.status === 'canceled' ? 'cancelled' : (p.status as any);
-                ConscriboService.releaseClaimByOrderNumber(existing.orderNumber).catch(() => {});
+                if (iwsClaimForMollie) {
+                  ConscriboService.releaseClaimByOrderNumber(existing.orderNumber).catch(() => {});
+                }
               }
 
               // Apply cancellations or unpaid status to existing.tickets

@@ -24,7 +24,7 @@ export const EnvironmentProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } catch {
       // localStorage fallback
     }
-    return 'test';
+    return 'live';
   });
 
   const setEnv = (newEnv: MollieEnv) => {

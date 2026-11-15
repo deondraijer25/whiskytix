@@ -605,9 +605,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
                             <CheckCircle2 className="w-3 h-3" /> Betaald
                           </span>
+                        ) : (order.status as string) === 'cancelled' || (order.status as string) === 'canceled' ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-300">
+                            <Clock className="w-3 h-3" /> Geannuleerd
+                          </span>
+                        ) : (order.status as string) === 'expired' || (order.status as string) === 'failed' ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-300">
+                            <Clock className="w-3 h-3" /> Verlopen
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
-                            <Clock className="w-3 h-3" /> {order.status === 'canceled' ? 'Geannuleerd' : 'In afwachting'}
+                            <Clock className="w-3 h-3" /> In afwachting
                           </span>
                         )}
                       </td>
