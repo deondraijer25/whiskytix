@@ -61,7 +61,7 @@ export class MollieService {
     // City-specific defaults when no explicit environment override is set
     // Den Haag uses built-in Highland Consultancy B.V. live key (#12343118 - profiel pfl_HFD8YffpCH), default to live mode
     if (city === 'denhaag') {
-      return 'live';
+      return 'test';
     }
 
     if (city === 'amsterdam') {
