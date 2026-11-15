@@ -333,9 +333,72 @@ export async function buildServer(): Promise<FastifyInstance> {
 
     let ticketsToRender: TicketPdfOptions[] = [];
 
-    if (order && order.tickets && order.tickets.length > 0) {
-      const activeTickets = order.tickets.filter((t) => t.status !== 'cancelled' && t.status !== 'swapped');
-      const list = activeTickets.length > 0 ? activeTickets : order.tickets;
+    let parsedQueryTickets: any[] | null = null;
+    if (query.tickets) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(query.tickets));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          parsedQueryTickets = parsed;
+        }
+      } catch (err) {
+        console.error('Fout bij parsen query.tickets:', err);
+      }
+    }
+
+    // Check if the customer has multiple paid orders for this city so bundled PDF includes all active tickets
+    let allCustomerActiveTickets: any[] = [];
+    if (order?.customerEmail) {
+      try {
+        const customerOrders = await OrdersRepository.findOrdersByEmail(order.customerEmail, resolvedCity);
+        const paidCustomerOrders = customerOrders.filter((o) => o.status === 'paid');
+        if (paidCustomerOrders.length > 1) {
+          const seenCodes = new Set<string>();
+          for (const po of paidCustomerOrders) {
+            const poOrderNum = (po.orderNumber || cleanOrderNumber).replace(/^#/, '');
+            for (const t of (po.tickets || [])) {
+              if (t.status !== 'cancelled' && t.status !== 'swapped') {
+                const codeKey = (t.ticketCode || '').replace(/^#/, '');
+                if (codeKey && !seenCodes.has(codeKey)) {
+                  seenCodes.add(codeKey);
+                  allCustomerActiveTickets.push({ ...t, orderNumber: poOrderNum });
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    const singleOrderActive = order?.tickets
+      ? order.tickets.filter((t) => t.status !== 'cancelled' && t.status !== 'swapped')
+      : [];
+
+    if (parsedQueryTickets && parsedQueryTickets.length > singleOrderActive.length) {
+      ticketsToRender = parsedQueryTickets.map((t: any, idx: number) => ({
+        ticketCode: t.ticketCode ? (t.ticketCode.startsWith('#') ? t.ticketCode : `#${t.ticketCode}`) : `#${cleanOrderNumber}-${idx + 1}`,
+        orderNumber: (t.orderNumber || cleanOrderNumber).replace(/^#/, ''),
+        attendeeName: t.attendeeName || resolvedAttendeeName,
+        cityName: t.cityName || resolvedCity,
+        sessionTitle: t.sessionTitle || t.title || 'Festival Entreeticket',
+        dateStr: t.dateStr || t.date,
+        timeStr: t.timeStr || t.time,
+        itemNumber: t.itemNumber || `${idx + 1}/${parsedQueryTickets!.length}`,
+        ticketStatus: t.ticketStatus || t.status || 'valid',
+      }));
+    } else if (allCustomerActiveTickets.length > singleOrderActive.length) {
+      ticketsToRender = allCustomerActiveTickets.map((t, idx) => ({
+        ticketCode: t.ticketCode.startsWith('#') ? t.ticketCode : `#${t.ticketCode}`,
+        orderNumber: (t.orderNumber || cleanOrderNumber).replace(/^#/, ''),
+        attendeeName: t.attendeeName || resolvedAttendeeName,
+        cityName: t.cityName || resolvedCity,
+        sessionTitle: t.sessionTitle,
+        dateStr: t.dateStr,
+        timeStr: t.timeStr,
+        itemNumber: `${idx + 1}/${allCustomerActiveTickets.length}`,
+        ticketStatus: t.status || 'valid',
+      }));
+    } else if (order && order.tickets && order.tickets.length > 0) {
+      const list = singleOrderActive.length > 0 ? singleOrderActive : order.tickets;
       ticketsToRender = list.map((t, idx) => ({
         ticketCode: t.ticketCode.startsWith('#') ? t.ticketCode : `#${t.ticketCode}`,
         orderNumber: cleanOrderNumber,
@@ -366,25 +429,18 @@ export async function buildServer(): Promise<FastifyInstance> {
           tIdx++;
         }
       }
-    } else if (query.tickets) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(query.tickets));
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          ticketsToRender = parsed.map((t: any, idx: number) => ({
-            ticketCode: t.ticketCode ? (t.ticketCode.startsWith('#') ? t.ticketCode : `#${t.ticketCode}`) : `#${cleanOrderNumber}-${idx + 1}`,
-            orderNumber: cleanOrderNumber,
-            attendeeName: t.attendeeName || resolvedAttendeeName,
-            cityName: t.cityName || resolvedCity,
-            sessionTitle: t.sessionTitle || t.title || 'Festival Entreeticket',
-            dateStr: t.dateStr || t.date,
-            timeStr: t.timeStr || t.time,
-            itemNumber: t.itemNumber || `${idx + 1}/${parsed.length}`,
-            ticketStatus: t.status || 'valid',
-          }));
-        }
-      } catch (err) {
-        console.error('Fout bij parsen query.tickets:', err);
-      }
+    } else if (parsedQueryTickets && parsedQueryTickets.length > 0) {
+      ticketsToRender = parsedQueryTickets.map((t: any, idx: number) => ({
+        ticketCode: t.ticketCode ? (t.ticketCode.startsWith('#') ? t.ticketCode : `#${t.ticketCode}`) : `#${cleanOrderNumber}-${idx + 1}`,
+        orderNumber: (t.orderNumber || cleanOrderNumber).replace(/^#/, ''),
+        attendeeName: t.attendeeName || resolvedAttendeeName,
+        cityName: t.cityName || resolvedCity,
+        sessionTitle: t.sessionTitle || t.title || 'Festival Entreeticket',
+        dateStr: t.dateStr || t.date,
+        timeStr: t.timeStr || t.time,
+        itemNumber: t.itemNumber || `${idx + 1}/${parsedQueryTickets!.length}`,
+        ticketStatus: t.ticketStatus || t.status || 'valid',
+      }));
     }
 
     if (ticketsToRender.length === 0) {

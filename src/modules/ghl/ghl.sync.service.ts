@@ -280,6 +280,7 @@ export class GhlSyncService {
               headers: this.getHeaders(),
               body: JSON.stringify({ tags: ['nieuwe bestelling'] }),
             }).catch(() => {});
+            await new Promise((r) => setTimeout(r, 450));
           }
           await this.fetchWithRetry(`${GHL_API_BASE}/contacts/${contactId}/tags`, {
             method: 'POST',

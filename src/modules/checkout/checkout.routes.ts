@@ -160,15 +160,13 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         }
       }
 
-      // Service fee calculation: tiered on entree tickets (1 -> €1.75, 2-5 -> €3.50, 5+ -> €4.50), or €0.50 Mollie transaction fee for standalone add-ons/bottling
+      // Service fee calculation (Guardrail #12): uniform tiered staffel on totalQty (1 -> €1.75, 2-5 -> €3.50, >5 -> €4.50)
       let feeCents = 0;
-      if (totalQty > 0 && entreeQty === 0) {
-        feeCents = 50;
-      } else if (entreeQty === 1) {
+      if (totalQty === 1) {
         feeCents = 175;
-      } else if (entreeQty >= 2 && entreeQty <= 5) {
+      } else if (totalQty >= 2 && totalQty <= 5) {
         feeCents = 350;
-      } else if (entreeQty > 5) {
+      } else if (totalQty > 5) {
         feeCents = 450;
       }
 
