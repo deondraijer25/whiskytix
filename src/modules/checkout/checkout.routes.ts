@@ -322,6 +322,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           customerPhone: customerPhone || '',
           promoCode: promoCode ? String(promoCode).trim() : '',
           discountCents: finalDiscountCents,
+          portalBaseUrl: portalBaseUrl || '',
           itemsSummary: orderItems.map((i) => `${i.quantity}x ${i.title}`).join(', ').slice(0, 450),
           itemsJson: JSON.stringify(orderItems.slice(0, 8).map((i) => ({
             id: i.id,
@@ -408,6 +409,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           customerName,
           customerEmail,
           customerPhone: meta.customerPhone || '',
+          portalBaseUrl: meta.portalBaseUrl || undefined,
           subtotalCents: amountCents,
           discountCents: 0,
           totalCents: amountCents,

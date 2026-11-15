@@ -550,6 +550,7 @@ export class OrdersRepository {
               delivery: item.delivery || '',
               date: item.date || '',
               time: item.time || item.timeslot || '',
+              portalBaseUrl: fullOrder.portalBaseUrl || '',
             }),
           });
         }
@@ -601,6 +602,7 @@ export class OrdersRepository {
             .where(eq(schema.ticketTypes.festivalId, row.festivalId));
           const ttMap = new Map(ttRows.map((tt) => [tt.id, tt]));
 
+          let hydratedPortalBaseUrl: string | undefined = undefined;
           const hydratedItems = items.map((i) => {
             let title = '';
             let category = 'entree';
@@ -617,6 +619,9 @@ export class OrdersRepository {
                 if (meta.delivery) delivery = meta.delivery;
                 if (meta.date) date = meta.date;
                 if (meta.time) time = meta.time;
+                if (meta.portalBaseUrl && !hydratedPortalBaseUrl) {
+                  hydratedPortalBaseUrl = String(meta.portalBaseUrl);
+                }
               } catch {}
             }
             if (!title || /^[a-f0-9]{24}$/i.test(title)) {
@@ -719,6 +724,7 @@ export class OrdersRepository {
             customerName: row.customerName,
             customerEmail: row.customerEmail,
             customerPhone: row.customerPhone || undefined,
+            portalBaseUrl: hydratedPortalBaseUrl,
             subtotalCents: row.subtotalCents,
             discountCents: row.discountCents,
             totalCents: row.totalCents,
@@ -823,6 +829,7 @@ export class OrdersRepository {
           customerName: meta.customerName || 'Bezoeker',
           customerEmail: meta.customerEmail || '',
           customerPhone: meta.customerPhone || undefined,
+          portalBaseUrl: meta.portalBaseUrl || undefined,
           subtotalCents: amountCents,
           discountCents: Number(meta.discountCents) || 0,
           totalCents: amountCents,

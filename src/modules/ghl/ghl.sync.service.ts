@@ -167,20 +167,19 @@ export class GhlSyncService {
       let portalBase = order.portalBaseUrl;
       if (
         !portalBase ||
-        portalBase.includes('vercel.app') ||
         portalBase.includes('localhost') ||
         portalBase.includes('127.0.0.1')
       ) {
         if (order.festivalId === 'gent') {
-          portalBase = process.env.PORTAL_BASE_URL_GENT || 'https://whiskyfestival.be';
+          portalBase = process.env.PORTAL_BASE_URL_GENT || 'https://whisky-fest-gent.vercel.app';
         } else if (order.festivalId === 'amsterdam') {
-          portalBase = process.env.PORTAL_BASE_URL_AMSTERDAM || 'https://whiskyfestival.nl';
+          portalBase = process.env.PORTAL_BASE_URL_AMSTERDAM || 'https://whisky-fest-amsterdam.vercel.app';
         } else {
-          portalBase = process.env.PORTAL_BASE_URL_DENHAAG || 'https://whiskyfestival.nl';
+          portalBase = process.env.PORTAL_BASE_URL_DENHAAG || 'https://whisky-fest-den-haag.vercel.app';
         }
       }
       portalBase = portalBase.replace(/\/+$/, '');
-      const portalUrl = `${portalBase}/account?email=${encodeURIComponent(order.customerEmail)}&order=${encodeURIComponent(order.orderNumber)}`;
+      const portalUrl = `${portalBase}/account?email=${encodeURIComponent(order.customerEmail)}&order=${encodeURIComponent(cleanOrderNumber)}`;
 
       const firstName =
         order.firstName ||
