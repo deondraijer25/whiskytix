@@ -12,6 +12,10 @@ import { eq, and, lt } from 'drizzle-orm';
 let cleanupInterval: any = null;
 
 export function startStockCleanupWorker(intervalMs = 60000): void {
+  // On Vercel Serverless, /api/cron/stock-cleanup handles periodic cleanup
+  if (process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined) {
+    return;
+  }
   if (cleanupInterval) return;
 
   console.info('🕒 Whiskytix Stock Cleanup Worker gestart (elke 60 sec)...');
@@ -23,6 +27,10 @@ export function startStockCleanupWorker(intervalMs = 60000): void {
       console.warn('Fout in stock cleanup worker:', err.message);
     }
   }, intervalMs);
+
+  if (cleanupInterval && typeof cleanupInterval.unref === 'function') {
+    cleanupInterval.unref();
+  }
 }
 
 export function stopStockCleanupWorker(): void {
