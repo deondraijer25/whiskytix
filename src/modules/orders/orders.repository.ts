@@ -938,14 +938,15 @@ export class OrdersRepository {
           .from(schema.orders)
           .where(ilike(schema.orders.customerEmail, cleanEmail));
 
-        for (const row of rows) {
-          if (!ordersMap.has(row.orderNumber)) {
-            const hydrated = await this.findOrder(row.orderNumber);
-            if (hydrated) {
-              if (!festivalId || hydrated.festivalId === festivalId) {
-                ordersMap.set(hydrated.orderNumber, hydrated);
-              }
-            }
+        const matchingRows = rows.filter(
+          (row) => (!festivalId || row.festivalId === festivalId) && !ordersMap.has(row.orderNumber)
+        );
+        const hydratedList = await Promise.all(
+          matchingRows.map((row) => this.findOrder(row.orderNumber))
+        );
+        for (const hydrated of hydratedList) {
+          if (hydrated && (!festivalId || hydrated.festivalId === festivalId)) {
+            ordersMap.set(hydrated.orderNumber, hydrated);
           }
         }
       }
