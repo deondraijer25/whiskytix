@@ -292,9 +292,10 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       const baseUrl = `${protocol}://${host}`;
 
       const clientReturnUrl = body?.returnUrl || body?.redirectUrl;
+      const cleanOrderNumberForUrl = orderNumber.replace(/^#+/, '');
       const redirectUrl = clientReturnUrl 
-        ? `${clientReturnUrl}${clientReturnUrl.includes('?') ? '&' : '?'}orderNumber=${encodeURIComponent(orderNumber)}`
-        : `${baseUrl}/order/confirmation?orderNumber=${encodeURIComponent(orderNumber)}`;
+        ? `${clientReturnUrl}${clientReturnUrl.includes('?') ? '&' : '?'}orderNumber=${encodeURIComponent(cleanOrderNumberForUrl)}`
+        : `${baseUrl}/order/confirmation?orderNumber=${encodeURIComponent(cleanOrderNumberForUrl)}`;
       const webhookUrl = `${baseUrl}/api/payments/webhook`;
 
       const festivalPaymentLabel =
@@ -669,11 +670,16 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           const effectiveItems = parsedItems || parseItemsSummary(itemsSummary);
           const totalQty = effectiveItems.reduce((acc: number, it: any) => acc + it.quantity, 0) || 1;
 
+          const validOrderUuid =
+            meta.orderId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(meta.orderId))
+              ? String(meta.orderId)
+              : crypto.randomUUID();
+
           const reconstructedItems: StoredOrderItem[] = effectiveItems.map((pi: any) => {
             const isMc = pi.title.toLowerCase().includes('masterclass');
             return {
               id: crypto.randomUUID(),
-              orderId: meta.orderId || matchedPayment.id,
+              orderId: validOrderUuid,
               ticketTypeId: `${festivalId}-${isMc ? 'masterclass' : (pi.category || 'entree')}`,
               title: pi.title,
               quantity: pi.quantity,
@@ -685,7 +691,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           });
 
           const reconstructedOrder = await OrdersRepository.createOrder({
-            id: meta.orderId || matchedPayment.id,
+            id: validOrderUuid,
             orderNumber: cleanedOrderNumber,
             festivalId,
             customerName: meta.customerName || 'Bezoeker',
@@ -803,6 +809,17 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         }
       } catch (err: any) {
         server.log.warn('Could not verify payment on return: ' + err.message);
+      }
+    } else if (order.status === 'paid' && (!order.ghlSynced || !order.tickets || order.tickets.length === 0)) {
+      try {
+        const updated = await OrdersRepository.markOrderPaid(order.orderNumber, {
+          paymentMethod: order.paymentMethod || 'ideal'
+        });
+        if (updated) {
+          order = updated;
+        }
+      } catch (err: any) {
+        server.log.warn('Could not complete post-paid GHL sync on return: ' + err.message);
       }
     }
 
@@ -2005,6 +2022,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 if (isOrderCancelled) {
                   repoOrder.status = 'cancelled';
                 } else if (p.status === 'paid') {
+                  if (repoOrder.status !== 'paid' || !repoOrder.ghlSynced) {
+                    const marked = await OrdersRepository.markOrderPaid(repoOrder.orderNumber, {
+                      paymentMethod: p.method || 'ideal',
+                    });
+                    if (marked) Object.assign(repoOrder, marked);
+                  }
                   repoOrder.status = 'paid';
                   repoOrder.paidAt = p.paidAt || new Date().toISOString();
                 }

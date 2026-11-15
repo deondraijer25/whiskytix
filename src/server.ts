@@ -45,6 +45,24 @@ export async function buildServer(): Promise<FastifyInstance> {
     timeWindow: '1 minute',
   });
 
+  // 3b. Support application/x-www-form-urlencoded for Mollie webhooks (POST id=tr_...)
+  server.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string' },
+    (_req, body, done) => {
+      try {
+        const params = new URLSearchParams(typeof body === 'string' ? body : String(body || ''));
+        const parsed: Record<string, string> = {};
+        for (const [k, v] of params.entries()) {
+          parsed[k] = v;
+        }
+        done(null, parsed);
+      } catch (err: any) {
+        done(err, undefined);
+      }
+    }
+  );
+
   // 4. API Endpoints
   // Health check
   // Vercel Cron endpoint for 15-minute stock hold cleanup

@@ -565,10 +565,11 @@ export class OrdersRepository {
    * Find order by order number or ID
    */
   static async findOrder(identifier: string): Promise<StoredOrder | null> {
-    const normalized = identifier.startsWith('#') ? identifier : `#${identifier}`;
-    let order = memoryOrders.get(normalized) || memoryOrders.get(identifier);
+    const cleanId = decodeURIComponent(identifier || '').trim().replace(/^#+/, '');
+    const normalized = `#${cleanId}`;
+    let order = memoryOrders.get(normalized) || memoryOrders.get(cleanId) || memoryOrders.get(identifier);
     if (order) {
-      if (order.tickets.length === 0 && Array.isArray(order.items) && order.items.length > 0) {
+      if (order.status === 'paid' && order.tickets.length === 0 && Array.isArray(order.items) && order.items.length > 0) {
         this.ensureOrderTickets(order);
       }
       return order;
@@ -711,7 +712,7 @@ export class OrdersRepository {
             };
           });
 
-          return {
+          const hydratedOrder: StoredOrder = {
             id: row.id,
             orderNumber: row.orderNumber,
             festivalId: row.festivalId as any,
@@ -732,6 +733,12 @@ export class OrdersRepository {
             items: hydratedItems,
             tickets: hydratedTickets,
           };
+          if (hydratedOrder.status === 'paid' && hydratedOrder.tickets.length === 0 && hydratedOrder.items.length > 0) {
+            this.ensureOrderTickets(hydratedOrder);
+          }
+          memoryOrders.set(hydratedOrder.orderNumber, hydratedOrder);
+          memoryOrders.set(hydratedOrder.id, hydratedOrder);
+          return hydratedOrder;
         }
       }
     } catch (e) {
@@ -792,9 +799,14 @@ export class OrdersRepository {
         ];
 
         const totalQty = effectiveItems.reduce((acc: number, it: any) => acc + (it.quantity || 1), 0) || 1;
+        const validOrderUuid =
+          meta.orderId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(meta.orderId))
+            ? String(meta.orderId)
+            : crypto.randomUUID();
+
         const reconstructedItems: StoredOrderItem[] = effectiveItems.map((pi: any) => ({
           id: crypto.randomUUID(),
-          orderId: meta.orderId || matched.id,
+          orderId: validOrderUuid,
           ticketTypeId: `${festivalId}-${pi.category || 'entree'}`,
           title: pi.title,
           quantity: pi.quantity || 1,
@@ -805,21 +817,28 @@ export class OrdersRepository {
         }));
 
         const newOrder = await this.createOrder({
-          id: meta.orderId || matched.id,
+          id: validOrderUuid,
           orderNumber: normalized,
           festivalId,
           customerName: meta.customerName || 'Bezoeker',
           customerEmail: meta.customerEmail || '',
           customerPhone: meta.customerPhone || undefined,
           subtotalCents: amountCents,
-          discountCents: 0,
+          discountCents: Number(meta.discountCents) || 0,
           totalCents: amountCents,
-          status: 'paid',
+          status: 'pending',
           molliePaymentId: matched.id,
           createdAt: matched.paidAt || matched.createdAt || new Date().toISOString(),
           expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
           items: reconstructedItems,
         });
+
+        if (matched.status === 'paid') {
+          const paidOrder = await this.markOrderPaid(newOrder.orderNumber, {
+            paymentMethod: matched.method || 'ideal',
+          });
+          if (paidOrder) return paidOrder;
+        }
 
         return newOrder;
       }
@@ -1084,6 +1103,24 @@ export class OrdersRepository {
       memoryOrders.set(order.id, order);
       saveLocalStore();
 
+      // Ensure dbTicketsToInsert is also populated if tickets were already generated in memory
+      if (dbTicketsToInsert.length === 0 && order.tickets.length > 0 && order.items.length > 0) {
+        const defaultItemId = order.items[0].id;
+        for (const t of order.tickets) {
+          dbTicketsToInsert.push({
+            id: t.id,
+            orderItemId: defaultItemId,
+            orderId: order.id,
+            ticketCode: t.ticketCode,
+            qrPayloadHash: t.qrPayloadHash,
+            attendeeName: t.attendeeName,
+            status: t.status,
+            pdfUrl: t.pdfUrl,
+            createdAt: new Date(t.createdAt || Date.now()),
+          });
+        }
+      }
+
       // Persist paid status & tickets to DB atomically so concurrent Vercel instances don't double-sync GHL
       let wonPaidTransition = !wasAlreadyPaidWithTickets;
       try {
@@ -1103,9 +1140,16 @@ export class OrdersRepository {
             .returning({ id: schema.orders.id });
 
           if (claimedRows.length === 0 && !wasAlreadyPaidWithTickets) {
-            // Another concurrent Vercel instance just transitioned this order from pending -> paid!
-            wonPaidTransition = false;
-            order.ghlSynced = true;
+            const existingDbRows = await db
+              .select({ status: schema.orders.status, ghlContactId: schema.orders.ghlContactId })
+              .from(schema.orders)
+              .where(eq(schema.orders.orderNumber, order.orderNumber))
+              .limit(1);
+            if (existingDbRows.length > 0 && existingDbRows[0].ghlContactId) {
+              wonPaidTransition = false;
+              order.ghlSynced = true;
+              order.ghlContactId = existingDbRows[0].ghlContactId;
+            }
           }
         }
       } catch (err: any) {
