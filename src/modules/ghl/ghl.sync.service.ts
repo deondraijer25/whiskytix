@@ -198,7 +198,7 @@ export class GhlSyncService {
         firstName,
         lastName,
         name: fullName,
-        tags: ['Klant'],
+        tags: ['Klant', `stad: ${cityName.toLowerCase()}`],
         customFields: [
           {
             id: 'rWdxHMB2McLAZWo1Fxwl',
