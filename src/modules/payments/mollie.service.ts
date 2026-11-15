@@ -149,6 +149,57 @@ export class MollieService {
   }
 
   /**
+   * Ensures Mollie metadata never exceeds Mollie's strict 1024-byte serialized limit (capped at 900 bytes).
+   */
+  static sanitizeMetadataForMollie(rawMeta?: Record<string, any>, fallbackOrderNumber?: string, fallbackFestivalId?: string): Record<string, any> {
+    if (!rawMeta || typeof rawMeta !== 'object') {
+      return { orderNumber: fallbackOrderNumber || '', festivalId: fallbackFestivalId || 'gent' };
+    }
+    const meta: Record<string, any> = { ...rawMeta };
+    delete meta.portalBaseUrl;
+
+    const byteLen = (obj: any) => Buffer.byteLength(JSON.stringify(obj), 'utf8');
+    if (byteLen(meta) <= 900) return meta;
+
+    // Step 1: Trim or remove itemsJson if total exceeds 900 bytes
+    if (typeof meta.itemsJson === 'string') {
+      try {
+        const parsed = JSON.parse(meta.itemsJson);
+        if (Array.isArray(parsed)) {
+          const slim = parsed.map((i: any) => ({
+            t: String(i.title || i.t || '').slice(0, 26),
+            q: Number(i.qty || i.q || 1),
+            cat: String(i.cat || i.c || 'entree').slice(0, 10),
+          }));
+          for (let count = slim.length; count >= 1; count--) {
+            meta.itemsJson = JSON.stringify(slim.slice(0, count));
+            if (byteLen(meta) <= 900) return meta;
+          }
+        }
+      } catch {}
+      delete meta.itemsJson;
+    }
+    if (byteLen(meta) <= 900) return meta;
+
+    // Step 2: Trim itemsSummary
+    if (typeof meta.itemsSummary === 'string' && meta.itemsSummary.length > 160) {
+      meta.itemsSummary = meta.itemsSummary.slice(0, 160);
+    }
+    if (byteLen(meta) <= 900) return meta;
+
+    // Step 3: Minimal guaranteed-safe metadata fallback
+    return {
+      orderNumber: String(meta.orderNumber || fallbackOrderNumber || '').slice(0, 32),
+      orderId: String(meta.orderId || '').slice(0, 40),
+      festivalId: String(meta.festivalId || fallbackFestivalId || 'gent').slice(0, 16),
+      customerName: String(meta.customerName || '').slice(0, 50),
+      customerEmail: String(meta.customerEmail || '').slice(0, 70),
+      discountCents: Number(meta.discountCents) || 0,
+      itemsSummary: String(meta.itemsSummary || '').slice(0, 140),
+    };
+  }
+
+  /**
    * Creates a payment session via official Mollie API or local interactive sandbox
    */
   static async createPayment(options: CreatePaymentOptions, festivalId = 'gent', mode?: 'test' | 'live'): Promise<PaymentInitResult> {
@@ -161,6 +212,7 @@ export class MollieService {
       try {
         const client = createMollieClient({ apiKey });
         const isLocalWebhook = !options.webhookUrl || options.webhookUrl.includes('localhost') || options.webhookUrl.includes('127.0.0.1');
+        const safeMetadata = this.sanitizeMetadataForMollie(options.metadata, options.orderNumber, resolvedFestival);
         
         const paymentPayload: any = {
           amount: {
@@ -170,7 +222,7 @@ export class MollieService {
           description: options.description,
           redirectUrl: options.redirectUrl,
           locale: resolvedFestival.toLowerCase() === 'gent' ? 'nl_BE' : 'nl_NL',
-          metadata: options.metadata || { orderNumber: options.orderNumber, festivalId: resolvedFestival },
+          metadata: safeMetadata,
         };
 
         if (!isLocalWebhook) {

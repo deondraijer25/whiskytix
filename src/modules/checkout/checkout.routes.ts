@@ -318,6 +318,33 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           ? 'Amsterdam Whisky Festival'
           : 'International Whisky Festival';
 
+      // Build compact Mollie metadata (strictly <= 900 bytes to stay safely under Mollie's 1024-byte hard limit)
+      const compactItems = orderItems.slice(0, 6).map((i) => ({
+        t: (i.title || '').slice(0, 28),
+        q: i.quantity,
+        cat: (i.category || 'entree').slice(0, 12),
+        d: (i.date || '').slice(0, 20),
+        tm: (i.timeslot || i.time || '').slice(0, 15),
+      }));
+      const baseMetadata: Record<string, any> = {
+        orderNumber,
+        orderId,
+        festivalId,
+        customerName: finalCustomerName.slice(0, 55),
+        customerEmail: customerEmail.slice(0, 75),
+        customerPhone: (customerPhone || '').slice(0, 22),
+        promoCode: promoCode ? String(promoCode).trim().slice(0, 20) : '',
+        discountCents: finalDiscountCents,
+        itemsSummary: orderItems.map((i) => `${i.quantity}x ${(i.title || '').slice(0, 38)}`).join(', ').slice(0, 220),
+      };
+      for (let count = compactItems.length; count >= 1; count--) {
+        const candidate = { ...baseMetadata, itemsJson: JSON.stringify(compactItems.slice(0, count)) };
+        if (Buffer.byteLength(JSON.stringify(candidate), 'utf8') <= 880) {
+          baseMetadata.itemsJson = candidate.itemsJson;
+          break;
+        }
+      }
+
       const payment = await MollieService.createPayment({
         orderNumber,
         amountCents: totalCents,
@@ -326,27 +353,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         webhookUrl,
         customerEmail,
         customerName: finalCustomerName,
-        metadata: {
-          orderNumber,
-          orderId,
-          festivalId,
-          customerName: finalCustomerName,
-          customerEmail,
-          customerPhone: customerPhone || '',
-          promoCode: promoCode ? String(promoCode).trim() : '',
-          discountCents: finalDiscountCents,
-          portalBaseUrl: portalBaseUrl || '',
-          itemsSummary: orderItems.map((i) => `${i.quantity}x ${i.title}`).join(', ').slice(0, 450),
-          itemsJson: JSON.stringify(orderItems.slice(0, 8).map((i) => ({
-            id: i.id,
-            title: (i.title || '').slice(0, 38),
-            qty: i.quantity,
-            priceCents: i.unitPriceCents,
-            cat: i.category,
-            d: (i.date || '').slice(0, 26),
-            tm: (i.timeslot || i.time || '').slice(0, 26),
-          }))),
-        },
+        metadata: baseMetadata,
       }, festivalId);
 
       // Update order with Mollie payment ID in memory and database
@@ -986,21 +993,62 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
   });
 
   /**
-   * 4c. GET ORDERS BY EMAIL API
-   * GET /api/checkout/orders-by-email?email=...&festivalId=...
+   * 4c. GET ORDERS BY EMAIL API (REQUIRES ORDER NUMBER PROOF OF OWNERSHIP)
+   * GET /api/checkout/orders-by-email?email=...&orderNumber=...&festivalId=...
    */
   server.get('/api/checkout/orders-by-email', async (request, reply) => {
-    const query = (request.query || {}) as { email?: string; festivalId?: string };
+    const query = (request.query || {}) as {
+      email?: string;
+      orderNumber?: string;
+      order?: string;
+      resNumber?: string;
+      festivalId?: string;
+    };
     const email = query.email?.trim().toLowerCase();
+    const rawProofOrder = (query.orderNumber || query.order || query.resNumber || '').trim().replace(/^#+/, '').toUpperCase();
 
     if (!email) {
       return reply.status(400).send({ error: 'E-mailadres is verplicht.' });
+    }
+
+    if (!rawProofOrder || rawProofOrder.length < 4) {
+      return reply.status(403).send({
+        error: 'Ter beveiliging van uw tickets is uw ordernummer (#WF-2027-...) verplicht naast uw e-mailadres.',
+      });
     }
 
     try {
       const orders = await OrdersRepository.findOrdersByEmail(email, query.festivalId);
       const queryAny = query as any;
       const effectiveOrders = queryAny.includeAll === 'true' ? orders : orders.filter((o) => o.status === 'paid');
+
+      // Verify that the caller provided a valid orderNumber belonging to this email address
+      let proofMatched = effectiveOrders.some((o) => {
+        const cleanNum = (o.orderNumber || '').trim().replace(/^#+/, '').toUpperCase();
+        return cleanNum === rawProofOrder || (rawProofOrder.length >= 4 && cleanNum.endsWith(rawProofOrder));
+      });
+
+      if (!proofMatched) {
+        const directOrder = await OrdersRepository.findOrder(rawProofOrder);
+        if (
+          directOrder &&
+          directOrder.customerEmail &&
+          directOrder.customerEmail.trim().toLowerCase() === email &&
+          (queryAny.includeAll === 'true' || directOrder.status === 'paid')
+        ) {
+          proofMatched = true;
+          if (!effectiveOrders.some((o) => o.orderNumber === directOrder.orderNumber)) {
+            effectiveOrders.unshift(directOrder);
+          }
+        }
+      }
+
+      if (!proofMatched) {
+        return reply.status(403).send({
+          error: 'De combinatie van dit e-mailadres en ordernummer komt niet overeen met een voltooide bestelling.',
+        });
+      }
+
       return reply.send({
         success: true,
         count: effectiveOrders.length,
