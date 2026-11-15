@@ -46,13 +46,13 @@ export async function runStockCleanup(): Promise<{ expiredCount: number }> {
         await ConscriboService.releaseClaimByOrderNumber(order.orderNumber);
         console.info(`[Stock Cleanup] Order ${order.orderNumber} is verlopen na 15 min. Voorraad vrijgegeven.`);
 
-        // Update DB if connected
+        // Update DB if connected (ONLY if still 'pending' in DB — never overwrite 'paid'!)
         try {
           const dbStatus = await checkDbConnection();
           if (dbStatus.ok) {
             await db.update(schema.orders)
               .set({ status: 'expired' })
-              .where(eq(schema.orders.orderNumber, order.orderNumber));
+              .where(and(eq(schema.orders.orderNumber, order.orderNumber), eq(schema.orders.status, 'pending')));
           }
         } catch (e: any) {
           // ignore
