@@ -1944,6 +1944,8 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                   paidAt: p.paidAt || null,
                   expiresAt: new Date(Date.now() + 86400000).toISOString(),
                   environment: p.environment || targetMode,
+                  ghlSynced: true,
+                  ghlContactId: 'mollie-list-sync',
                   items: effectiveItems.map((it) => ({
                     id: crypto.randomUUID(),
                     orderId: p.id,
@@ -2039,13 +2041,15 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 if (isOrderCancelled) {
                   repoOrder.status = 'cancelled';
                 } else if (p.status === 'paid') {
-                  if (repoOrder.status !== 'paid' || !repoOrder.ghlSynced) {
+                  const repoAgeMs = Date.now() - new Date(repoOrder.createdAt || p.createdAt || 0).getTime();
+                  if (repoOrder.status === 'pending' && repoAgeMs < 15 * 60 * 1000) {
                     const marked = await OrdersRepository.markOrderPaid(repoOrder.orderNumber, {
                       paymentMethod: p.method || 'ideal',
                     });
                     if (marked) Object.assign(repoOrder, marked);
                   }
                   repoOrder.status = 'paid';
+                  repoOrder.ghlSynced = true;
                   repoOrder.paidAt = p.paidAt || new Date().toISOString();
                 }
                 if (Array.isArray(repoOrder.tickets)) {

@@ -135,6 +135,10 @@ function loadLocalStore() {
           o.festivalId = 'gent';
           dirty = true;
         }
+        if (o.status === 'paid') {
+          o.ghlSynced = true;
+          o.ghlContactId = o.ghlContactId || 'historical-synced';
+        }
         memoryOrders.set(o.orderNumber, o);
         memoryOrders.set(o.id, o);
       });
@@ -198,6 +202,9 @@ export class OrdersRepository {
    */
   static registerSyncedOrder(order: StoredOrder) {
     if (!order || !order.orderNumber) return;
+    if (order.status === 'paid') {
+      order.ghlSynced = true;
+    }
     const existing = memoryOrders.get(order.orderNumber) || memoryOrders.get(order.id);
     if (!existing) {
       memoryOrders.set(order.orderNumber, order);
@@ -218,6 +225,7 @@ export class OrdersRepository {
       }
       if (order.status === 'paid') {
         existing.status = 'paid';
+        existing.ghlSynced = true;
         if (order.paidAt) existing.paidAt = order.paidAt;
       } else if (order.status === 'cancelled') {
         existing.status = 'cancelled';
@@ -1207,8 +1215,18 @@ export class OrdersRepository {
         // local store fallback handled
       }
 
+      // Veiligheidsslot: historische bestellingen (> 20 minuten oud) mogen bij reconstructie NOOIT opnieuw mailen/sms'en!
+      const orderAgeMs = Date.now() - new Date(order.createdAt || order.paidAt || Date.now()).getTime();
+      const isHistoricalOrder = orderAgeMs > 20 * 60 * 1000;
+      if (isHistoricalOrder && (!order.ghlSynced || !order.ghlContactId)) {
+        order.ghlSynced = true;
+        order.ghlContactId = order.ghlContactId || 'historical-synced';
+        memoryOrders.set(order.orderNumber, order);
+        memoryOrders.set(order.id, order);
+      }
+
       // Serverless-Safe AWAIT op de gedoseerde CRM-sync zodat Vercel het proces nooit halverwege bevriest!
-      if (!order.ghlSynced && (wonPaidTransition || !order.ghlContactId)) {
+      if (!isHistoricalOrder && !order.ghlSynced && (wonPaidTransition || !order.ghlContactId)) {
         try {
           const syncPromise = GhlSyncService.syncPaidOrder(order, undefined, {
             skipInventoryIncrement: !wonPaidTransition || wasAlreadyPaidWithTickets,
