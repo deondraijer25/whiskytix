@@ -1874,7 +1874,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                  })()
                : null;
 
-             const effectiveItems = parsedItems || parseItemsSummary(cleanSummary);
+             const summaryParsed = parseItemsSummary(cleanSummary);
+             const effectiveItems = parsedItems
+               ? (summaryParsed.length > parsedItems.length
+                   ? [...parsedItems, ...summaryParsed.slice(parsedItems.length)]
+                   : parsedItems)
+               : summaryParsed;
              const tickets: FormattedOrderTicket[] = [];
 
              // Read persistent metadata modifications (cancelled tickets, swaps, order cancellation)
@@ -2050,9 +2055,8 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
                 tickets.length > 0 &&
                 (!existing.tickets ||
                   existing.tickets.length === 0 ||
-                  existing.itemsSummary === 'Tickets & Toegang' ||
-                  !existing.items ||
-                  existing.items.length === 0)
+                  existing.tickets.length < tickets.length ||
+                  existing.itemsSummary === 'Tickets & Toegang')
               ) {
                 existing.tickets = tickets;
                 if (cleanSummary) existing.itemsSummary = cleanSummary;

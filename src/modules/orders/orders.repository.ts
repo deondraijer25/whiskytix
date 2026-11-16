@@ -366,6 +366,10 @@ export class OrdersRepository {
 
     let dateStr = (explicitDate && explicitDate.trim() && explicitDate !== 'Festivaldag') ? explicitDate.trim() : '';
     let timeStr = (explicitTime && explicitTime.trim() && explicitTime !== 'Regulier') ? explicitTime.trim().replace(/–/g, '-') : '';
+    if (/^Afhalen Festival \(12$/i.test(dateStr)) dateStr = 'Afhalen Festival (12-14 nov 2027)';
+    if (/^Verzending na festiv/i.test(dateStr)) dateStr = 'Verzending na festival (12-14 nov 2027)';
+    if (/^Afhalen tijdens$/i.test(timeStr)) timeStr = 'Afhalen tijdens festival';
+    timeStr = timeStr.replace(/\s+u$/i, ' UUR').replace(/\s+u\s+UUR$/i, ' UUR');
 
     // Check if sessionTitle contains an inline time range like "19:30 - 20:15"
     if (!timeStr) {
@@ -418,6 +422,7 @@ export class OrdersRepository {
         else if (titleLower.includes('suntory')) timeStr = '15:00 - 15:45 UUR';
         else if (titleLower.includes('boot')) timeStr = '12:00 - 13:00 UUR';
         else if (titleLower.includes('botteling')) timeStr = titleLower.includes('verzend') ? 'Verzending per post' : 'Afhalen tijdens festival';
+        else if (titleLower.includes('lindores') && titleLower.includes('tasting')) timeStr = '12:15 - 13:00 UUR';
         else if (titleLower.includes('vip')) timeStr = '13:00 - 17:00 UUR';
         else if (titleLower.includes('avond')) timeStr = '19:00 - 23:00 UUR';
         else timeStr = '13:00 - 17:00 UUR';
@@ -2273,7 +2278,29 @@ export class OrdersRepository {
   /**
    * List all stored orders asynchronously with database fallback for cold starts
    */
+  private static lastFullDbHydrateAt = 0;
+
   static async listOrdersAsync(): Promise<StoredOrder[]> {
+    const now = Date.now();
+    if (now - this.lastFullDbHydrateAt > 10000) {
+      this.lastFullDbHydrateAt = now;
+      try {
+        const dbStatus = await checkDbConnection();
+        if (dbStatus.ok) {
+          const paidRows = await db
+            .select()
+            .from(schema.orders)
+            .where(eq(schema.orders.status, 'paid'));
+          const missingRows = paidRows.filter((r) => {
+            const mem = memoryOrders.get(r.orderNumber);
+            return !mem || !mem.tickets || mem.tickets.length === 0;
+          });
+          if (missingRows.length > 0) {
+            await Promise.all(missingRows.slice(0, 50).map((r) => this.findOrder(r.orderNumber).catch(() => null)));
+          }
+        }
+      } catch {}
+    }
     return this.listOrders();
   }
 
