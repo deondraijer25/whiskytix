@@ -1,4 +1,5 @@
 import molliePackage from '@mollie/api-client';
+import { DENHAAG_2025_PAID_PAYMENTS } from './denhaag-2025-history.js';
 
 const createMollieClient: any =
   typeof (molliePackage as any).createMollieClient === 'function'
@@ -365,8 +366,18 @@ export class MollieService {
     const isTestMode = apiKey.startsWith('test_');
     try {
       const client = createMollieClient({ apiKey });
-      const paymentsPage = await client.payments.page({ limit });
-      return Array.from(paymentsPage || [])
+      const pageSize = Math.min(250, Math.max(1, limit || 250));
+      let paymentsPage: any = await client.payments.page({ limit: pageSize });
+      const rawPayments: any[] = [];
+      for (let pageIdx = 0; pageIdx < 10 && paymentsPage && paymentsPage.length > 0; pageIdx++) {
+        for (const p of paymentsPage) {
+          rawPayments.push(p);
+          if (rawPayments.length >= limit) break;
+        }
+        if (rawPayments.length >= limit || !paymentsPage.nextPage) break;
+        paymentsPage = await paymentsPage.nextPage();
+      }
+      return rawPayments
         .map((p: any) => {
           const descLower = (p.description || '').toLowerCase();
           const inferredFest =
@@ -411,7 +422,7 @@ export class MollieService {
   /**
    * List recent payments across all configured festival organizations (Gent + Den Haag)
    */
-  static async listAllRecentPayments(limit = 100, mode?: 'test' | 'live'): Promise<any[]> {
+  static async listAllRecentPayments(limit = 2500, mode?: 'test' | 'live'): Promise<any[]> {
     const cities: Array<'denhaag' | 'gent'> = ['denhaag', 'gent'];
     const keyMap = new Map<string, string>(); // apiKey -> defaultFestivalId
 
@@ -453,7 +464,7 @@ export class MollieService {
    * List recent payments from Mollie API to ensure live sync with Mollie Dashboard
    */
   static async listRecentPayments(
-    limit = 100,
+    limit = 2500,
     festivalIdOrMode: string = 'all',
     maybeMode?: 'test' | 'live'
   ): Promise<any[]> {
@@ -607,6 +618,15 @@ export class MollieService {
         page = await page.nextPage();
       }
 
+      if (city === 'denhaag') {
+        const seenIds = new Set(results.map((r) => r.id));
+        for (const h of DENHAAG_2025_PAID_PAYMENTS) {
+          if (!seenIds.has(h.id)) {
+            seenIds.add(h.id);
+            results.push(h);
+          }
+        }
+      }
       this.historicalCache.set(city, { fetchedAt: Date.now(), payments: results });
       return results;
     } catch (err: any) {

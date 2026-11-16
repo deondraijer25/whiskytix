@@ -660,7 +660,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     // If order not in memory (e.g. Vercel cold start), reconstruct from Mollie API
     if (!order) {
       try {
-        const molliePayments = await MollieService.listRecentPayments(50);
+        const molliePayments = await MollieService.listRecentPayments(500);
         const cleanedOrderNumber = params.orderNumber.startsWith('#') ? params.orderNumber : `#${params.orderNumber}`;
         const matchedPayment = molliePayments.find((p: any) =>
           p.metadata?.orderNumber === cleanedOrderNumber || p.metadata?.orderNumber === params.orderNumber
@@ -1804,7 +1804,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
        const rawCity = (query.festivalId || query.city || '').toLowerCase();
        const targetFest = rawCity === 'denhaag' || rawCity === 'gent' || rawCity === 'amsterdam' ? rawCity : 'all';
        const targetMode = query.env === 'live' ? 'live' : query.env === 'test' ? 'test' : (targetFest === 'all' ? undefined : MollieService.getActiveMode(targetFest));
-       const molliePayments = await MollieService.listRecentPayments(100, targetFest, targetMode);
+       const molliePayments = await MollieService.listRecentPayments(2500, targetFest, targetMode);
        
        for (const p of molliePayments) {
          // EXCLUSIVELY include orders placed via Whiskytix (the new festival website).
@@ -2300,11 +2300,12 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
        const prevYear = currentYear - 1;
        const todayMonthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
+       const nowTimeIso = now.toISOString().slice(11); // exact UTC HH:MM:SS.sssZ for time-of-day apples-to-apples comparison
        const buildDailyComparison = (startYearOffset: number, startMmDd: string) => {
          const curStart = new Date(`${currentYear - startYearOffset}-${startMmDd}T00:00:00Z`);
          const curEnd = new Date(`${currentYear}-${todayMonthDay}T23:59:59Z`);
          const prevStart = new Date(`${prevYear - startYearOffset}-${startMmDd}T00:00:00Z`);
-         const prevEnd = new Date(`${prevYear}-${todayMonthDay}T23:59:59Z`);
+         const prevEnd = new Date(`${prevYear}-${todayMonthDay}T${nowTimeIso}`);
 
          const curFiltered = paidOrders.filter((o: any) => {
            const d = new Date(o.createdAt);
@@ -2395,8 +2396,10 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          };
        };
 
-       const seasonToDate = buildDailyComparison(0, '09-30');
-       const postEventToDate = buildDailyComparison(0, '10-05');
+       const defaultSeasonStart = city === 'denhaag' ? '11-08' : '09-30';
+       const defaultPostEventStart = city === 'denhaag' ? '11-15' : '10-05';
+       const seasonToDate = buildDailyComparison(0, defaultSeasonStart);
+       const postEventToDate = buildDailyComparison(0, defaultPostEventStart);
 
        const monthsOrder = [
          { m: '10', label: 'Okt (Start)', yrOffsetPrev: 1 },
