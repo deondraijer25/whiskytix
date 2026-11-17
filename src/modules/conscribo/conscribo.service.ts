@@ -4,7 +4,34 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { fileURLToPath } from 'url';
 import { queryClient, checkDbConnection } from '../../db/index.js';
+
+const __conscriboDir = path.dirname(fileURLToPath(import.meta.url));
+let staticSnapshotMap: Map<string, { l: string; n: string; s: 'actief' | 'verlopen' }> | null = null;
+function getStaticSnapshotMember(lidnummer: string) {
+  if (!staticSnapshotMap) {
+    staticSnapshotMap = new Map();
+    try {
+      const candidates = [
+        path.join(__conscriboDir, 'iws-members-snapshot.json'),
+        path.join(process.cwd(), 'src', 'modules', 'conscribo', 'iws-members-snapshot.json'),
+      ];
+      for (const p of candidates) {
+        if (fs.existsSync(p)) {
+          const arr = JSON.parse(fs.readFileSync(p, 'utf8'));
+          if (Array.isArray(arr)) {
+            for (const item of arr) {
+              if (item && item.l) staticSnapshotMap.set(String(item.l), item);
+            }
+          }
+          break;
+        }
+      }
+    } catch {}
+  }
+  return staticSnapshotMap.get(lidnummer) || null;
+}
 
 export interface IwsFestivalClaim {
   lidnummer: string;
@@ -832,6 +859,61 @@ export class ConscriboService {
         const claim = await this.getClaim(lidnummer);
         return { ...foundInCache, claim };
       }
+    }
+
+    // 2b. Instant 0ms cold-start lookup from bundled IWS snapshot (1,043 members) so external Conscribo latency never blocks checkout
+    const snap = getStaticSnapshotMember(lidnummer);
+    if (snap) {
+      const claim = await this.getClaim(lidnummer);
+      return {
+        id: `snap-${lidnummer}`,
+        lidnummer,
+        aanhef: '',
+        voorletters: '',
+        roepnaam: '',
+        tussenvoegsel: '',
+        achternaam: snap.n,
+        volledigeNaam: snap.n,
+        geboortedatum: '',
+        straat: '',
+        huisnummer: '',
+        toevoeging: '',
+        postcode: '',
+        plaats: '',
+        land: 'Nederland',
+        adresVolledig: '',
+        email: '',
+        telefoon: '',
+        mobiel: '',
+        bedrijfsnaam: '',
+        typeLidmaatschap: 'All-in',
+        lidSinds: '',
+        eindDatum: '',
+        lidmaatschapsperiode: 12,
+        status: snap.s || 'actief',
+        contributieBedrag: 0,
+        magazineBedrag: 0,
+        bottelingLuxeBedrag: 0,
+        glasLuxeBedrag: 0,
+        totaalBedrag: 0,
+        betaalwijze: '',
+        factuurmaand: '',
+        iban: '',
+        bic: '',
+        rekeninghouder: snap.n,
+        wcoc: false,
+        nieuwsbrief: true,
+        privacyAkkoord: true,
+        iwf2026: '',
+        iwf2025: '',
+        iwf2024: '',
+        iwf2023: '',
+        bottelingLuxe2026: '',
+        bottelingLuxe2025: '',
+        bottelingLuxe2024: '',
+        opmerkingen: '',
+        claim,
+      };
     }
 
     // 3. Live real-time query to Conscribo for newly registered members not yet in cache!
