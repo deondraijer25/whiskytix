@@ -1793,7 +1793,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
          totalCents: o.totalCents || 0,
          status: o.status || 'pending',
          createdAt: o.createdAt || new Date().toISOString(),
-         environment: (o as any).environment || 'test',
+         environment: (o as any).environment || (o.status === 'paid' || String(o.orderNumber || '').includes('-COMP-') ? 'live' : 'test'),
          tickets,
          items: o.items || [],
        };

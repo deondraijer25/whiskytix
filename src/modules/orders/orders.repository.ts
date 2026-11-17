@@ -2075,6 +2075,16 @@ export class OrdersRepository {
           expiresAt: new Date(order.expiresAt),
         }).onConflictDoNothing();
 
+        await db.insert(schema.ticketTypes).values({
+          id: orderItem.ticketTypeId,
+          festivalId: order.festivalId,
+          category: orderItem.category || 'entree',
+          title: orderItem.title || 'Festival Entreeticket',
+          priceCents: 0,
+          totalAvailable: 5000,
+          totalSold: 0,
+        }).onConflictDoNothing();
+
         await db.insert(schema.orderItems).values({
           id: orderItem.id,
           orderId: order.id,
