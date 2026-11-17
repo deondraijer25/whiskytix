@@ -45,7 +45,27 @@ export async function buildServer(): Promise<FastifyInstance> {
     timeWindow: '1 minute',
   });
 
-  // 3b. Support application/x-www-form-urlencoded for Mollie webhooks (POST id=tr_...)
+  // 3b. Support application/json with empty bodies (prevents FST_ERR_CTP_EMPTY_JSON_BODY 400 Bad Request)
+  server.removeContentTypeParser('application/json');
+  server.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (_req, body, done) => {
+      try {
+        const raw = typeof body === 'string' ? body.trim() : '';
+        if (!raw) {
+          done(null, {});
+          return;
+        }
+        done(null, JSON.parse(raw));
+      } catch (err: any) {
+        err.statusCode = 400;
+        done(err, undefined);
+      }
+    }
+  );
+
+  // 3c. Support application/x-www-form-urlencoded for Mollie webhooks (POST id=tr_...)
   server.addContentTypeParser(
     'application/x-www-form-urlencoded',
     { parseAs: 'string' },

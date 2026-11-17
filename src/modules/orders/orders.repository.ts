@@ -2030,10 +2030,17 @@ export class OrdersRepository {
     memoryOrders.set(order.id, order);
     saveLocalStore();
 
-    // Trigger realtime sync to GoHighLevel in background
-    GhlSyncService.syncPaidOrder(order).catch((err) => {
-      console.warn('[GHL Sync] Fout bij achtergrond sync van handmatige order:', err.message);
-    });
+    // Trigger realtime sync to GoHighLevel (awaited so serverless functions do not freeze mid-request)
+    try {
+      const syncRes = await GhlSyncService.syncPaidOrder(order);
+      if (syncRes.success) {
+        order.ghlSynced = true;
+        order.ghlContactId = syncRes.contactId;
+        order.ghlSyncedAt = new Date().toISOString();
+      }
+    } catch (err: any) {
+      console.warn('[GHL Sync] Fout bij sync van handmatige order:', err.message);
+    }
 
     // Persist to DB if connected
     try {
@@ -2063,6 +2070,7 @@ export class OrdersRepository {
           totalCents: 0,
           status: 'paid',
           paymentMethod: order.paymentMethod,
+          ghlContactId: order.ghlContactId || null,
           createdAt: new Date(nowIso),
           expiresAt: new Date(order.expiresAt),
         }).onConflictDoNothing();

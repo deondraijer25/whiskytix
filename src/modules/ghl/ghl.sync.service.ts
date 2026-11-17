@@ -175,7 +175,7 @@ export class GhlSyncService {
         } else if (order.festivalId === 'amsterdam') {
           portalBase = process.env.PORTAL_BASE_URL_AMSTERDAM || 'https://whisky-fest-amsterdam.vercel.app';
         } else {
-          portalBase = process.env.PORTAL_BASE_URL_DENHAAG || 'https://whisky-fest-den-haag.vercel.app';
+          portalBase = process.env.PORTAL_BASE_URL_DENHAAG || 'https://www.whiskyfestival.nl';
         }
       }
       portalBase = portalBase.replace(/\/+$/, '');

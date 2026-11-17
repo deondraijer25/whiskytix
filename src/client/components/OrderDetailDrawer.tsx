@@ -249,6 +249,7 @@ export const OrderDetailDrawer: React.FC<OrderDetailDrawerProps> = ({ order, cit
       const res = await fetch(`/api/admin/orders/${encodeURIComponent(cleanOrderNumber)}/resend`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (res.ok && data.success) {
