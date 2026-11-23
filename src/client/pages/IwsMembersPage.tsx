@@ -72,6 +72,7 @@ export interface IwsConscriboMember {
   wcoc: boolean;
   nieuwsbrief: boolean;
   privacyAkkoord: boolean;
+  iwf2027?: string;
   iwf2026: string;
   iwf2025: string;
   iwf2024: string;
@@ -164,6 +165,8 @@ export const IwsMembersPage: React.FC = () => {
   // Selected member for detail drawer
   const [selectedMember, setSelectedMember] = useState<IwsConscriboMember | null>(null);
   const [claimBusy, setClaimBusy] = useState<boolean>(false);
+  const [syncingClaims, setSyncingClaims] = useState<boolean>(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   // Add new member modal
   const [showNewMemberModal, setShowNewMemberModal] = useState<boolean>(false);
@@ -356,6 +359,29 @@ export const IwsMembersPage: React.FC = () => {
     }
   };
 
+  const handleSyncClaimsToConscribo = async () => {
+    setSyncingClaims(true);
+    setSyncFeedback(null);
+    try {
+      const res = await fetch('/api/admin/iws-members/sync-claims', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSyncFeedback(
+          `✓ ${data.syncedCount} van ${data.totalClaims} bestelnummers zijn direct naar Conscribo geschoten (Iwf_2027, Iwf_2026 & Opmerkingen).`
+        );
+        await fetchMembers(true);
+      } else {
+        setError(data.error || 'Kon bestelnummers niet naar Conscribo synchroniseren.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Fout bij synchroniseren naar Conscribo.');
+    } finally {
+      setSyncingClaims(false);
+    }
+  };
+
   const handleCreateManualMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMemberForm.lidnummer.trim() || !newMemberForm.volledigeNaam.trim()) return;
@@ -533,6 +559,20 @@ export const IwsMembersPage: React.FC = () => {
 
           <button
             type="button"
+            onClick={handleSyncClaimsToConscribo}
+            disabled={loading || syncingClaims}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border-2 border-[#1D1C1A] bg-[#fff5dc] hover:bg-[#f3e5c0] text-[#774d35] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer text-xs font-extrabold transition-all disabled:opacity-50"
+          >
+            <CheckCircle2 className={`w-3.5 h-3.5 ${syncingClaims ? 'animate-spin' : ''}`} />
+            <span>
+              {syncingClaims
+                ? 'Bestelnummers naar Conscribo schieten...'
+                : `Sync Bestelnummers → Conscribo (${stats?.claimedCount ?? 0})`}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => fetchMembers(true)}
             disabled={loading || refreshing}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border-2 border-[#1D1C1A] bg-[#774d35] hover:bg-[#5e3b28] text-[#fff5dc] shadow-[2px_2px_0px_rgba(29,28,26,0.9)] cursor-pointer text-xs font-extrabold transition-all disabled:opacity-50"
@@ -542,6 +582,19 @@ export const IwsMembersPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {syncFeedback && (
+        <div className="bg-[#d8e7e2] border-2 border-[#006448] rounded-lg p-3.5 text-xs sm:text-sm text-[#006448] font-extrabold flex items-center justify-between">
+          <span>{syncFeedback}</span>
+          <button
+            type="button"
+            onClick={() => setSyncFeedback(null)}
+            className="px-2.5 py-1 bg-[#006448] text-white rounded font-extrabold text-xs cursor-pointer"
+          >
+            Sluiten
+          </button>
+        </div>
+      )}
 
       {/* Error Alert */}
       {error && (
@@ -1267,7 +1320,11 @@ export const IwsMembersPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="bg-[#FCFAF7] border border-[#c1d4ce] rounded p-2.5">
+                  <div className="text-[#4c5752] text-[11px] font-semibold">IWF 2027</div>
+                  <div className="font-extrabold text-[#006448] mt-0.5">{selectedMember.iwf2027 || '—'}</div>
+                </div>
                 <div className="bg-[#FCFAF7] border border-[#c1d4ce] rounded p-2.5">
                   <div className="text-[#4c5752] text-[11px] font-semibold">IWF 2026</div>
                   <div className="font-extrabold text-[#006448] mt-0.5">{selectedMember.iwf2026 || '—'}</div>
@@ -1295,11 +1352,11 @@ export const IwsMembersPage: React.FC = () => {
       {/* 6. New IWS Member Modal */}
       {showNewMemberModal && (
         <div
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
           onClick={() => setShowNewMemberModal(false)}
         >
           <div
-            className="w-full max-w-md bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-5 shadow-[6px_6px_0px_rgba(29,28,26,0.9)] space-y-4"
+            className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-lg p-5 shadow-[6px_6px_0px_rgba(29,28,26,0.9)] space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b-2 border-[#1D1C1A] pb-3">

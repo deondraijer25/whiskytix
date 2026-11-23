@@ -115,4 +115,20 @@ export async function registerConscriboRoutes(server: FastifyInstance): Promise<
       });
     }
   });
+
+  server.post('/api/admin/iws-members/sync-claims', async (_request, reply) => {
+    try {
+      const summary = await ConscriboService.syncAllClaimsToConscribo();
+      return reply.send({
+        success: true,
+        ...summary,
+      });
+    } catch (err: any) {
+      server.log.error(err, 'Conscribo sync all claims error');
+      return reply.status(500).send({
+        success: false,
+        error: err?.message || 'Kon IWS bestelnummers niet synchroniseren naar Conscribo.',
+      });
+    }
+  });
 }

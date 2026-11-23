@@ -508,6 +508,27 @@ export class CouponsRepository {
         };
       }
 
+      // Check that the member's eind_lidmaatschap covers the 2027 festival season (>= 2027-11-15)
+      if (!member.isManual && member.eindDatum && member.eindDatum < '2027-11-15') {
+        const [yyyy, mm, dd] = member.eindDatum.slice(0, 10).split('-');
+        const endFormatted = dd && mm && yyyy ? `${dd}-${mm}-${yyyy}` : member.eindDatum;
+        return {
+          valid: false,
+          isIwsMember: true,
+          lidnummer: member.lidnummer,
+          message: `✗ Uw huidige IWS-lidmaatschap loopt t/m ${endFormatted}. U kunt uw IWS-ledenkorting voor 2027 gebruiken zodra uw lidmaatschap voor het nieuwe jaar is verlengd.`,
+        };
+      }
+
+      if (member.iwf2027 && !member.claim) {
+        return {
+          valid: false,
+          isIwsMember: true,
+          lidnummer: member.lidnummer,
+          message: `✗ Uw jaarlijkse IWS-ledenkorting (#${member.lidnummer}) is voor 2027 al gebruikt (${member.iwf2027}).`,
+        };
+      }
+
       const existingClaim = member.claim || (await ConscriboService.getClaim(member.lidnummer));
       if (existingClaim) {
         let claimIsPaidOrActive = true;
@@ -540,7 +561,7 @@ export class CouponsRepository {
             valid: false,
             isIwsMember: true,
             lidnummer: member.lidnummer,
-            message: `✗ Lidnr. #${member.lidnummer} is al ingezet voor ${existingClaim.festivalName} (1x gratis ticket per jaar).`,
+            message: `✗ Uw jaarlijkse IWS-ledenkorting (#${member.lidnummer}) is voor 2027 al gebruikt bij ${existingClaim.festivalName}.`,
           };
         }
       }
@@ -555,7 +576,7 @@ export class CouponsRepository {
         type: 'fixed_amount',
         value: festDiscount.discountEur,
         valueCents: festDiscount.discountCents,
-        message: `✓ IWS-lid #${member.lidnummer} actief: 1x gratis ticket (-€ ${festDiscount.discountFormatted}).`,
+        message: `✓ IWS-lid #${member.lidnummer} actief: € ${festDiscount.discountFormatted} IWS-ledenkorting toegepast.`,
       };
     }
 

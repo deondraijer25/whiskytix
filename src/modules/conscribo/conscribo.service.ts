@@ -83,6 +83,7 @@ export interface IwsConscriboMember {
   wcoc: boolean;
   nieuwsbrief: boolean;
   privacyAkkoord: boolean;
+  iwf2027?: string;
   iwf2026: string;
   iwf2025: string;
   iwf2024: string;
@@ -149,6 +150,7 @@ const REQUESTED_FIELDS = [
   'wcoc',
   'nieuwsbrief',
   'akkoord_privacy_verklaring',
+  'iwf_2027',
   'iwf_2026',
   'iwf_2025',
   'iwf_2024',
@@ -510,6 +512,7 @@ export class ConscriboService {
       wcoc: Number(raw.wcoc) === 1,
       nieuwsbrief: Number(raw.nieuwsbrief) === 1,
       privacyAkkoord: Number(raw.akkoord_privacy_verklaring) === 1,
+      iwf2027: String(raw.iwf_2027 || '').trim(),
       iwf2026: String(raw.iwf_2026 || '').trim(),
       iwf2025: String(raw.iwf_2025 || '').trim(),
       iwf2024: String(raw.iwf_2024 || '').trim(),
@@ -663,7 +666,131 @@ export class ConscriboService {
 
     memoryClaims.set(lidnummer, claim);
     saveClaimsStore();
+
+    // Write back order number & note directly to the member's Conscribo relation record
+    try {
+      await this.pushClaimToConscribo(claim);
+    } catch (err) {
+      console.warn(`[ConscriboService] Could not push claim for #${lidnummer} to Conscribo:`, err);
+    }
+
     return claim;
+  }
+
+  /**
+   * Pushes an IWS member's festival ticket order number directly to Conscribo via PATCH /relations/{lidnummer}.
+   * Writes ONLY `${orderNumber} (${festivalName})` to the `iwf_2027` field in Conscribo (leaving `iwf_2026` and `opmerkingen` untouched).
+   */
+  public static async pushClaimToConscribo(
+    claim: IwsFestivalClaim,
+    retryAuth = true
+  ): Promise<{ synced: boolean; lidnummer: string; orderNumber: string; error?: string }> {
+    const lidnummer = normalizeIwsLidnummer(claim.lidnummer) || String(claim.lidnummer).trim();
+    if (!lidnummer || !claim.orderNumber) {
+      return { synced: false, lidnummer, orderNumber: claim.orderNumber || '', error: 'Ongeldig lidnummer of ordernummer' };
+    }
+
+    try {
+      const { baseUrl, apiVersion } = this.getConfig();
+      const sessionId = await this.getSessionId();
+
+      const festDisplay = claim.festivalName || getFestivalDisplayName(normalizeFestivalId(claim.festivalId));
+      const nextIwf2027 = `${claim.orderNumber} (${festDisplay})`;
+
+      const patchRes = await fetch(`${baseUrl}/relations/${encodeURIComponent(lidnummer)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Conscribo-API-Version': apiVersion,
+          'X-Conscribo-SessionId': sessionId,
+        },
+        body: JSON.stringify({
+          fields: {
+            code: lidnummer,
+            iwf_2027: nextIwf2027,
+          },
+        }),
+      });
+
+      const patchData = (await patchRes.json()) as any;
+      const errCode = patchData?.responseMessages?.error?.[0]?.code;
+      if ((patchRes.status === 400 || patchRes.status === 401) && errCode === 'API/NOT_AUTHENTICATED' && retryAuth) {
+        await this.getSessionId(true);
+        return this.pushClaimToConscribo(claim, false);
+      }
+
+      if (!patchRes.ok || patchData?.status === 400) {
+        const msg =
+          patchData?.responseMessages?.error?.[0]?.message ||
+          `Conscribo PATCH mislukt (HTTP ${patchRes.status})`;
+        return { synced: false, lidnummer, orderNumber: claim.orderNumber, error: msg };
+      }
+
+      // Update in-memory cache if warm
+      if (this.cachedMembers) {
+        const cached = this.cachedMembers.find(
+          (m) => (normalizeIwsLidnummer(m.lidnummer) || m.lidnummer) === lidnummer
+        );
+        if (cached) {
+          cached.iwf2027 = nextIwf2027;
+        }
+      }
+
+      return { synced: true, lidnummer, orderNumber: claim.orderNumber };
+    } catch (err: any) {
+      return {
+        synced: false,
+        lidnummer,
+        orderNumber: claim.orderNumber,
+        error: err?.message || 'Onbekende fout bij Conscribo PATCH',
+      };
+    }
+  }
+
+  /**
+   * Synchronizes/backfills all existing IWS festival claims in WhiskyTix directly into Conscribo.
+   */
+  public static async syncAllClaimsToConscribo(): Promise<{
+    totalClaims: number;
+    syncedCount: number;
+    results: Array<{ synced: boolean; lidnummer: string; orderNumber: string; error?: string }>;
+  }> {
+    await this.syncClaimsFromDb(true);
+    // Warm up member cache in 1 batch so we can skip already-synced members without N individual read queries
+    const { members } = await this.getMembersAndStats(false);
+    const memberMap = new Map<string, IwsConscriboMember>();
+    for (const m of members) {
+      memberMap.set(normalizeIwsLidnummer(m.lidnummer) || m.lidnummer, m);
+    }
+
+    const allClaims = Array.from(memoryClaims.values());
+    const results: Array<{ synced: boolean; lidnummer: string; orderNumber: string; error?: string }> = [];
+    let syncedCount = 0;
+
+    for (const claim of allClaims) {
+      const norm = normalizeIwsLidnummer(claim.lidnummer) || claim.lidnummer;
+      const existingMember = memberMap.get(norm);
+      if (
+        existingMember &&
+        existingMember.iwf2027 &&
+        existingMember.iwf2027.includes(claim.orderNumber)
+      ) {
+        syncedCount++;
+        results.push({ synced: true, lidnummer: norm, orderNumber: claim.orderNumber });
+        continue;
+      }
+
+      const res = await this.pushClaimToConscribo(claim);
+      if (res.synced) syncedCount++;
+      results.push(res);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    return {
+      totalClaims: allClaims.length,
+      syncedCount,
+      results,
+    };
   }
 
   public static async releaseClaim(rawLidnummer: string): Promise<boolean> {
@@ -861,7 +988,28 @@ export class ConscriboService {
       }
     }
 
-    // 2b. Instant 0ms cold-start lookup from bundled IWS snapshot (1,043 members) so external Conscribo latency never blocks checkout
+    // 3. Live real-time query to Conscribo so eind_lidmaatschap and iwf_2027 are ALWAYS checked live!
+    try {
+      const liveBatch = await this.fetchBatch(0, 10, [
+        { fieldName: 'code', operator: '=', value: lidnummer },
+      ]);
+      const entries = Object.entries(liveBatch.relations || {});
+      if (entries.length > 0) {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const [entityId, raw] = entries[0];
+        const liveMember = this.mapRelation(entityId, raw, todayIso);
+        if (this.cachedMembers) {
+          this.cachedMembers.push(liveMember);
+        }
+        const claim = await this.getClaim(lidnummer);
+        return { ...liveMember, claim };
+      }
+      return null;
+    } catch (err) {
+      console.warn(`[ConscriboService] Live lookup for lidnummer ${lidnummer} failed, using offline snapshot fallback:`, err);
+    }
+
+    // 4. Emergency offline fallback from bundled IWS snapshot ONLY if Conscribo API is unreachable
     const snap = getStaticSnapshotMember(lidnummer);
     if (snap) {
       const claim = await this.getClaim(lidnummer);
@@ -904,6 +1052,7 @@ export class ConscriboService {
         wcoc: false,
         nieuwsbrief: true,
         privacyAkkoord: true,
+        iwf2027: '',
         iwf2026: '',
         iwf2025: '',
         iwf2024: '',
@@ -914,26 +1063,6 @@ export class ConscriboService {
         opmerkingen: '',
         claim,
       };
-    }
-
-    // 3. Live real-time query to Conscribo for newly registered members not yet in cache!
-    try {
-      const liveBatch = await this.fetchBatch(0, 10, [
-        { fieldName: 'code', operator: '=', value: lidnummer },
-      ]);
-      const entries = Object.entries(liveBatch.relations || {});
-      if (entries.length > 0) {
-        const todayIso = new Date().toISOString().slice(0, 10);
-        const [entityId, raw] = entries[0];
-        const liveMember = this.mapRelation(entityId, raw, todayIso);
-        if (this.cachedMembers) {
-          this.cachedMembers.push(liveMember);
-        }
-        const claim = await this.getClaim(lidnummer);
-        return { ...liveMember, claim };
-      }
-    } catch (err) {
-      console.warn(`[ConscriboService] Live lookup for lidnummer ${lidnummer} failed:`, err);
     }
 
     return null;
