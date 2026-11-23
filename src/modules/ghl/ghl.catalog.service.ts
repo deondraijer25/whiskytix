@@ -242,7 +242,7 @@ export class GhlCatalogService {
       });
 
       if (!response.ok) {
-        throw new Error(`GHL Search endpoint status ${response.status} ${response.statusText}`);
+        throw new Error(`Leadfabriek CRM Search endpoint status ${response.status} ${response.statusText}`);
       }
 
       const json = (await response.json()) as any;
@@ -253,7 +253,7 @@ export class GhlCatalogService {
     }
 
     if (!Array.isArray(records) || records.length === 0) {
-      throw new Error('Geen records ontvangen uit GHL Custom Objects');
+      throw new Error('Geen records ontvangen uit Leadfabriek CRM Custom Objects');
     }
 
     const parsedItems: LiveCatalogItem[] = records.map((r: any) => {
@@ -371,6 +371,69 @@ export class GhlCatalogService {
 
     inMemoryCache.stats = calculateCityStats(inMemoryCache.items);
     return { newSold, capacity, isSoldOut };
+  }
+
+  /**
+   * Werkt capaciteit en/of uitverkocht-status van een specifiek ticket direct bij in GHL Custom Objects
+   * en in de in-memory cache zodat zowel Whiskytix als de websites de wijziging direct overnemen.
+   */
+  static async updateTicketInGhl(
+    ticketRecordId: string,
+    updates: { capacity?: number; isSoldOut?: boolean }
+  ): Promise<{ success: boolean; capacity?: number; isSoldOut?: boolean; error?: string }> {
+    if (!ticketRecordId || ticketRecordId.startsWith('unlisted::')) {
+      return { success: false, error: 'Geen geldig GHL ticket-ID' };
+    }
+
+    const properties: Record<string, any> = {};
+    if (typeof updates.capacity === 'number' && Number.isFinite(updates.capacity) && updates.capacity >= 0) {
+      properties.capacity = Math.round(updates.capacity);
+    }
+    if (typeof updates.isSoldOut === 'boolean') {
+      properties.is_sold_out = updates.isSoldOut;
+      properties.status_badge = updates.isSoldOut ? 'sold-out' : 'none';
+    }
+
+    if (Object.keys(properties).length === 0) {
+      return { success: false, error: 'Geen wijzigingen opgegeven' };
+    }
+
+    const recordUrl = `${GHL_API_BASE}/objects/${GHL_TICKETS_OBJECT_KEY}/records/${encodeURIComponent(ticketRecordId)}?locationId=${encodeURIComponent(GHL_LOCATION_ID)}`;
+    const response = await fetch(recordUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${GHL_API_KEY}`,
+        Version: '2021-07-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ properties }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      return {
+        success: false,
+        error: `GHL update mislukt (${response.status}): ${errText.slice(0, 150)}`,
+      };
+    }
+
+    if (inMemoryCache) {
+      const item = inMemoryCache.items.find((it) => it.id === ticketRecordId);
+      if (item) {
+        if (typeof properties.capacity === 'number') item.capacity = properties.capacity;
+        if (typeof properties.is_sold_out === 'boolean') {
+          item.isSoldOut = properties.is_sold_out;
+          item.statusText = properties.is_sold_out ? 'Uitverkocht' : undefined;
+        }
+        inMemoryCache.stats = calculateCityStats(inMemoryCache.items);
+      }
+    }
+
+    return {
+      success: true,
+      capacity: properties.capacity,
+      isSoldOut: properties.is_sold_out,
+    };
   }
 
   /**

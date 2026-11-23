@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { queryClient, checkDbConnection } from '../../db/index.js';
 
 const __conscriboDir = path.dirname(fileURLToPath(import.meta.url));
-let staticSnapshotMap: Map<string, { l: string; n: string; s: 'actief' | 'verlopen' }> | null = null;
+let staticSnapshotMap: Map<string, { l: string; n: string; s: 'actief' | 'verlopen'; e?: string }> | null = null;
 function getStaticSnapshotMember(lidnummer: string) {
   if (!staticSnapshotMap) {
     staticSnapshotMap = new Map();
@@ -1036,7 +1036,7 @@ export class ConscriboService {
         bedrijfsnaam: '',
         typeLidmaatschap: 'All-in',
         lidSinds: '',
-        eindDatum: '',
+        eindDatum: snap.e || '',
         lidmaatschapsperiode: 12,
         status: snap.s || 'actief',
         contributieBedrag: 0,

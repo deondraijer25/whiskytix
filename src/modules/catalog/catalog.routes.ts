@@ -56,7 +56,7 @@ export async function registerCatalogRoutes(server: FastifyInstance): Promise<vo
       const result = await GhlCatalogService.getCatalog('all', true);
       return reply.send({
         success: true,
-        message: 'Catalogus succesvol ververst vanuit GoHighLevel',
+        message: 'Catalogus succesvol ververst vanuit Leadfabriek CRM',
         totalRecords: result.totalRecords,
         stats: result.stats,
       });
@@ -65,6 +65,31 @@ export async function registerCatalogRoutes(server: FastifyInstance): Promise<vo
       return reply.status(500).send({
         success: false,
         error: 'Fout bij verversen catalogus: ' + err.message,
+      });
+    }
+  });
+
+  /**
+   * 4. PATCH /api/catalog/:id
+   * Werkt capaciteit en/of uitverkocht-status van een GHL ticket direct bij
+   */
+  server.patch('/api/catalog/:id', async (request, reply) => {
+    try {
+      const params = request.params as { id: string };
+      const body = (request.body || {}) as { capacity?: number; isSoldOut?: boolean };
+      const result = await GhlCatalogService.updateTicketInGhl(params.id, {
+        capacity: body.capacity !== undefined ? Number(body.capacity) : undefined,
+        isSoldOut: body.isSoldOut !== undefined ? Boolean(body.isSoldOut) : undefined,
+      });
+      if (!result.success) {
+        return reply.status(400).send(result);
+      }
+      return reply.send(result);
+    } catch (err: any) {
+      server.log.error(err);
+      return reply.status(500).send({
+        success: false,
+        error: 'Fout bij bijwerken ticketcapaciteit in GHL: ' + err.message,
       });
     }
   });

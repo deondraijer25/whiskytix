@@ -85,6 +85,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         items = [],
         discountCents = 0,
         promoCode = '',
+        iwsCode = '',
         shippingAddress,
         ageVerification,
         portalBaseUrl,
@@ -176,10 +177,39 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         ? `${firstName} ${lastName}`.trim()
         : (customerName || 'Gast Bezoeker');
 
-      // Discount is ALWAYS calculated over the subtotal (excluding service fees and shipping)
+      // Discount is ALWAYS calculated over the subtotal (excluding service fees and shipping).
+      // Supports stacking: 1) IWS member discount (fixed €55 / €39.50 / €39.95), then 2) Promo code (e.g. NEW10 = 10% over remaining subtotal).
       let finalDiscountCents = Math.min(subtotalCents, Math.max(0, Number(discountCents) || 0));
-      let validatedCouponCheck: any = null;
-      const cleanPromo = promoCode && typeof promoCode === 'string' ? promoCode.trim().toUpperCase() : '';
+      let validatedIwsCheck: any = null;
+      let validatedPromoCheck: any = null;
+      let iwsDiscountCents = 0;
+      let promoDiscountCents = 0;
+
+      const cleanIws = iwsCode && typeof iwsCode === 'string' ? iwsCode.trim().toUpperCase() : '';
+      let cleanPromo = promoCode && typeof promoCode === 'string' ? promoCode.trim().toUpperCase() : '';
+
+      // 1. Validate explicit IWS member code first (if provided)
+      if (cleanIws) {
+        const iwsCheck = await CouponsRepository.validate(cleanIws, festivalId);
+        if (!iwsCheck.valid) {
+          if (iwsCheck.isIwsMember) {
+            return reply.status(400).send({ error: iwsCheck.message });
+          }
+        } else {
+          validatedIwsCheck = iwsCheck;
+          if (iwsCheck.type === 'fixed_amount' && iwsCheck.valueCents) {
+            iwsDiscountCents = Math.min(subtotalCents, iwsCheck.valueCents);
+          } else if (iwsCheck.type === 'percentage' && iwsCheck.value) {
+            iwsDiscountCents = Math.min(subtotalCents, Math.round(subtotalCents * (iwsCheck.value / 100)));
+          }
+        }
+        // Avoid double-applying if caller sent the same code in both iwsCode and promoCode
+        if (cleanPromo === cleanIws || (validatedIwsCheck?.code && cleanPromo === String(validatedIwsCheck.code).toUpperCase())) {
+          cleanPromo = '';
+        }
+      }
+
+      // 2. Validate promo code (backwards-compatible: may also be an IWS code if iwsCode was not sent separately)
       if (cleanPromo) {
         const couponCheck = await CouponsRepository.validate(cleanPromo, festivalId);
 
@@ -187,18 +217,28 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           if (couponCheck.isIwsMember) {
             return reply.status(400).send({ error: couponCheck.message });
           }
-          finalDiscountCents = 0;
-        } else {
-          validatedCouponCheck = couponCheck;
+        } else if (couponCheck.isIwsMember && !validatedIwsCheck) {
+          validatedIwsCheck = couponCheck;
+          if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
+            iwsDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
+          }
+          cleanPromo = '';
+        } else if (!couponCheck.isIwsMember) {
+          validatedPromoCheck = couponCheck;
+          const remainingAfterIwsCents = Math.max(0, subtotalCents - iwsDiscountCents);
           if (couponCheck.type === 'percentage' && couponCheck.value) {
-            finalDiscountCents = Math.min(
-              subtotalCents,
-              Math.round(subtotalCents * (couponCheck.value / 100))
+            promoDiscountCents = Math.min(
+              remainingAfterIwsCents,
+              Math.round(remainingAfterIwsCents * (couponCheck.value / 100))
             );
           } else if (couponCheck.type === 'fixed_amount' && couponCheck.valueCents) {
-            finalDiscountCents = Math.min(subtotalCents, couponCheck.valueCents);
+            promoDiscountCents = Math.min(remainingAfterIwsCents, couponCheck.valueCents);
           }
         }
+      }
+
+      if (cleanIws || (promoCode && typeof promoCode === 'string' && promoCode.trim())) {
+        finalDiscountCents = Math.min(subtotalCents, iwsDiscountCents + promoDiscountCents);
       }
 
       const discountedSubtotalCents = Math.max(0, subtotalCents - finalDiscountCents);
@@ -284,19 +324,18 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       const storedOrder = stockAndOrderResult.storedOrder!;
 
       // Record coupon / IWS member claim ONLY after stock check succeeds so a 409 SOLD_OUT never burns a member's code
-      if (validatedCouponCheck && cleanPromo) {
-        if (validatedCouponCheck.isIwsMember && validatedCouponCheck.lidnummer) {
-          await ConscriboService.recordClaim({
-            lidnummer: validatedCouponCheck.lidnummer,
-            festivalId,
-            orderNumber,
-            discountCents: finalDiscountCents,
-            customerEmail,
-            customerName: finalCustomerName,
-          });
-        } else {
-          await CouponsRepository.recordRedemption(cleanPromo, finalDiscountCents);
-        }
+      if (validatedIwsCheck && validatedIwsCheck.isIwsMember && validatedIwsCheck.lidnummer) {
+        await ConscriboService.recordClaim({
+          lidnummer: validatedIwsCheck.lidnummer,
+          festivalId,
+          orderNumber,
+          discountCents: iwsDiscountCents,
+          customerEmail,
+          customerName: finalCustomerName,
+        });
+      }
+      if (validatedPromoCheck && cleanPromo && promoDiscountCents > 0) {
+        await CouponsRepository.recordRedemption(cleanPromo, promoDiscountCents);
       }
 
       // Initialize Payment via Mollie
@@ -326,6 +365,13 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         d: (i.date || '').slice(0, 20),
         tm: (i.timeslot || i.time || '').slice(0, 15),
       }));
+      const combinedPromoLabel = [
+        validatedIwsCheck?.code || cleanIws,
+        validatedPromoCheck?.code || cleanPromo,
+      ]
+        .filter(Boolean)
+        .join('+')
+        .slice(0, 20);
       const baseMetadata: Record<string, any> = {
         orderNumber,
         orderId,
@@ -333,7 +379,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
         customerName: finalCustomerName.slice(0, 55),
         customerEmail: customerEmail.slice(0, 75),
         customerPhone: (customerPhone || '').slice(0, 22),
-        promoCode: promoCode ? String(promoCode).trim().slice(0, 20) : '',
+        promoCode: combinedPromoLabel,
         discountCents: finalDiscountCents,
         itemsSummary: orderItems.map((i) => `${i.quantity}x ${(i.title || '').slice(0, 38)}`).join(', ').slice(0, 220),
       };
@@ -1335,7 +1381,7 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     .section-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; }
     .ticket-row { background: #FFFFFF; border: 2px solid #1D1C1A; border-radius: 8px; box-shadow: 3px 3px 0px #1D1C1A; padding: 1.15rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
     .ticket-row-swapped { background: #F5F5F4; border: 2px dashed #A8A29E; opacity: 0.85; box-shadow: none; }
-    .ticket-left { flex: 1; min-width: 220px; }
+    .ticket-left { flex: 1; min-width: 180px; }
     .ticket-code { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.85rem; font-weight: 800; color: ${cityBadgeText}; margin-bottom: 0.2rem; letter-spacing: 0.02em; }
     .ticket-code-swapped { color: #78716C; text-decoration: line-through; }
     .ticket-name { font-size: 1.05rem; font-weight: 800; color: #1D1C1A; margin-bottom: 0.25rem; }
@@ -1353,6 +1399,15 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
     .actions-bar { display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
     .btn-scanner { background: #1D1C1A; color: #FFFFFF; border: 2px solid #1D1C1A; padding: 0.85rem 1.5rem; border-radius: 8px; font-size: 0.88rem; font-weight: 800; text-decoration: none; box-shadow: 3px 3px 0px rgba(0,0,0,0.3); }
     .btn-scanner:hover { background: #333; }
+    @media (max-width: 520px) {
+      body { padding: 1.25rem 0.75rem; }
+      .card { padding: 1.25rem; box-shadow: 4px 4px 0px #1D1C1A; }
+      h1 { font-size: 1.35rem; }
+      .order-meta-box { grid-template-columns: 1fr; padding: 1rem; gap: 0.75rem; }
+      .ticket-row { padding: 0.9rem 1rem; }
+      .ticket-left { min-width: 0; width: 100%; }
+      .btn-download-pdf { width: 100%; justify-content: center; }
+    }
   </style>
 </head>
 <body>
@@ -1403,12 +1458,6 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
           ${swappedTicketsHtml}
         </div>
       ` : ''}
-
-      <div class="actions-bar">
-        <a href="/scan" class="btn-scanner">
-          Test Ticket in Whiskytix Scanner &rarr;
-        </a>
-      </div>
     </div>
   </div>
 </body>
