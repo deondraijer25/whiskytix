@@ -15,6 +15,7 @@ import { generateQrSvg, generateQrPngDataUrl } from './modules/tickets/qr.servic
 import { registerCheckoutRoutes } from './modules/checkout/checkout.routes.js';
 import { registerCatalogRoutes } from './modules/catalog/catalog.routes.js';
 import { registerConscriboRoutes } from './modules/conscribo/conscribo.routes.js';
+import { registerEnqueteRoutes } from './modules/ghl/enquete.routes.js';
 import { startStockCleanupWorker, runStockCleanup } from './modules/orders/stock-cleanup.worker.js';
 import { UsersRepository } from './modules/auth/users.repository.js';
 import { OrdersRepository } from './modules/orders/orders.repository.js';
@@ -658,6 +659,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerCatalogRoutes(server);
   await registerCheckoutRoutes(server);
   await registerConscriboRoutes(server);
+  await registerEnqueteRoutes(server);
 
   // Start background 15-minute stock hold cleanup
   startStockCleanupWorker();
