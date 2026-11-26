@@ -2314,7 +2314,142 @@ export class OrdersRepository {
             return !mem || !mem.tickets || mem.tickets.length === 0;
           });
           if (missingRows.length > 0) {
-            await Promise.all(missingRows.slice(0, 50).map((r) => this.findOrder(r.orderNumber).catch(() => null)));
+            const missingIds = missingRows.map((r) => r.id);
+            const [allItems, allTickets, allTicketTypes] = await Promise.all([
+              db.select().from(schema.orderItems).where(inArray(schema.orderItems.orderId, missingIds)),
+              db.select().from(schema.issuedTickets).where(inArray(schema.issuedTickets.orderId, missingIds)),
+              db.select().from(schema.ticketTypes),
+            ]);
+
+            const ttMap = new Map(allTicketTypes.map((tt) => [tt.id, tt]));
+            const itemsByOrder = new Map<string, typeof allItems>();
+            for (const it of allItems) {
+              const list = itemsByOrder.get(it.orderId) || [];
+              list.push(it);
+              itemsByOrder.set(it.orderId, list);
+            }
+            const ticketsByOrder = new Map<string, typeof allTickets>();
+            for (const tk of allTickets) {
+              const list = ticketsByOrder.get(tk.orderId) || [];
+              list.push(tk);
+              ticketsByOrder.set(tk.orderId, list);
+            }
+
+            for (const row of missingRows) {
+              const rawItems = itemsByOrder.get(row.id) || [];
+              const rawTickets = ticketsByOrder.get(row.id) || [];
+              let hydratedPortalBaseUrl: string | undefined = undefined;
+
+              const hydratedItems: StoredOrderItem[] = rawItems.map((i) => {
+                let title = '';
+                let category = 'entree';
+                let timeslot = '';
+                let delivery = '';
+                let date = '';
+                let time = '';
+                if (i.metadata) {
+                  try {
+                    const meta = typeof i.metadata === 'string' ? JSON.parse(i.metadata) : i.metadata;
+                    if (meta.title) title = meta.title;
+                    if (meta.category) category = meta.category;
+                    if (meta.timeslot) timeslot = meta.timeslot;
+                    if (meta.delivery) delivery = meta.delivery;
+                    if (meta.date) date = meta.date;
+                    if (meta.time) time = meta.time;
+                    if (meta.portalBaseUrl && !hydratedPortalBaseUrl) {
+                      hydratedPortalBaseUrl = String(meta.portalBaseUrl);
+                    }
+                  } catch {}
+                }
+                if (!title || /^[a-f0-9]{24}$/i.test(title)) {
+                  const tt = ttMap.get(i.ticketTypeId);
+                  if (tt?.title) title = tt.title;
+                }
+                if (!title) title = i.ticketTypeId;
+                return {
+                  id: i.id,
+                  orderId: i.orderId,
+                  ticketTypeId: i.ticketTypeId,
+                  title,
+                  category,
+                  timeslot,
+                  delivery,
+                  date,
+                  time,
+                  quantity: i.quantity,
+                  unitPriceCents: i.unitPriceCents,
+                };
+              });
+
+              const hydratedTickets: StoredIssuedTicket[] = rawTickets.map((t) => {
+                const parentItem = hydratedItems.find((it) => it.id === t.orderItemId);
+                let sessionTitle = parentItem?.title || ttMap.get(parentItem?.ticketTypeId || '')?.title || 'Festival Entreeticket';
+                let dateStr = parentItem?.date || '';
+                let timeStr = parentItem?.time || parentItem?.timeslot || '';
+                if (!dateStr || !timeStr) {
+                  const resolved = OrdersRepository.resolveSessionDateTime(
+                    row.festivalId,
+                    sessionTitle,
+                    dateStr,
+                    timeStr
+                  );
+                  if (!dateStr) dateStr = resolved.dateStr;
+                  if (!timeStr) timeStr = resolved.timeStr;
+                }
+                const cleanTitle = sessionTitle
+                  .replace(/\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*[-–—]\s*(?:1[0-9]|2[0-3]):[0-5][0-9]\s*(?:uur)?/gi, '')
+                  .trim();
+                return {
+                  id: t.id,
+                  orderId: t.orderId,
+                  ticketCode: t.ticketCode,
+                  qrPayload: buildQrPayload({
+                    ticketCode: t.ticketCode,
+                    cityName: row.festivalId,
+                    sessionTitle: cleanTitle || sessionTitle,
+                    attendeeName: t.attendeeName,
+                  }),
+                  qrPayloadHash: t.qrPayloadHash,
+                  attendeeName: t.attendeeName,
+                  status: t.status,
+                  sessionTitle: cleanTitle || sessionTitle,
+                  cityName: row.festivalId,
+                  dateStr,
+                  timeStr,
+                  pdfUrl: t.pdfUrl || '',
+                  checkedInAt: t.checkedInAt ? t.checkedInAt.toISOString() : null,
+                  swappedToTicketId: t.swappedToTicketId || undefined,
+                  swapReason: t.swapReason || undefined,
+                  swappedAt: t.swappedAt ? t.swappedAt.toISOString() : undefined,
+                  createdAt: t.createdAt.toISOString(),
+                };
+              });
+
+              const hydrated: StoredOrder = {
+                id: row.id,
+                orderNumber: row.orderNumber,
+                festivalId: row.festivalId,
+                customerName: row.customerName,
+                customerEmail: row.customerEmail,
+                customerPhone: row.customerPhone || undefined,
+                portalBaseUrl: hydratedPortalBaseUrl,
+                subtotalCents: row.subtotalCents,
+                discountCents: row.discountCents,
+                totalCents: row.totalCents,
+                status: row.status,
+                molliePaymentId: row.molliePaymentId || null,
+                paymentMethod: row.paymentMethod || null,
+                createdAt: row.createdAt.toISOString(),
+                paidAt: row.paidAt ? row.paidAt.toISOString() : null,
+                expiresAt: row.expiresAt.toISOString(),
+                items: hydratedItems,
+                tickets: hydratedTickets,
+                environment: 'live',
+              };
+
+              memoryOrders.set(hydrated.orderNumber, hydrated);
+              memoryOrders.set(hydrated.id, hydrated);
+            }
           }
         }
       } catch {}
