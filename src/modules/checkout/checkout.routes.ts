@@ -1602,10 +1602,11 @@ export async function registerCheckoutRoutes(server: FastifyInstance): Promise<v
       };
       const targetCity = normalizeCitySlug(rawCity);
 
-      let allTickets = await OrdersRepository.listAllTickets();
+      await OrdersRepository.listOrdersAsync();
+      let allTickets = OrdersRepository.listAllTickets();
       if (allTickets.length === 0) {
         await getSyncedOrders(targetCity ? { city: targetCity } : {});
-        allTickets = await OrdersRepository.listAllTickets();
+        allTickets = OrdersRepository.listAllTickets();
       }
 
       const filtered = targetCity

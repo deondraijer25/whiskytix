@@ -268,6 +268,7 @@ export const ScannerPwaPage: React.FC = () => {
       }));
     if (fromVault.length > 0) {
       setLiveTickets(fromVault);
+      return;
     }
 
     if (!manualSearchOpen || !isOnline) return;
@@ -284,6 +285,7 @@ export const ScannerPwaPage: React.FC = () => {
                 code,
                 type: t.session || 'Entreeticket',
                 alreadyScanned:
+                  t.status === 'checked_in' ||
                   t.status === 'checked-in' ||
                   checkedInCodesRef.current.has(String(code).toUpperCase()),
               };
@@ -486,8 +488,9 @@ export const ScannerPwaPage: React.FC = () => {
         ticketCode = decodedRaw;
       }
     } else {
-      ticketCode = decodedRaw.startsWith('#') ? decodedRaw : `#${decodedRaw.slice(0, 18)}`;
-      attendeeName = 'Deon Draijer';
+      const cleanedRaw = decodedRaw.trim();
+      ticketCode = cleanedRaw.startsWith('#') ? cleanedRaw : `#${cleanedRaw}`;
+      attendeeName = 'Bezoeker';
     }
 
     const normCode = ticketCode.toUpperCase();
@@ -986,8 +989,8 @@ export const ScannerPwaPage: React.FC = () => {
 
       {/* 6. Settings Modal */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1D1C1A]/60 flex items-end sm:items-center justify-center p-3">
-          <div className="w-full max-w-md bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-xl p-5 space-y-4 shadow-xl font-sans">
+        <div className="fixed inset-0 z-[60] bg-[#1D1C1A]/60 flex items-end sm:items-center justify-center p-3 overflow-y-auto">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-[#FCFAF7] border-2 border-[#1D1C1A] rounded-xl p-5 space-y-4 shadow-xl font-sans">
             <div className="flex items-center justify-between border-b border-[#c1d4ce] pb-3">
               <div>
                 <h3 className="text-sm font-extrabold text-[#1D1C1A]">
